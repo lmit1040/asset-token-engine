@@ -9,6 +9,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { Profile, TokenDefinition, Asset, TOKEN_MODEL_LABELS } from '@/types/database';
 import { toast } from 'sonner';
+import { logActivity } from '@/lib/activityLogger';
 
 interface TokenWithAsset extends TokenDefinition {
   asset: Asset;
@@ -107,6 +108,23 @@ export default function AdminAssignPage() {
         if (error) throw error;
         toast.success(`Assigned ${assignAmount.toLocaleString()} tokens successfully`);
       }
+
+      // Log the activity
+      const selectedUser = users.find((u) => u.id === selectedUserId);
+      const token = tokens.find((t) => t.id === selectedTokenId);
+      
+      await logActivity({
+        actionType: 'tokens_assigned',
+        entityType: 'user_token_holding',
+        entityName: `${token?.token_symbol} assignment`,
+        details: {
+          user_id: selectedUserId,
+          user_email: selectedUser?.email,
+          token_id: selectedTokenId,
+          token_symbol: token?.token_symbol,
+          amount: assignAmount,
+        },
+      });
 
       // Reset form
       setAmount('');
