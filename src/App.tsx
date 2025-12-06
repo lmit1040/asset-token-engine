@@ -15,6 +15,7 @@ import TokensPage from "./pages/TokensPage";
 import ProfilePage from "./pages/ProfilePage";
 import AdminUsersPage from "./pages/AdminUsersPage";
 import AdminAssignPage from "./pages/AdminAssignPage";
+import AdminTransferPage from "./pages/AdminTransferPage";
 import AdminActivityPage from "./pages/AdminActivityPage";
 import NotFound from "./pages/NotFound";
 
@@ -39,6 +40,7 @@ const App = () => (
             <Route path="/profile" element={<ProfilePage />} />
             <Route path="/admin/users" element={<AdminUsersPage />} />
             <Route path="/admin/assign" element={<AdminAssignPage />} />
+            <Route path="/admin/transfer" element={<AdminTransferPage />} />
             <Route path="/admin/activity" element={<AdminActivityPage />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
