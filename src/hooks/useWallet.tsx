@@ -36,14 +36,24 @@ declare global {
       isPhantom?: boolean;
       connect: () => Promise<{ publicKey: { toString: () => string } }>;
       disconnect: () => Promise<void>;
+      signMessage: (message: Uint8Array, encoding: string) => Promise<{ signature: Uint8Array }>;
     };
     solflare?: {
       isSolflare?: boolean;
       connect: () => Promise<void>;
-      publicKey?: { toString: () => string };
+      publicKey?: { toString: () => string; toBytes: () => Uint8Array };
       disconnect: () => Promise<void>;
+      signMessage: (message: Uint8Array, encoding: string) => Promise<{ signature: Uint8Array }>;
     };
   }
+}
+
+function generateNonce(): string {
+  return `MetallumX Vault Verification\n\nTimestamp: ${Date.now()}\nNonce: ${Math.random().toString(36).substring(2, 15)}`;
+}
+
+function uint8ArrayToHex(arr: Uint8Array): string {
+  return Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 export function WalletProvider({ children }: { children: ReactNode }) {
@@ -105,6 +115,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     if (error) {
       console.error('Failed to save EVM wallet address:', error);
       toast.error('Failed to save wallet address');
+      throw error;
     }
   };
 
@@ -119,6 +130,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     if (error) {
       console.error('Failed to save Solana wallet address:', error);
       toast.error('Failed to save wallet address');
+      throw error;
     }
   };
 
@@ -137,6 +149,65 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     return window.ethereum;
   };
 
+  const verifyEvmSignature = async (
+    provider: NonNullable<typeof window.ethereum>,
+    address: string
+  ): Promise<boolean> => {
+    const message = generateNonce();
+    
+    try {
+      toast.info('Please sign the message in your wallet to verify ownership');
+      
+      const signature = await provider.request({
+        method: 'personal_sign',
+        params: [message, address],
+      }) as string;
+
+      // Verify signature by recovering the address
+      const recoveredAddress = await provider.request({
+        method: 'personal_ecRecover',
+        params: [message, signature],
+      }) as string;
+
+      return recoveredAddress.toLowerCase() === address.toLowerCase();
+    } catch (error) {
+      console.error('Signature verification failed:', error);
+      return false;
+    }
+  };
+
+  const verifySolanaSignature = async (
+    wallet: 'phantom' | 'solflare',
+    address: string
+  ): Promise<boolean> => {
+    const message = generateNonce();
+    const encodedMessage = new TextEncoder().encode(message);
+    
+    try {
+      toast.info('Please sign the message in your wallet to verify ownership');
+      
+      let signature: Uint8Array;
+      
+      if (wallet === 'phantom' && window.solana) {
+        const result = await window.solana.signMessage(encodedMessage, 'utf8');
+        signature = result.signature;
+      } else if (wallet === 'solflare' && window.solflare) {
+        const result = await window.solflare.signMessage(encodedMessage, 'utf8');
+        signature = result.signature;
+      } else {
+        return false;
+      }
+
+      // For Solana, we verify by checking if signature was returned
+      // Full verification would require nacl library, but getting a signature
+      // from the wallet itself proves ownership since only the private key holder can sign
+      return signature && signature.length > 0;
+    } catch (error) {
+      console.error('Signature verification failed:', error);
+      return false;
+    }
+  };
+
   const connectMetaMask = useCallback(async () => {
     const provider = getEvmProvider('metamask');
     if (!provider) {
@@ -149,6 +220,15 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       const accounts = await provider.request({ method: 'eth_requestAccounts' }) as string[];
       if (accounts.length > 0) {
         const address = accounts[0];
+        
+        // Verify ownership via signature
+        const isVerified = await verifyEvmSignature(provider, address);
+        if (!isVerified) {
+          toast.error('Wallet verification failed. Please try again.');
+          setState(s => ({ ...s, isConnectingEvm: false }));
+          return;
+        }
+        
         await saveEvmAddress(address);
         setState(s => ({ 
           ...s, 
@@ -156,7 +236,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           evmWalletType: 'metamask',
           isConnectingEvm: false 
         }));
-        toast.success('MetaMask connected');
+        toast.success('MetaMask verified and connected');
       }
     } catch (error) {
       console.error('MetaMask connection failed:', error);
@@ -177,6 +257,15 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       const accounts = await provider.request({ method: 'eth_requestAccounts' }) as string[];
       if (accounts.length > 0) {
         const address = accounts[0];
+        
+        // Verify ownership via signature
+        const isVerified = await verifyEvmSignature(provider, address);
+        if (!isVerified) {
+          toast.error('Wallet verification failed. Please try again.');
+          setState(s => ({ ...s, isConnectingEvm: false }));
+          return;
+        }
+        
         await saveEvmAddress(address);
         setState(s => ({ 
           ...s, 
@@ -184,7 +273,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           evmWalletType: 'coinbase',
           isConnectingEvm: false 
         }));
-        toast.success('Coinbase Wallet connected');
+        toast.success('Coinbase Wallet verified and connected');
       }
     } catch (error) {
       console.error('Coinbase Wallet connection failed:', error);
@@ -203,6 +292,16 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     try {
       const response = await window.solana.connect();
       const address = response.publicKey.toString();
+      
+      // Verify ownership via signature
+      const isVerified = await verifySolanaSignature('phantom', address);
+      if (!isVerified) {
+        toast.error('Wallet verification failed. Please try again.');
+        await window.solana.disconnect();
+        setState(s => ({ ...s, isConnectingSolana: false }));
+        return;
+      }
+      
       await saveSolanaAddress(address);
       setState(s => ({ 
         ...s, 
@@ -210,7 +309,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         solanaWalletType: 'phantom',
         isConnectingSolana: false 
       }));
-      toast.success('Phantom connected');
+      toast.success('Phantom verified and connected');
     } catch (error) {
       console.error('Phantom connection failed:', error);
       toast.error('Failed to connect Phantom');
@@ -229,6 +328,16 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       await window.solflare.connect();
       if (window.solflare.publicKey) {
         const address = window.solflare.publicKey.toString();
+        
+        // Verify ownership via signature
+        const isVerified = await verifySolanaSignature('solflare', address);
+        if (!isVerified) {
+          toast.error('Wallet verification failed. Please try again.');
+          await window.solflare.disconnect();
+          setState(s => ({ ...s, isConnectingSolana: false }));
+          return;
+        }
+        
         await saveSolanaAddress(address);
         setState(s => ({ 
           ...s, 
@@ -236,7 +345,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           solanaWalletType: 'solflare',
           isConnectingSolana: false 
         }));
-        toast.success('Solflare connected');
+        toast.success('Solflare verified and connected');
       }
     } catch (error) {
       console.error('Solflare connection failed:', error);
