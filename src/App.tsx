@@ -9,6 +9,7 @@ import AuthPage from "./pages/AuthPage";
 import DashboardPage from "./pages/DashboardPage";
 import AssetsPage from "./pages/AssetsPage";
 import NewAssetPage from "./pages/NewAssetPage";
+import EditAssetPage from "./pages/EditAssetPage";
 import AssetDetailPage from "./pages/AssetDetailPage";
 import TokensPage from "./pages/TokensPage";
 import AdminUsersPage from "./pages/AdminUsersPage";
@@ -30,6 +31,7 @@ const App = () => (
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/assets" element={<AssetsPage />} />
             <Route path="/assets/new" element={<NewAssetPage />} />
+            <Route path="/assets/:id/edit" element={<EditAssetPage />} />
             <Route path="/assets/:id" element={<AssetDetailPage />} />
             <Route path="/tokens" element={<TokensPage />} />
             <Route path="/admin/users" element={<AdminUsersPage />} />
