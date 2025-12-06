@@ -10,6 +10,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { Profile, TokenDefinition, Asset, UserTokenHolding, TOKEN_MODEL_LABELS } from '@/types/database';
 import { toast } from 'sonner';
 import { logActivity } from '@/lib/activityLogger';
+import { sendTokenNotification } from '@/lib/sendTokenNotification';
 
 interface TokenWithAsset extends TokenDefinition {
   asset: Asset;
@@ -195,6 +196,20 @@ export default function AdminTransferPage() {
       toast.success(
         `Transferred ${transferAmount.toLocaleString()} ${token?.token_symbol} from ${fromUser?.email} to ${toUser?.email}`
       );
+
+      // Send email notification to recipient
+      if (toUser && token && fromUser) {
+        sendTokenNotification({
+          type: 'transfer',
+          recipientEmail: toUser.email,
+          recipientName: toUser.name,
+          tokenSymbol: token.token_symbol,
+          tokenName: token.token_name,
+          amount: transferAmount,
+          fromUserEmail: fromUser.email,
+          fromUserName: fromUser.name,
+        });
+      }
 
       // Reset form and refresh holdings
       setAmount('');

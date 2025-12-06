@@ -10,6 +10,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { Profile, TokenDefinition, Asset, TOKEN_MODEL_LABELS } from '@/types/database';
 import { toast } from 'sonner';
 import { logActivity } from '@/lib/activityLogger';
+import { sendTokenNotification } from '@/lib/sendTokenNotification';
 
 interface TokenWithAsset extends TokenDefinition {
   asset: Asset;
@@ -125,6 +126,18 @@ export default function AdminAssignPage() {
           amount: assignAmount,
         },
       });
+
+      // Send email notification
+      if (selectedUser && token) {
+        sendTokenNotification({
+          type: 'assignment',
+          recipientEmail: selectedUser.email,
+          recipientName: selectedUser.name,
+          tokenSymbol: token.token_symbol,
+          tokenName: token.token_name,
+          amount: assignAmount,
+        });
+      }
 
       // Reset form
       setAmount('');
