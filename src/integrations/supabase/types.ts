@@ -96,22 +96,28 @@ export type Database = {
         Row: {
           created_at: string
           email: string
+          evm_wallet_address: string | null
           id: string
           name: string | null
+          solana_wallet_address: string | null
           updated_at: string
         }
         Insert: {
           created_at?: string
           email: string
+          evm_wallet_address?: string | null
           id: string
           name?: string | null
+          solana_wallet_address?: string | null
           updated_at?: string
         }
         Update: {
           created_at?: string
           email?: string
+          evm_wallet_address?: string | null
           id?: string
           name?: string | null
+          solana_wallet_address?: string | null
           updated_at?: string
         }
         Relationships: []
