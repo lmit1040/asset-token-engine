@@ -2,6 +2,7 @@ export type AssetType = 'GOLDBACK' | 'SILVER' | 'COPPER' | 'GOLD_CERTIFICATE' | 
 export type OwnerEntity = 'PERSONAL_TRUST' | 'BUSINESS_TRUST' | 'SPV_LLC';
 export type TokenModel = 'ONE_TO_ONE' | 'FRACTIONAL' | 'VAULT_BASKET';
 export type AppRole = 'admin' | 'standard_user';
+export type BlockchainChain = 'ETHEREUM' | 'POLYGON' | 'BSC' | 'SOLANA' | 'NONE';
 
 export interface Profile {
   id: string;
@@ -53,6 +54,9 @@ export interface TokenDefinition {
   total_supply: number;
   notes: string | null;
   created_at: string;
+  chain: BlockchainChain;
+  contract_address: string | null;
+  deployed: boolean;
   asset?: Asset;
 }
 
@@ -64,6 +68,17 @@ export interface UserTokenHolding {
   assigned_by: string | null;
   assigned_at: string;
   token_definition?: TokenDefinition;
+}
+
+export interface ActivityLog {
+  id: string;
+  action_type: string;
+  entity_type: string;
+  entity_id: string | null;
+  entity_name: string | null;
+  performed_by: string | null;
+  details: Record<string, unknown> | null;
+  created_at: string;
 }
 
 export const ASSET_TYPE_LABELS: Record<AssetType, string> = {
@@ -87,6 +102,14 @@ export const TOKEN_MODEL_LABELS: Record<TokenModel, string> = {
   VAULT_BASKET: 'Vault Basket',
 };
 
+export const BLOCKCHAIN_CHAIN_LABELS: Record<BlockchainChain, string> = {
+  ETHEREUM: 'Ethereum',
+  POLYGON: 'Polygon',
+  BSC: 'BNB Smart Chain',
+  SOLANA: 'Solana',
+  NONE: 'Not Deployed',
+};
+
 export const ASSET_TYPE_COLORS: Record<AssetType, string> = {
   GOLDBACK: 'badge-gold',
   SILVER: 'badge-silver',
@@ -94,4 +117,14 @@ export const ASSET_TYPE_COLORS: Record<AssetType, string> = {
   GOLD_CERTIFICATE: 'badge-gold',
   SILVER_CERTIFICATE: 'badge-silver',
   OTHER: 'bg-muted text-muted-foreground',
+};
+
+// Hardcoded example prices for MVP (USD per unit)
+export const ASSET_PRICES: Record<AssetType, number> = {
+  GOLDBACK: 4.25,
+  SILVER: 29.50,
+  COPPER: 4.10,
+  GOLD_CERTIFICATE: 2500,
+  SILVER_CERTIFICATE: 150,
+  OTHER: 100,
 };
