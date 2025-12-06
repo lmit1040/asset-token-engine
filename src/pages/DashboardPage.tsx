@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Vault, Coins, TrendingUp, DollarSign } from 'lucide-react';
+import { Vault, Coins, TrendingUp, DollarSign, History } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { StatCard } from '@/components/dashboard/StatCard';
 import { HoldingsTable } from '@/components/dashboard/HoldingsTable';
 import { PortfolioChart } from '@/components/dashboard/PortfolioChart';
+import { TransactionHistory } from '@/components/dashboard/TransactionHistory';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { Asset, TokenDefinition, UserTokenHolding, AssetType, ASSET_PRICES } from '@/types/database';
@@ -179,6 +180,20 @@ export default function DashboardPage() {
             
             <HoldingsTable holdings={holdings} isLoading={isLoading} />
           </div>
+        </div>
+
+        {/* Transaction History */}
+        <div className="glass-card p-6">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
+              <History className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-foreground">Transaction History</h2>
+              <p className="text-sm text-muted-foreground">Recent token assignments and transfers</p>
+            </div>
+          </div>
+          <TransactionHistory limit={10} />
         </div>
       </div>
     </DashboardLayout>
