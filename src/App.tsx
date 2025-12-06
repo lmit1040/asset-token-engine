@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
+import { WalletProvider } from "@/hooks/useWallet";
 import Index from "./pages/Index";
 import AuthPage from "./pages/AuthPage";
 import DashboardPage from "./pages/DashboardPage";
@@ -28,22 +29,24 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
-          <Routes>
-            <Route path="/" element={<Index />} />
-            <Route path="/auth" element={<AuthPage />} />
-            <Route path="/dashboard" element={<DashboardPage />} />
-            <Route path="/assets" element={<AssetsPage />} />
-            <Route path="/assets/new" element={<NewAssetPage />} />
-            <Route path="/assets/:id/edit" element={<EditAssetPage />} />
-            <Route path="/assets/:id" element={<AssetDetailPage />} />
-            <Route path="/tokens" element={<TokensPage />} />
-            <Route path="/profile" element={<ProfilePage />} />
-            <Route path="/admin/users" element={<AdminUsersPage />} />
-            <Route path="/admin/assign" element={<AdminAssignPage />} />
-            <Route path="/admin/transfer" element={<AdminTransferPage />} />
-            <Route path="/admin/activity" element={<AdminActivityPage />} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
+          <WalletProvider>
+            <Routes>
+              <Route path="/" element={<Index />} />
+              <Route path="/auth" element={<AuthPage />} />
+              <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/assets" element={<AssetsPage />} />
+              <Route path="/assets/new" element={<NewAssetPage />} />
+              <Route path="/assets/:id/edit" element={<EditAssetPage />} />
+              <Route path="/assets/:id" element={<AssetDetailPage />} />
+              <Route path="/tokens" element={<TokensPage />} />
+              <Route path="/profile" element={<ProfilePage />} />
+              <Route path="/admin/users" element={<AdminUsersPage />} />
+              <Route path="/admin/assign" element={<AdminAssignPage />} />
+              <Route path="/admin/transfer" element={<AdminTransferPage />} />
+              <Route path="/admin/activity" element={<AdminActivityPage />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </WalletProvider>
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>

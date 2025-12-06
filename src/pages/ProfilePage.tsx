@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { useAuth } from '@/hooks/useAuth';
+import { useWallet } from '@/hooks/useWallet';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
-import { User, Mail, Calendar, Shield, Lock } from 'lucide-react';
+import { User, Mail, Calendar, Shield, Lock, Wallet, Copy, ExternalLink } from 'lucide-react';
 
 interface Profile {
   id: string;
@@ -19,6 +20,7 @@ interface Profile {
 
 export default function ProfilePage() {
   const { user, isAdmin } = useAuth();
+  const { evmAddress, solanaAddress, evmWalletType, solanaWalletType } = useWallet();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -206,6 +208,87 @@ export default function ProfilePage() {
                     : 'N/A'}
                 </p>
               </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Connected Wallets Card */}
+        <Card className="glass-card">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Wallet className="h-5 w-5 text-primary" />
+              Connected Wallets
+            </CardTitle>
+            <CardDescription>
+              Your connected blockchain wallet addresses
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label>EVM Wallet Address</Label>
+              {evmAddress ? (
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 flex items-center gap-2 p-3 rounded-md bg-muted/50 border border-border">
+                    <div className="h-2 w-2 rounded-full bg-emerald-500" />
+                    <span className="font-mono text-sm truncate">{evmAddress}</span>
+                    <span className="text-xs text-muted-foreground capitalize">({evmWalletType})</span>
+                  </div>
+                  <Button 
+                    variant="ghost" 
+                    size="icon"
+                    onClick={() => {
+                      navigator.clipboard.writeText(evmAddress);
+                      toast.success('Address copied!');
+                    }}
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                  <Button 
+                    variant="ghost" 
+                    size="icon"
+                    onClick={() => window.open(`https://etherscan.io/address/${evmAddress}`, '_blank')}
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : (
+                <p className="text-muted-foreground text-sm p-3 rounded-md bg-muted/30 border border-border">
+                  Not connected
+                </p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label>Solana Wallet Address</Label>
+              {solanaAddress ? (
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 flex items-center gap-2 p-3 rounded-md bg-muted/50 border border-border">
+                    <div className="h-2 w-2 rounded-full bg-purple-500" />
+                    <span className="font-mono text-sm truncate">{solanaAddress}</span>
+                    <span className="text-xs text-muted-foreground capitalize">({solanaWalletType})</span>
+                  </div>
+                  <Button 
+                    variant="ghost" 
+                    size="icon"
+                    onClick={() => {
+                      navigator.clipboard.writeText(solanaAddress);
+                      toast.success('Address copied!');
+                    }}
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                  <Button 
+                    variant="ghost" 
+                    size="icon"
+                    onClick={() => window.open(`https://solscan.io/account/${solanaAddress}`, '_blank')}
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : (
+                <p className="text-muted-foreground text-sm p-3 rounded-md bg-muted/30 border border-border">
+                  Not connected
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>
