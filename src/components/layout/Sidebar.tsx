@@ -3,7 +3,7 @@ import {
   LayoutDashboard, 
   Vault, 
   Coins, 
-  Settings, 
+  User, 
   Users, 
   Shield,
   LogOut
@@ -15,6 +15,7 @@ const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Assets', href: '/assets', icon: Vault },
   { name: 'Tokens', href: '/tokens', icon: Coins },
+  { name: 'Profile', href: '/profile', icon: User },
 ];
 
 const adminNavigation = [
