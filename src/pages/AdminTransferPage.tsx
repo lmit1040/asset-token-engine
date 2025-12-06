@@ -148,6 +148,25 @@ export default function AdminTransferPage() {
         .eq('token_definition_id', selectedTokenId)
         .maybeSingle();
 
+      // Get destination user's wallet address based on token chain
+      const toUser = users.find((u) => u.id === toUserId);
+      const token = tokens.find((t) => t.id === selectedTokenId);
+      
+      // Determine delivery wallet based on token chain
+      let deliveryWalletAddress: string | null = null;
+      let deliveryWalletType: 'EVM' | 'SOLANA' | null = null;
+      
+      if (token) {
+        const chain = token.chain;
+        if (chain === 'ETHEREUM' || chain === 'POLYGON' || chain === 'BSC') {
+          deliveryWalletAddress = toUser?.evm_wallet_address || null;
+          deliveryWalletType = deliveryWalletAddress ? 'EVM' : null;
+        } else if (chain === 'SOLANA') {
+          deliveryWalletAddress = toUser?.solana_wallet_address || null;
+          deliveryWalletType = deliveryWalletAddress ? 'SOLANA' : null;
+        }
+      }
+
       if (existingToHolding) {
         const newToBalance = Number(existingToHolding.balance) + transferAmount;
         const { error: toError } = await supabase
@@ -156,6 +175,8 @@ export default function AdminTransferPage() {
             balance: newToBalance,
             assigned_by: currentUser.id,
             assigned_at: new Date().toISOString(),
+            delivery_wallet_address: deliveryWalletAddress,
+            delivery_wallet_type: deliveryWalletType,
           })
           .eq('id', existingToHolding.id);
 
@@ -168,6 +189,8 @@ export default function AdminTransferPage() {
             token_definition_id: selectedTokenId,
             balance: transferAmount,
             assigned_by: currentUser.id,
+            delivery_wallet_address: deliveryWalletAddress,
+            delivery_wallet_type: deliveryWalletType,
           });
 
         if (createError) throw createError;
@@ -175,8 +198,6 @@ export default function AdminTransferPage() {
 
       // 3. Log the activity
       const fromUser = users.find((u) => u.id === fromUserId);
-      const toUser = users.find((u) => u.id === toUserId);
-      const token = tokens.find((t) => t.id === selectedTokenId);
 
       await logActivity({
         actionType: 'tokens_transferred',
