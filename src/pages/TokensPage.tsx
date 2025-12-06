@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Coins, ExternalLink, Globe, CheckCircle, XCircle } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { supabase } from '@/integrations/supabase/client';
-import { TokenDefinition, Asset, TOKEN_MODEL_LABELS, ASSET_TYPE_LABELS, BLOCKCHAIN_CHAIN_LABELS, BlockchainChain } from '@/types/database';
+import { TokenDefinition, Asset, TOKEN_MODEL_LABELS, ASSET_TYPE_LABELS, BLOCKCHAIN_CHAIN_LABELS, BlockchainChain, NETWORK_TYPE_LABELS, NetworkType, DEPLOYMENT_STATUS_LABELS, DeploymentStatus } from '@/types/database';
 
 interface TokenWithAsset extends TokenDefinition {
   asset: Asset;
@@ -74,6 +74,11 @@ export default function TokensPage() {
                           {BLOCKCHAIN_CHAIN_LABELS[(token.chain as BlockchainChain) || 'NONE']}
                         </span>
                       </div>
+                      {(token.network as NetworkType) !== 'NONE' && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {NETWORK_TYPE_LABELS[(token.network as NetworkType)]}
+                        </p>
+                      )}
                       {token.contract_address && (
                         <p className="text-xs font-mono text-muted-foreground mt-1">
                           {token.contract_address.slice(0, 6)}...{token.contract_address.slice(-4)}
@@ -81,10 +86,15 @@ export default function TokensPage() {
                       )}
                     </td>
                     <td className="table-cell">
-                      {token.deployed ? (
+                      {(token.deployment_status as DeploymentStatus) === 'DEPLOYED' ? (
                         <span className="inline-flex items-center gap-1 text-success text-sm">
                           <CheckCircle className="h-4 w-4" />
                           Deployed
+                        </span>
+                      ) : (token.deployment_status as DeploymentStatus) === 'PENDING' ? (
+                        <span className="inline-flex items-center gap-1 text-warning text-sm">
+                          <div className="h-4 w-4 border-2 border-warning border-t-transparent rounded-full animate-spin" />
+                          Pending
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 text-muted-foreground text-sm">

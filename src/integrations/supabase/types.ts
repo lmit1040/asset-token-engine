@@ -164,8 +164,9 @@ export type Database = {
           contract_address: string | null
           created_at: string
           decimals: number
-          deployed: boolean
+          deployment_status: Database["public"]["Enums"]["deployment_status"]
           id: string
+          network: Database["public"]["Enums"]["network_type"]
           notes: string | null
           token_model: Database["public"]["Enums"]["token_model"]
           token_name: string
@@ -178,8 +179,9 @@ export type Database = {
           contract_address?: string | null
           created_at?: string
           decimals?: number
-          deployed?: boolean
+          deployment_status?: Database["public"]["Enums"]["deployment_status"]
           id?: string
+          network?: Database["public"]["Enums"]["network_type"]
           notes?: string | null
           token_model: Database["public"]["Enums"]["token_model"]
           token_name: string
@@ -192,8 +194,9 @@ export type Database = {
           contract_address?: string | null
           created_at?: string
           decimals?: number
-          deployed?: boolean
+          deployment_status?: Database["public"]["Enums"]["deployment_status"]
           id?: string
+          network?: Database["public"]["Enums"]["network_type"]
           notes?: string | null
           token_model?: Database["public"]["Enums"]["token_model"]
           token_name?: string
@@ -286,6 +289,8 @@ export type Database = {
         | "SILVER_CERTIFICATE"
         | "OTHER"
       blockchain_chain: "ETHEREUM" | "POLYGON" | "BSC" | "SOLANA" | "NONE"
+      deployment_status: "NOT_DEPLOYED" | "PENDING" | "DEPLOYED"
+      network_type: "MAINNET" | "TESTNET" | "NONE"
       owner_entity: "PERSONAL_TRUST" | "BUSINESS_TRUST" | "SPV_LLC"
       token_model: "ONE_TO_ONE" | "FRACTIONAL" | "VAULT_BASKET"
     }
@@ -425,6 +430,8 @@ export const Constants = {
         "OTHER",
       ],
       blockchain_chain: ["ETHEREUM", "POLYGON", "BSC", "SOLANA", "NONE"],
+      deployment_status: ["NOT_DEPLOYED", "PENDING", "DEPLOYED"],
+      network_type: ["MAINNET", "TESTNET", "NONE"],
       owner_entity: ["PERSONAL_TRUST", "BUSINESS_TRUST", "SPV_LLC"],
       token_model: ["ONE_TO_ONE", "FRACTIONAL", "VAULT_BASKET"],
     },
