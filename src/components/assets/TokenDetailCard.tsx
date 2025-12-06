@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { Globe, CheckCircle, XCircle, Rocket } from 'lucide-react';
+import { Globe, CheckCircle, XCircle, Rocket, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { useWallet } from '@/hooks/useWallet';
 import { 
   TokenDefinition, 
   TOKEN_MODEL_LABELS, 
@@ -24,11 +25,13 @@ export function TokenDetailCard({ token, isAdmin, onUpdate }: TokenDetailCardPro
   const [isDeploying, setIsDeploying] = useState(false);
   const [selectedChain, setSelectedChain] = useState<BlockchainChain>((token.chain as BlockchainChain) || 'NONE');
   const [selectedNetwork, setSelectedNetwork] = useState<NetworkType>((token.network as NetworkType) || 'NONE');
+  const { solanaAddress, connectPhantom, isConnectingSolana } = useWallet();
 
   const deploymentStatus = token.deployment_status as DeploymentStatus;
   const canDeploy = selectedChain !== 'NONE' && selectedNetwork !== 'NONE' && deploymentStatus === 'NOT_DEPLOYED';
   const isDeployed = deploymentStatus === 'DEPLOYED';
   const isPending = deploymentStatus === 'PENDING';
+  const isSolanaTestnet = selectedChain === 'SOLANA' && selectedNetwork === 'TESTNET';
 
   const generateMockContractAddress = () => {
     const chars = '0123456789abcdef';
@@ -52,14 +55,100 @@ export function TokenDetailCard({ token, isAdmin, onUpdate }: TokenDetailCardPro
       if (error) throw error;
       toast.success('Blockchain configuration saved');
       onUpdate();
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to save configuration');
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to save configuration';
+      toast.error(message);
+    }
+  };
+
+  const deploySolanaToken = async () => {
+    // Ensure Phantom is connected
+    if (!solanaAddress) {
+      toast.info('Please connect your Phantom wallet first');
+      await connectPhantom();
+      return;
+    }
+
+    // Check if Phantom is available for getting public key
+    if (!window.solana?.isPhantom) {
+      toast.error('Phantom wallet not found. Please install Phantom.');
+      window.open('https://phantom.app/', '_blank');
+      return;
+    }
+
+    setIsDeploying(true);
+    try {
+      // Set to PENDING first
+      const { error: pendingError } = await supabase
+        .from('token_definitions')
+        .update({
+          chain: selectedChain,
+          network: selectedNetwork,
+          deployment_status: 'PENDING',
+        })
+        .eq('id', token.id);
+
+      if (pendingError) throw pendingError;
+      
+      toast.info('Deploying SPL token to Solana Devnet...');
+      onUpdate();
+
+      // Get the public key from Phantom
+      const response = await window.solana.connect();
+      const adminPublicKey = response.publicKey.toString();
+
+      // Call the edge function to deploy the token
+      const { data, error } = await supabase.functions.invoke('deploy-solana-token', {
+        body: {
+          tokenDefinitionId: token.id,
+          adminPublicKey,
+        },
+      });
+
+      if (error) {
+        // Reset deployment status on error
+        await supabase
+          .from('token_definitions')
+          .update({ deployment_status: 'NOT_DEPLOYED' })
+          .eq('id', token.id);
+        throw new Error(error.message || 'Deployment failed');
+      }
+
+      if (data.error) {
+        // Reset deployment status on error
+        await supabase
+          .from('token_definitions')
+          .update({ deployment_status: 'NOT_DEPLOYED' })
+          .eq('id', token.id);
+        throw new Error(data.error);
+      }
+
+      toast.success('SPL token deployed successfully!');
+      onUpdate();
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to deploy token';
+      toast.error(message);
+      // Ensure status is reset
+      await supabase
+        .from('token_definitions')
+        .update({ deployment_status: 'NOT_DEPLOYED' })
+        .eq('id', token.id);
+      onUpdate();
+    } finally {
+      setIsDeploying(false);
     }
   };
 
   const handleDeploy = async () => {
     if (!canDeploy) return;
 
+    // For Solana Testnet, use real deployment
+    if (isSolanaTestnet) {
+      await deploySolanaToken();
+      return;
+    }
+
+    // For other chains, use mock deployment
     setIsDeploying(true);
     try {
       // Set to PENDING
@@ -94,14 +183,24 @@ export function TokenDetailCard({ token, isAdmin, onUpdate }: TokenDetailCardPro
 
       toast.success('Contract deployed successfully!');
       onUpdate();
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to deploy contract');
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to deploy contract';
+      toast.error(message);
     } finally {
       setIsDeploying(false);
     }
   };
 
   const hasConfigChanged = selectedChain !== (token.chain as BlockchainChain) || selectedNetwork !== (token.network as NetworkType);
+
+  const getExplorerUrl = (address: string) => {
+    if (token.chain === 'SOLANA') {
+      const cluster = token.network === 'TESTNET' ? 'devnet' : 'mainnet';
+      return `https://explorer.solana.com/address/${address}?cluster=${cluster}`;
+    }
+    // Default for EVM chains (can be extended)
+    return `https://etherscan.io/address/${address}`;
+  };
 
   return (
     <div className="bg-muted/30 rounded-lg p-4 border border-border">
@@ -161,6 +260,12 @@ export function TokenDetailCard({ token, isAdmin, onUpdate }: TokenDetailCardPro
               </Select>
             </div>
 
+            {isSolanaTestnet && !solanaAddress && (
+              <div className="text-xs text-amber-500 bg-amber-500/10 p-2 rounded">
+                Connect your Phantom wallet to deploy to Solana Devnet. Your wallet will be set as the mint authority.
+              </div>
+            )}
+
             {hasConfigChanged && (
               <Button 
                 variant="outline" 
@@ -175,18 +280,18 @@ export function TokenDetailCard({ token, isAdmin, onUpdate }: TokenDetailCardPro
             <Button 
               className="w-full" 
               size="sm"
-              disabled={!canDeploy || isDeploying}
+              disabled={!canDeploy || isDeploying || isConnectingSolana}
               onClick={handleDeploy}
             >
-              {isDeploying ? (
+              {isDeploying || isConnectingSolana ? (
                 <>
                   <div className="h-4 w-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
-                  Deploying...
+                  {isSolanaTestnet ? 'Deploying to Devnet...' : 'Deploying...'}
                 </>
               ) : (
                 <>
                   <Rocket className="h-4 w-4" />
-                  Deploy Contract
+                  {isSolanaTestnet ? 'Deploy SPL Token' : 'Deploy Contract'}
                 </>
               )}
             </Button>
@@ -197,6 +302,9 @@ export function TokenDetailCard({ token, isAdmin, onUpdate }: TokenDetailCardPro
               <span className="text-muted-foreground">Blockchain</span>
               <span className="text-foreground">
                 {BLOCKCHAIN_CHAIN_LABELS[(token.chain as BlockchainChain) || 'NONE']}
+                {token.chain === 'SOLANA' && token.network === 'TESTNET' && (
+                  <span className="text-xs text-muted-foreground ml-1">(Devnet)</span>
+                )}
               </span>
             </div>
             {(token.network as NetworkType) !== 'NONE' && (
@@ -231,10 +339,31 @@ export function TokenDetailCard({ token, isAdmin, onUpdate }: TokenDetailCardPro
 
         {token.contract_address && (
           <div className="pt-2">
-            <p className="text-xs text-muted-foreground mb-1">Contract Address</p>
-            <code className="text-xs bg-muted px-2 py-1 rounded font-mono block break-all">
+            <p className="text-xs text-muted-foreground mb-1">Contract Address (Mint)</p>
+            <a
+              href={getExplorerUrl(token.contract_address)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs bg-muted px-2 py-1 rounded font-mono break-all flex items-center gap-1 hover:bg-muted/80 transition-colors"
+            >
               {token.contract_address}
-            </code>
+              <ExternalLink className="h-3 w-3 flex-shrink-0" />
+            </a>
+          </div>
+        )}
+
+        {token.treasury_account && (
+          <div className="pt-2">
+            <p className="text-xs text-muted-foreground mb-1">Treasury Account</p>
+            <a
+              href={getExplorerUrl(token.treasury_account)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs bg-muted px-2 py-1 rounded font-mono break-all flex items-center gap-1 hover:bg-muted/80 transition-colors"
+            >
+              {token.treasury_account}
+              <ExternalLink className="h-3 w-3 flex-shrink-0" />
+            </a>
           </div>
         )}
       </div>

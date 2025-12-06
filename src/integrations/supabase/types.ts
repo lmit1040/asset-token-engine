@@ -178,6 +178,7 @@ export type Database = {
           token_name: string
           token_symbol: string
           total_supply: number
+          treasury_account: string | null
         }
         Insert: {
           asset_id: string
@@ -193,6 +194,7 @@ export type Database = {
           token_name: string
           token_symbol: string
           total_supply?: number
+          treasury_account?: string | null
         }
         Update: {
           asset_id?: string
@@ -208,6 +210,7 @@ export type Database = {
           token_name?: string
           token_symbol?: string
           total_supply?: number
+          treasury_account?: string | null
         }
         Relationships: [
           {

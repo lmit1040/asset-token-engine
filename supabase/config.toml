@@ -2,3 +2,6 @@ project_id = "hqohcfwahmkxtpfbhcku"
 
 [functions.send-token-notification]
 verify_jwt = false
+
+[functions.deploy-solana-token]
+verify_jwt = false

@@ -61,6 +61,7 @@ export interface TokenDefinition {
   chain: BlockchainChain;
   network: NetworkType;
   contract_address: string | null;
+  treasury_account: string | null;
   deployment_status: DeploymentStatus;
   asset?: Asset;
 }
