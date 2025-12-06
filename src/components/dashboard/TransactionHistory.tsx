@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react';
-import { ArrowDownRight, ArrowUpRight, Plus, History, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
+import { ArrowDownRight, ArrowUpRight, Plus, History, ChevronLeft, ChevronRight, Filter, Download, FileText } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { format } from 'date-fns';
 import { Json } from '@/integrations/supabase/types';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { toast } from 'sonner';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface TransactionDetails {
   amount?: number;
@@ -34,6 +38,7 @@ interface TransactionHistoryProps {
   pageSize?: number;
   showAllUsers?: boolean;
   showFilters?: boolean;
+  showExport?: boolean;
   compact?: boolean;
 }
 
@@ -44,6 +49,7 @@ export function TransactionHistory({
   pageSize = 10, 
   showAllUsers = false,
   showFilters = true,
+  showExport = true,
   compact = false 
 }: TransactionHistoryProps) {
   const { user } = useAuth();
@@ -217,6 +223,122 @@ export function TransactionHistory({
     return 'Transaction';
   };
 
+  const getExportData = () => {
+    return filteredTransactions.map((tx) => {
+      const details = tx.details as TransactionDetails | null;
+      const isOutgoing = tx.action_type === 'tokens_transferred' && details?.from_user_id === targetUserId;
+      
+      return {
+        date: format(new Date(tx.created_at), 'yyyy-MM-dd HH:mm:ss'),
+        type: getTransactionType(tx),
+        token: details?.token_symbol || 'N/A',
+        amount: isOutgoing ? -1 * (details?.amount || 0) : (details?.amount || 0),
+        description: getTransactionDescription(tx),
+        from: details?.from_user_email || (tx.action_type === 'tokens_assigned' ? 'System' : 'N/A'),
+        to: details?.to_user_email || details?.user_email || 'N/A',
+      };
+    });
+  };
+
+  const exportToCSV = () => {
+    try {
+      const data = getExportData();
+      if (data.length === 0) {
+        toast.error('No transactions to export');
+        return;
+      }
+
+      const headers = ['Date', 'Type', 'Token', 'Amount', 'Description', 'From', 'To'];
+      const csvContent = [
+        headers.join(','),
+        ...data.map((row) => [
+          `"${row.date}"`,
+          `"${row.type}"`,
+          `"${row.token}"`,
+          row.amount,
+          `"${row.description.replace(/"/g, '""')}"`,
+          `"${row.from}"`,
+          `"${row.to}"`,
+        ].join(','))
+      ].join('\n');
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `transaction-history-${format(new Date(), 'yyyy-MM-dd')}.csv`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+
+      toast.success('CSV exported successfully');
+    } catch (error) {
+      console.error('CSV export error:', error);
+      toast.error('Failed to export CSV');
+    }
+  };
+
+  const exportToPDF = () => {
+    try {
+      const data = getExportData();
+      if (data.length === 0) {
+        toast.error('No transactions to export');
+        return;
+      }
+
+      const doc = new jsPDF();
+      
+      // Title
+      doc.setFontSize(18);
+      doc.setTextColor(43, 43, 43);
+      doc.text('Transaction History', 14, 22);
+      
+      // Subtitle with date
+      doc.setFontSize(10);
+      doc.setTextColor(100, 100, 100);
+      doc.text(`Generated on ${format(new Date(), 'MMMM d, yyyy')}`, 14, 30);
+      doc.text(`Total transactions: ${data.length}`, 14, 36);
+
+      // Table
+      autoTable(doc, {
+        startY: 45,
+        head: [['Date', 'Type', 'Token', 'Amount', 'From', 'To']],
+        body: data.map((row) => [
+          format(new Date(row.date), 'MMM d, yyyy'),
+          row.type,
+          row.token,
+          row.amount >= 0 ? `+${row.amount.toLocaleString()}` : row.amount.toLocaleString(),
+          row.from,
+          row.to,
+        ]),
+        styles: {
+          fontSize: 8,
+          cellPadding: 3,
+        },
+        headStyles: {
+          fillColor: [43, 43, 43],
+          textColor: [255, 255, 255],
+          fontStyle: 'bold',
+        },
+        alternateRowStyles: {
+          fillColor: [245, 245, 245],
+        },
+        columnStyles: {
+          0: { cellWidth: 28 },
+          1: { cellWidth: 22 },
+          2: { cellWidth: 20 },
+          3: { cellWidth: 25, halign: 'right' },
+          4: { cellWidth: 45 },
+          5: { cellWidth: 45 },
+        },
+      });
+
+      doc.save(`transaction-history-${format(new Date(), 'yyyy-MM-dd')}.pdf`);
+      toast.success('PDF exported successfully');
+    } catch (error) {
+      console.error('PDF export error:', error);
+      toast.error('Failed to export PDF');
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-8">
@@ -273,9 +395,32 @@ export function TransactionHistory({
             </Select>
           )}
 
-          <span className="text-xs text-muted-foreground ml-auto">
-            {filteredTransactions.length} transaction{filteredTransactions.length !== 1 ? 's' : ''}
-          </span>
+          <div className="flex items-center gap-2 ml-auto">
+            <span className="text-xs text-muted-foreground">
+              {filteredTransactions.length} transaction{filteredTransactions.length !== 1 ? 's' : ''}
+            </span>
+
+            {showExport && filteredTransactions.length > 0 && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-9">
+                    <Download className="h-4 w-4" />
+                    Export
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={exportToCSV}>
+                    <FileText className="h-4 w-4 mr-2" />
+                    Export as CSV
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={exportToPDF}>
+                    <FileText className="h-4 w-4 mr-2" />
+                    Export as PDF
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
         </div>
       )}
 
