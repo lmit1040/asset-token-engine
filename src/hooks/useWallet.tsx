@@ -1,4 +1,7 @@
-import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from './useAuth';
+import { toast } from 'sonner';
 
 interface WalletState {
   evmAddress: string | null;
@@ -7,6 +10,7 @@ interface WalletState {
   solanaWalletType: 'phantom' | 'solflare' | null;
   isConnectingEvm: boolean;
   isConnectingSolana: boolean;
+  isLoading: boolean;
 }
 
 interface WalletContextType extends WalletState {
@@ -14,8 +18,8 @@ interface WalletContextType extends WalletState {
   connectCoinbaseWallet: () => Promise<void>;
   connectPhantom: () => Promise<void>;
   connectSolflare: () => Promise<void>;
-  disconnectEvm: () => void;
-  disconnectSolana: () => void;
+  disconnectEvm: () => Promise<void>;
+  disconnectSolana: () => Promise<void>;
 }
 
 const WalletContext = createContext<WalletContextType | null>(null);
@@ -43,6 +47,7 @@ declare global {
 }
 
 export function WalletProvider({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
   const [state, setState] = useState<WalletState>({
     evmAddress: null,
     solanaAddress: null,
@@ -50,23 +55,85 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     solanaWalletType: null,
     isConnectingEvm: false,
     isConnectingSolana: false,
+    isLoading: true,
   });
+
+  // Load wallet addresses from database on mount
+  useEffect(() => {
+    async function loadWalletAddresses() {
+      if (!user?.id) {
+        setState(s => ({ ...s, isLoading: false, evmAddress: null, solanaAddress: null }));
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('evm_wallet_address, solana_wallet_address')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        if (error) {
+          console.error('Failed to load wallet addresses:', error);
+        } else if (data) {
+          setState(s => ({
+            ...s,
+            evmAddress: data.evm_wallet_address,
+            solanaAddress: data.solana_wallet_address,
+            isLoading: false,
+          }));
+        } else {
+          setState(s => ({ ...s, isLoading: false }));
+        }
+      } catch (err) {
+        console.error('Failed to load wallet addresses:', err);
+        setState(s => ({ ...s, isLoading: false }));
+      }
+    }
+
+    loadWalletAddresses();
+  }, [user?.id]);
+
+  const saveEvmAddress = async (address: string | null) => {
+    if (!user?.id) return;
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({ evm_wallet_address: address })
+      .eq('id', user.id);
+
+    if (error) {
+      console.error('Failed to save EVM wallet address:', error);
+      toast.error('Failed to save wallet address');
+    }
+  };
+
+  const saveSolanaAddress = async (address: string | null) => {
+    if (!user?.id) return;
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({ solana_wallet_address: address })
+      .eq('id', user.id);
+
+    if (error) {
+      console.error('Failed to save Solana wallet address:', error);
+      toast.error('Failed to save wallet address');
+    }
+  };
 
   const getEvmProvider = (type: 'metamask' | 'coinbase') => {
     if (!window.ethereum) return null;
     
-    // Check if multiple providers exist
     if (window.ethereum.providers?.length) {
       return window.ethereum.providers.find(p => 
         type === 'metamask' ? p.isMetaMask : p.isCoinbaseWallet
       );
     }
     
-    // Single provider
     if (type === 'metamask' && window.ethereum.isMetaMask) return window.ethereum;
     if (type === 'coinbase' && window.ethereum.isCoinbaseWallet) return window.ethereum;
     
-    // Fallback to default ethereum provider
     return window.ethereum;
   };
 
@@ -81,18 +148,22 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     try {
       const accounts = await provider.request({ method: 'eth_requestAccounts' }) as string[];
       if (accounts.length > 0) {
+        const address = accounts[0];
+        await saveEvmAddress(address);
         setState(s => ({ 
           ...s, 
-          evmAddress: accounts[0], 
+          evmAddress: address, 
           evmWalletType: 'metamask',
           isConnectingEvm: false 
         }));
+        toast.success('MetaMask connected');
       }
     } catch (error) {
       console.error('MetaMask connection failed:', error);
+      toast.error('Failed to connect MetaMask');
       setState(s => ({ ...s, isConnectingEvm: false }));
     }
-  }, []);
+  }, [user?.id]);
 
   const connectCoinbaseWallet = useCallback(async () => {
     const provider = getEvmProvider('coinbase');
@@ -105,18 +176,22 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     try {
       const accounts = await provider.request({ method: 'eth_requestAccounts' }) as string[];
       if (accounts.length > 0) {
+        const address = accounts[0];
+        await saveEvmAddress(address);
         setState(s => ({ 
           ...s, 
-          evmAddress: accounts[0], 
+          evmAddress: address, 
           evmWalletType: 'coinbase',
           isConnectingEvm: false 
         }));
+        toast.success('Coinbase Wallet connected');
       }
     } catch (error) {
       console.error('Coinbase Wallet connection failed:', error);
+      toast.error('Failed to connect Coinbase Wallet');
       setState(s => ({ ...s, isConnectingEvm: false }));
     }
-  }, []);
+  }, [user?.id]);
 
   const connectPhantom = useCallback(async () => {
     if (!window.solana?.isPhantom) {
@@ -127,17 +202,21 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setState(s => ({ ...s, isConnectingSolana: true }));
     try {
       const response = await window.solana.connect();
+      const address = response.publicKey.toString();
+      await saveSolanaAddress(address);
       setState(s => ({ 
         ...s, 
-        solanaAddress: response.publicKey.toString(), 
+        solanaAddress: address, 
         solanaWalletType: 'phantom',
         isConnectingSolana: false 
       }));
+      toast.success('Phantom connected');
     } catch (error) {
       console.error('Phantom connection failed:', error);
+      toast.error('Failed to connect Phantom');
       setState(s => ({ ...s, isConnectingSolana: false }));
     }
-  }, []);
+  }, [user?.id]);
 
   const connectSolflare = useCallback(async () => {
     if (!window.solflare?.isSolflare) {
@@ -149,22 +228,28 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     try {
       await window.solflare.connect();
       if (window.solflare.publicKey) {
+        const address = window.solflare.publicKey.toString();
+        await saveSolanaAddress(address);
         setState(s => ({ 
           ...s, 
-          solanaAddress: window.solflare!.publicKey!.toString(), 
+          solanaAddress: address, 
           solanaWalletType: 'solflare',
           isConnectingSolana: false 
         }));
+        toast.success('Solflare connected');
       }
     } catch (error) {
       console.error('Solflare connection failed:', error);
+      toast.error('Failed to connect Solflare');
       setState(s => ({ ...s, isConnectingSolana: false }));
     }
-  }, []);
+  }, [user?.id]);
 
-  const disconnectEvm = useCallback(() => {
+  const disconnectEvm = useCallback(async () => {
+    await saveEvmAddress(null);
     setState(s => ({ ...s, evmAddress: null, evmWalletType: null }));
-  }, []);
+    toast.success('EVM wallet disconnected');
+  }, [user?.id]);
 
   const disconnectSolana = useCallback(async () => {
     try {
@@ -176,8 +261,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       console.error('Disconnect failed:', error);
     }
+    await saveSolanaAddress(null);
     setState(s => ({ ...s, solanaAddress: null, solanaWalletType: null }));
-  }, [state.solanaWalletType]);
+    toast.success('Solana wallet disconnected');
+  }, [state.solanaWalletType, user?.id]);
 
   return (
     <WalletContext.Provider value={{
