@@ -1,15 +1,16 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Edit, Trash2, Upload, FileText, Shield, Plus, Globe, CheckCircle, XCircle } from 'lucide-react';
+import { ArrowLeft, Edit, Trash2, Upload, FileText, Shield, Plus } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
-import { Asset, TokenDefinition, ProofOfReserveFile, ASSET_TYPE_LABELS, ASSET_TYPE_COLORS, OWNER_ENTITY_LABELS, TOKEN_MODEL_LABELS, BLOCKCHAIN_CHAIN_LABELS, BlockchainChain } from '@/types/database';
+import { Asset, TokenDefinition, ProofOfReserveFile, ASSET_TYPE_LABELS, ASSET_TYPE_COLORS, OWNER_ENTITY_LABELS } from '@/types/database';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { ProofUploadModal } from '@/components/assets/ProofUploadModal';
 import { TokenDefinitionModal } from '@/components/assets/TokenDefinitionModal';
+import { TokenDetailCard } from '@/components/assets/TokenDetailCard';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -292,66 +293,12 @@ export default function AssetDetailPage() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {tokenDefinitions.map((token) => (
-                <div key={token.id} className="bg-muted/30 rounded-lg p-4 border border-border">
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <h3 className="font-semibold text-foreground">{token.token_name}</h3>
-                      <p className="text-sm font-mono text-primary">{token.token_symbol}</p>
-                    </div>
-                    <span className="badge-gold text-xs">{TOKEN_MODEL_LABELS[token.token_model]}</span>
-                  </div>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Total Supply</span>
-                      <span className="font-mono text-foreground">{Number(token.total_supply).toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Decimals</span>
-                      <span className="font-mono text-foreground">{token.decimals}</span>
-                    </div>
-                  </div>
-
-                  {/* Web3 Fields */}
-                  <div className="mt-3 pt-3 border-t border-border space-y-2 text-sm">
-                    <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground flex items-center gap-1">
-                        <Globe className="h-3 w-3" />
-                        Blockchain
-                      </span>
-                      <span className="text-foreground">
-                        {BLOCKCHAIN_CHAIN_LABELS[(token.chain as BlockchainChain) || 'NONE']}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">Status</span>
-                      {token.deployed ? (
-                        <span className="inline-flex items-center gap-1 text-success">
-                          <CheckCircle className="h-3 w-3" />
-                          Deployed
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-muted-foreground">
-                          <XCircle className="h-3 w-3" />
-                          Not Deployed
-                        </span>
-                      )}
-                    </div>
-                    {token.contract_address && (
-                      <div className="pt-1">
-                        <p className="text-xs text-muted-foreground mb-1">Contract Address</p>
-                        <code className="text-xs bg-muted px-2 py-1 rounded font-mono block break-all">
-                          {token.contract_address}
-                        </code>
-                      </div>
-                    )}
-                  </div>
-
-                  {token.notes && (
-                    <p className="text-xs text-muted-foreground mt-3 pt-3 border-t border-border">
-                      {token.notes}
-                    </p>
-                  )}
-                </div>
+                <TokenDetailCard
+                  key={token.id}
+                  token={token}
+                  isAdmin={isAdmin}
+                  onUpdate={fetchData}
+                />
               ))}
             </div>
           )}

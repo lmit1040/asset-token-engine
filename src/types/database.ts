@@ -3,6 +3,8 @@ export type OwnerEntity = 'PERSONAL_TRUST' | 'BUSINESS_TRUST' | 'SPV_LLC';
 export type TokenModel = 'ONE_TO_ONE' | 'FRACTIONAL' | 'VAULT_BASKET';
 export type AppRole = 'admin' | 'standard_user';
 export type BlockchainChain = 'ETHEREUM' | 'POLYGON' | 'BSC' | 'SOLANA' | 'NONE';
+export type NetworkType = 'MAINNET' | 'TESTNET' | 'NONE';
+export type DeploymentStatus = 'NOT_DEPLOYED' | 'PENDING' | 'DEPLOYED';
 
 export interface Profile {
   id: string;
@@ -55,8 +57,9 @@ export interface TokenDefinition {
   notes: string | null;
   created_at: string;
   chain: BlockchainChain;
+  network: NetworkType;
   contract_address: string | null;
-  deployed: boolean;
+  deployment_status: DeploymentStatus;
   asset?: Asset;
 }
 
@@ -107,7 +110,19 @@ export const BLOCKCHAIN_CHAIN_LABELS: Record<BlockchainChain, string> = {
   POLYGON: 'Polygon',
   BSC: 'BNB Smart Chain',
   SOLANA: 'Solana',
-  NONE: 'Not Deployed',
+  NONE: 'Not Selected',
+};
+
+export const NETWORK_TYPE_LABELS: Record<NetworkType, string> = {
+  MAINNET: 'Mainnet',
+  TESTNET: 'Testnet',
+  NONE: 'Not Selected',
+};
+
+export const DEPLOYMENT_STATUS_LABELS: Record<DeploymentStatus, string> = {
+  NOT_DEPLOYED: 'Not Deployed',
+  PENDING: 'Pending',
+  DEPLOYED: 'Deployed',
 };
 
 export const ASSET_TYPE_COLORS: Record<AssetType, string> = {
