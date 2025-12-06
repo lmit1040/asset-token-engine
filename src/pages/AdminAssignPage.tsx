@@ -81,6 +81,25 @@ export default function AdminAssignPage() {
         .eq('token_definition_id', selectedTokenId)
         .maybeSingle();
 
+      // Get the user's wallet address based on token chain
+      const selectedUser = users.find((u) => u.id === selectedUserId);
+      const token = tokens.find((t) => t.id === selectedTokenId);
+      
+      // Determine delivery wallet based on token chain
+      let deliveryWalletAddress: string | null = null;
+      let deliveryWalletType: 'EVM' | 'SOLANA' | null = null;
+      
+      if (token) {
+        const chain = token.chain;
+        if (chain === 'ETHEREUM' || chain === 'POLYGON' || chain === 'BSC') {
+          deliveryWalletAddress = selectedUser?.evm_wallet_address || null;
+          deliveryWalletType = deliveryWalletAddress ? 'EVM' : null;
+        } else if (chain === 'SOLANA') {
+          deliveryWalletAddress = selectedUser?.solana_wallet_address || null;
+          deliveryWalletType = deliveryWalletAddress ? 'SOLANA' : null;
+        }
+      }
+
       if (existingHolding) {
         // Update existing holding
         const newBalance = Number(existingHolding.balance) + assignAmount;
@@ -90,6 +109,8 @@ export default function AdminAssignPage() {
             balance: newBalance,
             assigned_by: currentUser.id,
             assigned_at: new Date().toISOString(),
+            delivery_wallet_address: deliveryWalletAddress,
+            delivery_wallet_type: deliveryWalletType,
           })
           .eq('id', existingHolding.id);
 
@@ -104,6 +125,8 @@ export default function AdminAssignPage() {
             token_definition_id: selectedTokenId,
             balance: assignAmount,
             assigned_by: currentUser.id,
+            delivery_wallet_address: deliveryWalletAddress,
+            delivery_wallet_type: deliveryWalletType,
           });
 
         if (error) throw error;
@@ -111,8 +134,6 @@ export default function AdminAssignPage() {
       }
 
       // Log the activity
-      const selectedUser = users.find((u) => u.id === selectedUserId);
-      const token = tokens.find((t) => t.id === selectedTokenId);
       
       await logActivity({
         actionType: 'tokens_assigned',

@@ -242,6 +242,8 @@ export type Database = {
           assigned_at: string
           assigned_by: string | null
           balance: number
+          delivery_wallet_address: string | null
+          delivery_wallet_type: string | null
           id: string
           token_definition_id: string
           user_id: string
@@ -250,6 +252,8 @@ export type Database = {
           assigned_at?: string
           assigned_by?: string | null
           balance?: number
+          delivery_wallet_address?: string | null
+          delivery_wallet_type?: string | null
           id?: string
           token_definition_id: string
           user_id: string
@@ -258,6 +262,8 @@ export type Database = {
           assigned_at?: string
           assigned_by?: string | null
           balance?: number
+          delivery_wallet_address?: string | null
+          delivery_wallet_type?: string | null
           id?: string
           token_definition_id?: string
           user_id?: string

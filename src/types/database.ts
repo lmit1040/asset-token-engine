@@ -10,6 +10,8 @@ export interface Profile {
   id: string;
   email: string;
   name: string | null;
+  evm_wallet_address: string | null;
+  solana_wallet_address: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -70,6 +72,8 @@ export interface UserTokenHolding {
   balance: number;
   assigned_by: string | null;
   assigned_at: string;
+  delivery_wallet_address: string | null;
+  delivery_wallet_type: 'EVM' | 'SOLANA' | null;
   token_definition?: TokenDefinition;
 }
 

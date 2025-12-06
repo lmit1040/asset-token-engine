@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
-import { ExternalLink } from 'lucide-react';
+import { ExternalLink, Wallet } from 'lucide-react';
 import { Asset, TokenDefinition, UserTokenHolding, ASSET_TYPE_LABELS, ASSET_TYPE_COLORS } from '@/types/database';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface HoldingWithDetails extends UserTokenHolding {
   token_definition: TokenDefinition & { asset: Asset };
@@ -38,9 +39,9 @@ export function HoldingsTable({ holdings, isLoading }: HoldingsTableProps) {
           <tr className="table-header">
             <th className="text-left py-3 px-4">Token</th>
             <th className="text-left py-3 px-4">Balance</th>
+            <th className="text-left py-3 px-4">Delivery Wallet</th>
             <th className="text-left py-3 px-4">Backing Asset</th>
             <th className="text-left py-3 px-4">Asset Type</th>
-            <th className="text-left py-3 px-4">Storage</th>
             <th className="text-right py-3 px-4">Actions</th>
           </tr>
         </thead>
@@ -63,6 +64,30 @@ export function HoldingsTable({ holdings, isLoading }: HoldingsTableProps) {
                 </span>
               </td>
               <td className="table-cell">
+                {holding.delivery_wallet_address ? (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="flex items-center gap-2">
+                          <Wallet className="h-4 w-4 text-emerald-500" />
+                          <span className="font-mono text-xs text-foreground">
+                            {holding.delivery_wallet_address.slice(0, 6)}...{holding.delivery_wallet_address.slice(-4)}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            ({holding.delivery_wallet_type})
+                          </span>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p className="font-mono text-xs">{holding.delivery_wallet_address}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                ) : (
+                  <span className="text-muted-foreground text-sm">Not linked</span>
+                )}
+              </td>
+              <td className="table-cell">
                 <p className="text-foreground">
                   {holding.token_definition.asset?.name}
                 </p>
@@ -71,9 +96,6 @@ export function HoldingsTable({ holdings, isLoading }: HoldingsTableProps) {
                 <span className={ASSET_TYPE_COLORS[holding.token_definition.asset?.asset_type]}>
                   {ASSET_TYPE_LABELS[holding.token_definition.asset?.asset_type]}
                 </span>
-              </td>
-              <td className="table-cell text-muted-foreground">
-                {holding.token_definition.asset?.storage_location || 'N/A'}
               </td>
               <td className="table-cell text-right">
                 <Link 
