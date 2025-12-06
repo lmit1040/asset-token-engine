@@ -6,6 +6,7 @@ import {
   User, 
   Users, 
   Shield,
+  Activity,
   LogOut
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -21,6 +22,7 @@ const navigation = [
 const adminNavigation = [
   { name: 'Users', href: '/admin/users', icon: Users },
   { name: 'Assign Tokens', href: '/admin/assign', icon: Shield },
+  { name: 'Activity', href: '/admin/activity', icon: Activity },
 ];
 
 export function Sidebar() {

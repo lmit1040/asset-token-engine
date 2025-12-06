@@ -14,6 +14,39 @@ export type Database = {
   }
   public: {
     Tables: {
+      activity_logs: {
+        Row: {
+          action_type: string
+          created_at: string
+          details: Json | null
+          entity_id: string | null
+          entity_name: string | null
+          entity_type: string
+          id: string
+          performed_by: string | null
+        }
+        Insert: {
+          action_type: string
+          created_at?: string
+          details?: Json | null
+          entity_id?: string | null
+          entity_name?: string | null
+          entity_type: string
+          id?: string
+          performed_by?: string | null
+        }
+        Update: {
+          action_type?: string
+          created_at?: string
+          details?: Json | null
+          entity_id?: string | null
+          entity_name?: string | null
+          entity_type?: string
+          id?: string
+          performed_by?: string | null
+        }
+        Relationships: []
+      }
       assets: {
         Row: {
           acquisition_date: string | null
@@ -127,8 +160,11 @@ export type Database = {
       token_definitions: {
         Row: {
           asset_id: string
+          chain: Database["public"]["Enums"]["blockchain_chain"]
+          contract_address: string | null
           created_at: string
           decimals: number
+          deployed: boolean
           id: string
           notes: string | null
           token_model: Database["public"]["Enums"]["token_model"]
@@ -138,8 +174,11 @@ export type Database = {
         }
         Insert: {
           asset_id: string
+          chain?: Database["public"]["Enums"]["blockchain_chain"]
+          contract_address?: string | null
           created_at?: string
           decimals?: number
+          deployed?: boolean
           id?: string
           notes?: string | null
           token_model: Database["public"]["Enums"]["token_model"]
@@ -149,8 +188,11 @@ export type Database = {
         }
         Update: {
           asset_id?: string
+          chain?: Database["public"]["Enums"]["blockchain_chain"]
+          contract_address?: string | null
           created_at?: string
           decimals?: number
+          deployed?: boolean
           id?: string
           notes?: string | null
           token_model?: Database["public"]["Enums"]["token_model"]
@@ -243,6 +285,7 @@ export type Database = {
         | "GOLD_CERTIFICATE"
         | "SILVER_CERTIFICATE"
         | "OTHER"
+      blockchain_chain: "ETHEREUM" | "POLYGON" | "BSC" | "SOLANA" | "NONE"
       owner_entity: "PERSONAL_TRUST" | "BUSINESS_TRUST" | "SPV_LLC"
       token_model: "ONE_TO_ONE" | "FRACTIONAL" | "VAULT_BASKET"
     }
@@ -381,6 +424,7 @@ export const Constants = {
         "SILVER_CERTIFICATE",
         "OTHER",
       ],
+      blockchain_chain: ["ETHEREUM", "POLYGON", "BSC", "SOLANA", "NONE"],
       owner_entity: ["PERSONAL_TRUST", "BUSINESS_TRUST", "SPV_LLC"],
       token_model: ["ONE_TO_ONE", "FRACTIONAL", "VAULT_BASKET"],
     },

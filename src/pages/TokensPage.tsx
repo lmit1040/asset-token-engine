@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Coins, ExternalLink } from 'lucide-react';
+import { Coins, ExternalLink, Globe, CheckCircle, XCircle } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { supabase } from '@/integrations/supabase/client';
-import { TokenDefinition, Asset, TOKEN_MODEL_LABELS, ASSET_TYPE_LABELS } from '@/types/database';
+import { TokenDefinition, Asset, TOKEN_MODEL_LABELS, ASSET_TYPE_LABELS, BLOCKCHAIN_CHAIN_LABELS, BlockchainChain } from '@/types/database';
 
 interface TokenWithAsset extends TokenDefinition {
   asset: Asset;
@@ -47,6 +47,8 @@ export default function TokensPage() {
                   <th className="text-left py-3 px-4">Model</th>
                   <th className="text-left py-3 px-4">Total Supply</th>
                   <th className="text-left py-3 px-4">Backing Asset</th>
+                  <th className="text-left py-3 px-4">Blockchain</th>
+                  <th className="text-left py-3 px-4">Status</th>
                   <th className="text-right py-3 px-4">Actions</th>
                 </tr>
               </thead>
@@ -64,6 +66,32 @@ export default function TokensPage() {
                     <td className="table-cell">
                       <p className="text-foreground">{token.asset?.name}</p>
                       <p className="text-xs text-muted-foreground">{ASSET_TYPE_LABELS[token.asset?.asset_type]}</p>
+                    </td>
+                    <td className="table-cell">
+                      <div className="flex items-center gap-2">
+                        <Globe className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-sm">
+                          {BLOCKCHAIN_CHAIN_LABELS[(token.chain as BlockchainChain) || 'NONE']}
+                        </span>
+                      </div>
+                      {token.contract_address && (
+                        <p className="text-xs font-mono text-muted-foreground mt-1">
+                          {token.contract_address.slice(0, 6)}...{token.contract_address.slice(-4)}
+                        </p>
+                      )}
+                    </td>
+                    <td className="table-cell">
+                      {token.deployed ? (
+                        <span className="inline-flex items-center gap-1 text-success text-sm">
+                          <CheckCircle className="h-4 w-4" />
+                          Deployed
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-muted-foreground text-sm">
+                          <XCircle className="h-4 w-4" />
+                          Not Deployed
+                        </span>
+                      )}
                     </td>
                     <td className="table-cell text-right">
                       <Link to={`/assets/${token.asset_id}`} className="text-primary hover:underline inline-flex items-center gap-1">
