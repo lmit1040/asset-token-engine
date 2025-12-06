@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { ExternalLink, Wallet } from 'lucide-react';
+import { ExternalLink, Wallet, AlertTriangle } from 'lucide-react';
 import { Asset, TokenDefinition, UserTokenHolding, ASSET_TYPE_LABELS, ASSET_TYPE_COLORS } from '@/types/database';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
@@ -64,28 +64,56 @@ export function HoldingsTable({ holdings, isLoading }: HoldingsTableProps) {
                 </span>
               </td>
               <td className="table-cell">
-                {holding.delivery_wallet_address ? (
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div className="flex items-center gap-2">
-                          <Wallet className="h-4 w-4 text-emerald-500" />
-                          <span className="font-mono text-xs text-foreground">
-                            {holding.delivery_wallet_address.slice(0, 6)}...{holding.delivery_wallet_address.slice(-4)}
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            ({holding.delivery_wallet_type})
-                          </span>
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p className="font-mono text-xs">{holding.delivery_wallet_address}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                ) : (
-                  <span className="text-muted-foreground text-sm">Not linked</span>
-                )}
+                {(() => {
+                  const chain = holding.token_definition.chain;
+                  const isBlockchainToken = chain && chain !== 'NONE';
+                  const needsEvmWallet = chain === 'ETHEREUM' || chain === 'POLYGON' || chain === 'BSC';
+                  const needsSolanaWallet = chain === 'SOLANA';
+                  
+                  if (holding.delivery_wallet_address) {
+                    return (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div className="flex items-center gap-2">
+                              <Wallet className="h-4 w-4 text-emerald-500" />
+                              <span className="font-mono text-xs text-foreground">
+                                {holding.delivery_wallet_address.slice(0, 6)}...{holding.delivery_wallet_address.slice(-4)}
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                ({holding.delivery_wallet_type})
+                              </span>
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p className="font-mono text-xs">{holding.delivery_wallet_address}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    );
+                  } else if (isBlockchainToken) {
+                    const walletType = needsEvmWallet ? 'EVM' : needsSolanaWallet ? 'Solana' : '';
+                    return (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div className="flex items-center gap-2 text-amber-500">
+                              <AlertTriangle className="h-4 w-4" />
+                              <span className="text-xs font-medium">Wallet required</span>
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p className="text-xs">
+                              Connect a {walletType} wallet in your Profile to receive this token on-chain
+                            </p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    );
+                  } else {
+                    return <span className="text-muted-foreground text-sm">Off-chain</span>;
+                  }
+                })()}
               </td>
               <td className="table-cell">
                 <p className="text-foreground">
