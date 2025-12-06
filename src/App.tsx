@@ -11,6 +11,8 @@ import AssetsPage from "./pages/AssetsPage";
 import NewAssetPage from "./pages/NewAssetPage";
 import AssetDetailPage from "./pages/AssetDetailPage";
 import TokensPage from "./pages/TokensPage";
+import AdminUsersPage from "./pages/AdminUsersPage";
+import AdminAssignPage from "./pages/AdminAssignPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -30,6 +32,8 @@ const App = () => (
             <Route path="/assets/new" element={<NewAssetPage />} />
             <Route path="/assets/:id" element={<AssetDetailPage />} />
             <Route path="/tokens" element={<TokensPage />} />
+            <Route path="/admin/users" element={<AdminUsersPage />} />
+            <Route path="/admin/assign" element={<AdminAssignPage />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>
