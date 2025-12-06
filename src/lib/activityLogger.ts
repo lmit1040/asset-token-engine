@@ -6,7 +6,8 @@ type ActionType =
   | 'asset_updated' 
   | 'proof_uploaded' 
   | 'token_created' 
-  | 'tokens_assigned';
+  | 'tokens_assigned'
+  | 'tokens_transferred';
 
 type EntityType = 
   | 'asset' 
