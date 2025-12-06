@@ -193,7 +193,7 @@ export default function DashboardPage() {
               <p className="text-sm text-muted-foreground">Recent token assignments and transfers</p>
             </div>
           </div>
-          <TransactionHistory limit={10} />
+          <TransactionHistory pageSize={10} />
         </div>
       </div>
     </DashboardLayout>

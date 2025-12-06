@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
-import { ArrowDownRight, ArrowUpRight, Plus, History } from 'lucide-react';
+import { ArrowDownRight, ArrowUpRight, Plus, History, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { format } from 'date-fns';
 import { Json } from '@/integrations/supabase/types';
+import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface TransactionDetails {
   amount?: number;
@@ -29,14 +31,29 @@ interface Transaction {
 
 interface TransactionHistoryProps {
   userId?: string;
-  limit?: number;
+  pageSize?: number;
   showAllUsers?: boolean;
+  showFilters?: boolean;
+  compact?: boolean;
 }
 
-export function TransactionHistory({ userId, limit = 10, showAllUsers = false }: TransactionHistoryProps) {
-  const { user, isAdmin } = useAuth();
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+type FilterType = 'all' | 'assignments' | 'transfers' | 'received' | 'sent';
+
+export function TransactionHistory({ 
+  userId, 
+  pageSize = 10, 
+  showAllUsers = false,
+  showFilters = true,
+  compact = false 
+}: TransactionHistoryProps) {
+  const { user } = useAuth();
+  const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
+  const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [filterType, setFilterType] = useState<FilterType>('all');
+  const [tokenFilter, setTokenFilter] = useState<string>('all');
+  const [availableTokens, setAvailableTokens] = useState<string[]>([]);
 
   const targetUserId = userId || user?.id;
 
@@ -46,32 +63,28 @@ export function TransactionHistory({ userId, limit = 10, showAllUsers = false }:
 
       setIsLoading(true);
       try {
-        let query = supabase
+        const query = supabase
           .from('activity_logs')
           .select('*')
           .in('action_type', ['tokens_assigned', 'tokens_transferred'])
           .order('created_at', { ascending: false })
-          .limit(limit);
+          .limit(500); // Fetch more for client-side filtering
 
-        // If not showing all users, filter by user involvement
-        // We can't directly filter by JSONB in a simple way, so we fetch and filter client-side
         const { data } = await query;
 
         if (data) {
-          let filteredData = data as Transaction[];
+          let processedData = data as Transaction[];
           
           if (!showAllUsers && targetUserId) {
             // Filter transactions where user is involved
-            filteredData = filteredData.filter((tx) => {
+            processedData = processedData.filter((tx) => {
               const details = tx.details as TransactionDetails | null;
               if (!details) return false;
               
-              // Check if user is the receiver of an assignment
               if (tx.action_type === 'tokens_assigned' && details.user_id === targetUserId) {
                 return true;
               }
               
-              // Check if user is sender or receiver of a transfer
               if (tx.action_type === 'tokens_transferred') {
                 return details.from_user_id === targetUserId || details.to_user_id === targetUserId;
               }
@@ -80,7 +93,17 @@ export function TransactionHistory({ userId, limit = 10, showAllUsers = false }:
             });
           }
 
-          setTransactions(filteredData.slice(0, limit));
+          // Extract unique tokens for filter
+          const tokens = new Set<string>();
+          processedData.forEach((tx) => {
+            const details = tx.details as TransactionDetails | null;
+            if (details?.token_symbol) {
+              tokens.add(details.token_symbol);
+            }
+          });
+          setAvailableTokens(Array.from(tokens).sort());
+
+          setAllTransactions(processedData);
         }
       } catch (error) {
         console.error('Error fetching transactions:', error);
@@ -90,7 +113,49 @@ export function TransactionHistory({ userId, limit = 10, showAllUsers = false }:
     }
 
     fetchTransactions();
-  }, [targetUserId, limit, showAllUsers]);
+  }, [targetUserId, showAllUsers]);
+
+  // Apply filters
+  useEffect(() => {
+    let filtered = [...allTransactions];
+
+    // Filter by type
+    if (filterType !== 'all') {
+      filtered = filtered.filter((tx) => {
+        const details = tx.details as TransactionDetails | null;
+        
+        switch (filterType) {
+          case 'assignments':
+            return tx.action_type === 'tokens_assigned';
+          case 'transfers':
+            return tx.action_type === 'tokens_transferred';
+          case 'received':
+            if (tx.action_type === 'tokens_assigned') return true;
+            if (tx.action_type === 'tokens_transferred' && details?.to_user_id === targetUserId) return true;
+            return false;
+          case 'sent':
+            return tx.action_type === 'tokens_transferred' && details?.from_user_id === targetUserId;
+          default:
+            return true;
+        }
+      });
+    }
+
+    // Filter by token
+    if (tokenFilter !== 'all') {
+      filtered = filtered.filter((tx) => {
+        const details = tx.details as TransactionDetails | null;
+        return details?.token_symbol === tokenFilter;
+      });
+    }
+
+    setFilteredTransactions(filtered);
+    setCurrentPage(1); // Reset to first page when filters change
+  }, [allTransactions, filterType, tokenFilter, targetUserId]);
+
+  const totalPages = Math.ceil(filteredTransactions.length / pageSize);
+  const startIndex = (currentPage - 1) * pageSize;
+  const paginatedTransactions = filteredTransactions.slice(startIndex, startIndex + pageSize);
 
   const getTransactionIcon = (tx: Transaction) => {
     const details = tx.details as TransactionDetails | null;
@@ -160,7 +225,7 @@ export function TransactionHistory({ userId, limit = 10, showAllUsers = false }:
     );
   }
 
-  if (transactions.length === 0) {
+  if (allTransactions.length === 0) {
     return (
       <div className="text-center py-8">
         <History className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
@@ -170,44 +235,156 @@ export function TransactionHistory({ userId, limit = 10, showAllUsers = false }:
   }
 
   return (
-    <div className="space-y-3">
-      {transactions.map((tx) => {
-        const details = tx.details as TransactionDetails | null;
-        const isOutgoing = tx.action_type === 'tokens_transferred' && details?.from_user_id === targetUserId;
-        
-        return (
-          <div
-            key={tx.id}
-            className="flex items-center gap-4 p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
-          >
-            <div className={`h-10 w-10 rounded-full flex items-center justify-center ${
-              isOutgoing ? 'bg-destructive/10' : 'bg-success/10'
-            }`}>
-              {getTransactionIcon(tx)}
-            </div>
-            
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-foreground truncate">
-                {getTransactionDescription(tx)}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {format(new Date(tx.created_at), 'MMM d, yyyy • h:mm a')}
-              </p>
-            </div>
-            
-            <div className="text-right">
-              <p className={`text-sm font-mono font-medium ${
-                isOutgoing ? 'text-destructive' : 'text-success'
-              }`}>
-                {isOutgoing ? '-' : '+'}{details?.amount?.toLocaleString() || 0}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {getTransactionType(tx)}
-              </p>
-            </div>
+    <div className="space-y-4">
+      {/* Filters */}
+      {showFilters && (
+        <div className="flex flex-wrap gap-3 items-center">
+          <div className="flex items-center gap-2">
+            <Filter className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">Filter:</span>
           </div>
-        );
-      })}
+          
+          <Select value={filterType} onValueChange={(v) => setFilterType(v as FilterType)}>
+            <SelectTrigger className="w-[140px] h-9 input-dark">
+              <SelectValue placeholder="Type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Types</SelectItem>
+              <SelectItem value="assignments">Assignments</SelectItem>
+              <SelectItem value="transfers">Transfers</SelectItem>
+              <SelectItem value="received">Received</SelectItem>
+              <SelectItem value="sent">Sent</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {availableTokens.length > 0 && (
+            <Select value={tokenFilter} onValueChange={setTokenFilter}>
+              <SelectTrigger className="w-[130px] h-9 input-dark">
+                <SelectValue placeholder="Token" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Tokens</SelectItem>
+                {availableTokens.map((token) => (
+                  <SelectItem key={token} value={token}>
+                    {token}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+
+          <span className="text-xs text-muted-foreground ml-auto">
+            {filteredTransactions.length} transaction{filteredTransactions.length !== 1 ? 's' : ''}
+          </span>
+        </div>
+      )}
+
+      {/* Transactions List */}
+      {paginatedTransactions.length === 0 ? (
+        <div className="text-center py-8">
+          <p className="text-muted-foreground text-sm">No transactions match the selected filters.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {paginatedTransactions.map((tx) => {
+            const details = tx.details as TransactionDetails | null;
+            const isOutgoing = tx.action_type === 'tokens_transferred' && details?.from_user_id === targetUserId;
+            
+            return (
+              <div
+                key={tx.id}
+                className={`flex items-center gap-4 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors ${
+                  compact ? 'p-2' : 'p-3'
+                }`}
+              >
+                <div className={`rounded-full flex items-center justify-center ${
+                  isOutgoing ? 'bg-destructive/10' : 'bg-success/10'
+                } ${compact ? 'h-8 w-8' : 'h-10 w-10'}`}>
+                  {getTransactionIcon(tx)}
+                </div>
+                
+                <div className="flex-1 min-w-0">
+                  <p className={`font-medium text-foreground truncate ${compact ? 'text-xs' : 'text-sm'}`}>
+                    {getTransactionDescription(tx)}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {format(new Date(tx.created_at), compact ? 'MMM d, yyyy' : 'MMM d, yyyy • h:mm a')}
+                  </p>
+                </div>
+                
+                <div className="text-right">
+                  <p className={`font-mono font-medium ${
+                    isOutgoing ? 'text-destructive' : 'text-success'
+                  } ${compact ? 'text-xs' : 'text-sm'}`}>
+                    {isOutgoing ? '-' : '+'}{details?.amount?.toLocaleString() || 0}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {getTransactionType(tx)}
+                  </p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between pt-4 border-t border-border">
+          <p className="text-sm text-muted-foreground">
+            Page {currentPage} of {totalPages}
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Previous
+            </Button>
+            
+            {/* Page numbers */}
+            <div className="hidden sm:flex items-center gap-1">
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                let pageNum: number;
+                if (totalPages <= 5) {
+                  pageNum = i + 1;
+                } else if (currentPage <= 3) {
+                  pageNum = i + 1;
+                } else if (currentPage >= totalPages - 2) {
+                  pageNum = totalPages - 4 + i;
+                } else {
+                  pageNum = currentPage - 2 + i;
+                }
+                
+                return (
+                  <Button
+                    key={pageNum}
+                    variant={currentPage === pageNum ? 'default' : 'ghost'}
+                    size="sm"
+                    className="w-9 h-9"
+                    onClick={() => setCurrentPage(pageNum)}
+                  >
+                    {pageNum}
+                  </Button>
+                );
+              })}
+            </div>
+            
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+            >
+              Next
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
