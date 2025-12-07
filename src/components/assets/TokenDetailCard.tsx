@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Globe, CheckCircle, XCircle, Rocket, ExternalLink, Send, Wallet } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Globe, CheckCircle, XCircle, Rocket, ExternalLink, Send, Wallet, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
@@ -8,6 +8,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useWallet } from '@/hooks/useWallet';
+import { useSolanaBalances } from '@/hooks/useSolanaBalances';
 import { 
   TokenDefinition, 
   TOKEN_MODEL_LABELS, 
@@ -29,6 +30,7 @@ export function TokenDetailCard({ token, isAdmin, onUpdate }: TokenDetailCardPro
   const [selectedChain, setSelectedChain] = useState<BlockchainChain>((token.chain as BlockchainChain) || 'NONE');
   const [selectedNetwork, setSelectedNetwork] = useState<NetworkType>((token.network as NetworkType) || 'NONE');
   const { solanaAddress, connectPhantom, isConnectingSolana } = useWallet();
+  const { fetchBalances, getBalance, isLoading: isLoadingBalance } = useSolanaBalances();
 
   // Send tokens state
   const [sendAmount, setSendAmount] = useState('');
@@ -36,6 +38,9 @@ export function TokenDetailCard({ token, isAdmin, onUpdate }: TokenDetailCardPro
   const [customAddress, setCustomAddress] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [lastTxSignature, setLastTxSignature] = useState<string | null>(null);
+  
+  // Treasury balance state
+  const [treasuryBalance, setTreasuryBalance] = useState<number | null>(null);
 
   const deploymentStatus = token.deployment_status as DeploymentStatus;
   const canDeploy = selectedChain !== 'NONE' && selectedNetwork !== 'NONE' && deploymentStatus === 'NOT_DEPLOYED';
@@ -43,6 +48,25 @@ export function TokenDetailCard({ token, isAdmin, onUpdate }: TokenDetailCardPro
   const isPending = deploymentStatus === 'PENDING';
   const isSolanaTestnet = selectedChain === 'SOLANA' && selectedNetwork === 'TESTNET';
   const canSendTokens = isAdmin && isDeployed && token.chain === 'SOLANA' && token.network === 'TESTNET';
+
+  // Fetch treasury balance when token is deployed with a treasury account
+  const fetchTreasuryBalance = useCallback(async () => {
+    if (!token.treasury_account || !token.contract_address || !isDeployed) return;
+    
+    await fetchBalances(token.treasury_account, [token.contract_address]);
+  }, [token.treasury_account, token.contract_address, isDeployed, fetchBalances]);
+
+  useEffect(() => {
+    fetchTreasuryBalance();
+  }, [fetchTreasuryBalance]);
+
+  // Update treasury balance when balances change
+  useEffect(() => {
+    if (token.contract_address) {
+      const balance = getBalance(token.contract_address);
+      setTreasuryBalance(balance?.balance ?? null);
+    }
+  }, [token.contract_address, getBalance]);
 
   const generateMockContractAddress = () => {
     const chars = '0123456789abcdef';
@@ -422,7 +446,19 @@ export function TokenDetailCard({ token, isAdmin, onUpdate }: TokenDetailCardPro
 
         {token.treasury_account && (
           <div className="pt-2">
-            <p className="text-xs text-muted-foreground mb-1">Treasury Account</p>
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-xs text-muted-foreground">Treasury Account</p>
+              {isDeployed && token.chain === 'SOLANA' && (
+                <button
+                  onClick={fetchTreasuryBalance}
+                  disabled={isLoadingBalance}
+                  className="text-xs text-primary hover:underline flex items-center gap-1 disabled:opacity-50"
+                >
+                  <RefreshCw className={`h-3 w-3 ${isLoadingBalance ? 'animate-spin' : ''}`} />
+                  Refresh
+                </button>
+              )}
+            </div>
             <a
               href={getExplorerUrl(token.treasury_account)}
               target="_blank"
@@ -432,6 +468,20 @@ export function TokenDetailCard({ token, isAdmin, onUpdate }: TokenDetailCardPro
               {token.treasury_account}
               <ExternalLink className="h-3 w-3 flex-shrink-0" />
             </a>
+            {isDeployed && token.chain === 'SOLANA' && (
+              <div className="mt-2 flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">On-chain Balance:</span>
+                {isLoadingBalance ? (
+                  <div className="h-3 w-3 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                ) : treasuryBalance !== null ? (
+                  <span className="text-sm font-mono font-semibold text-primary">
+                    {treasuryBalance.toLocaleString()} {token.token_symbol}
+                  </span>
+                ) : (
+                  <span className="text-xs text-muted-foreground">--</span>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
