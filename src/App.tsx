@@ -18,6 +18,7 @@ import AdminUsersPage from "./pages/AdminUsersPage";
 import AdminAssignPage from "./pages/AdminAssignPage";
 import AdminTransferPage from "./pages/AdminTransferPage";
 import AdminActivityPage from "./pages/AdminActivityPage";
+import AdminDeliverPage from "./pages/AdminDeliverPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -43,6 +44,7 @@ const App = () => (
               <Route path="/admin/users" element={<AdminUsersPage />} />
               <Route path="/admin/assign" element={<AdminAssignPage />} />
               <Route path="/admin/transfer" element={<AdminTransferPage />} />
+              <Route path="/admin/deliver" element={<AdminDeliverPage />} />
               <Route path="/admin/activity" element={<AdminActivityPage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
