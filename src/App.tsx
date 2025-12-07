@@ -19,6 +19,7 @@ import AdminAssignPage from "./pages/AdminAssignPage";
 import AdminTransferPage from "./pages/AdminTransferPage";
 import AdminActivityPage from "./pages/AdminActivityPage";
 import AdminDeliverPage from "./pages/AdminDeliverPage";
+import StakingPage from "./pages/StakingPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -40,6 +41,7 @@ const App = () => (
               <Route path="/assets/:id/edit" element={<EditAssetPage />} />
               <Route path="/assets/:id" element={<AssetDetailPage />} />
               <Route path="/tokens" element={<TokensPage />} />
+              <Route path="/staking" element={<StakingPage />} />
               <Route path="/profile" element={<ProfilePage />} />
               <Route path="/admin/users" element={<AdminUsersPage />} />
               <Route path="/admin/assign" element={<AdminAssignPage />} />
