@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.send-treasury-tokens]
 verify_jwt = false
+
+[functions.get-solana-balances]
+verify_jwt = false

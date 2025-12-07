@@ -1,12 +1,15 @@
-import { useEffect, useState } from 'react';
-import { Vault, Coins, TrendingUp, DollarSign, History } from 'lucide-react';
+import { useEffect, useState, useCallback } from 'react';
+import { Vault, Coins, TrendingUp, DollarSign, History, RefreshCw } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { StatCard } from '@/components/dashboard/StatCard';
 import { HoldingsTable } from '@/components/dashboard/HoldingsTable';
 import { PortfolioChart } from '@/components/dashboard/PortfolioChart';
 import { TransactionHistory } from '@/components/dashboard/TransactionHistory';
+import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { useWallet } from '@/hooks/useWallet';
+import { useSolanaBalances } from '@/hooks/useSolanaBalances';
 import { Asset, TokenDefinition, UserTokenHolding, AssetType, ASSET_PRICES } from '@/types/database';
 
 interface HoldingWithDetails extends UserTokenHolding {
@@ -21,12 +24,16 @@ interface ChartData {
 
 export default function DashboardPage() {
   const { user } = useAuth();
+  const { solanaAddress } = useWallet();
+  const { balances: onChainBalances, fetchBalances, isLoading: isLoadingBalances } = useSolanaBalances();
+  
   const [holdings, setHoldings] = useState<HoldingWithDetails[]>([]);
   const [stats, setStats] = useState({
     totalAssets: 0,
     totalTokenTypes: 0,
     totalHoldings: 0,
     portfolioValue: 0,
+    onChainValue: 0,
   });
   const [chartData, setChartData] = useState<ChartData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -111,6 +118,24 @@ export default function DashboardPage() {
     fetchData();
   }, [user]);
 
+  // Fetch on-chain balances when holdings change or wallet connects
+  const fetchOnChainBalances = useCallback(async () => {
+    if (!solanaAddress || holdings.length === 0) return;
+    
+    // Get all deployed Solana token mints from holdings
+    const solanaMints = holdings
+      .filter(h => h.token_definition.chain === 'SOLANA' && h.token_definition.deployment_status === 'DEPLOYED' && h.token_definition.contract_address)
+      .map(h => h.token_definition.contract_address as string);
+    
+    if (solanaMints.length > 0) {
+      await fetchBalances(solanaAddress, solanaMints);
+    }
+  }, [solanaAddress, holdings, fetchBalances]);
+
+  useEffect(() => {
+    fetchOnChainBalances();
+  }, [fetchOnChainBalances]);
+
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -173,12 +198,29 @@ export default function DashboardPage() {
               <div>
                 <h2 className="text-lg font-semibold text-foreground">Your Token Holdings</h2>
                 <p className="text-sm text-muted-foreground">
-                  View your tokenized asset positions and their backing
+                  View your tokenized asset positions and on-chain balances
                 </p>
               </div>
+              {solanaAddress && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={fetchOnChainBalances}
+                  disabled={isLoadingBalances}
+                  className="flex items-center gap-2"
+                >
+                  <RefreshCw className={`h-4 w-4 ${isLoadingBalances ? 'animate-spin' : ''}`} />
+                  Refresh
+                </Button>
+              )}
             </div>
             
-            <HoldingsTable holdings={holdings} isLoading={isLoading} />
+            <HoldingsTable 
+              holdings={holdings} 
+              isLoading={isLoading} 
+              onChainBalances={onChainBalances}
+              isLoadingBalances={isLoadingBalances}
+            />
           </div>
         </div>
 

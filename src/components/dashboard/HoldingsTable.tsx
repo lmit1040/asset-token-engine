@@ -1,7 +1,14 @@
 import { Link } from 'react-router-dom';
-import { ExternalLink, Wallet, AlertTriangle } from 'lucide-react';
+import { ExternalLink, Wallet, AlertTriangle, CheckCircle, Clock } from 'lucide-react';
 import { Asset, TokenDefinition, UserTokenHolding, ASSET_TYPE_LABELS, ASSET_TYPE_COLORS } from '@/types/database';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+
+interface TokenBalance {
+  mint: string;
+  balance: number;
+  rawBalance: string;
+  decimals: number;
+}
 
 interface HoldingWithDetails extends UserTokenHolding {
   token_definition: TokenDefinition & { asset: Asset };
@@ -10,9 +17,30 @@ interface HoldingWithDetails extends UserTokenHolding {
 interface HoldingsTableProps {
   holdings: HoldingWithDetails[];
   isLoading: boolean;
+  onChainBalances?: Record<string, TokenBalance>;
+  isLoadingBalances?: boolean;
 }
 
-export function HoldingsTable({ holdings, isLoading }: HoldingsTableProps) {
+export function HoldingsTable({ holdings, isLoading, onChainBalances, isLoadingBalances }: HoldingsTableProps) {
+  const getOnChainStatus = (holding: HoldingWithDetails) => {
+    const mint = holding.token_definition.contract_address;
+    if (!mint || !onChainBalances) return null;
+    
+    const onChainBalance = onChainBalances[mint];
+    if (!onChainBalance) return null;
+    
+    const offChainBalance = Number(holding.balance);
+    const chainBalance = onChainBalance.balance;
+    
+    if (chainBalance >= offChainBalance) {
+      return { status: 'synced', balance: chainBalance };
+    } else if (chainBalance > 0) {
+      return { status: 'partial', balance: chainBalance, pending: offChainBalance - chainBalance };
+    } else {
+      return { status: 'pending', balance: 0, pending: offChainBalance };
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -39,9 +67,9 @@ export function HoldingsTable({ holdings, isLoading }: HoldingsTableProps) {
           <tr className="table-header">
             <th className="text-left py-3 px-4">Token</th>
             <th className="text-left py-3 px-4">Balance</th>
+            <th className="text-left py-3 px-4">On-chain</th>
             <th className="text-left py-3 px-4">Delivery Wallet</th>
             <th className="text-left py-3 px-4">Backing Asset</th>
-            <th className="text-left py-3 px-4">Asset Type</th>
             <th className="text-right py-3 px-4">Actions</th>
           </tr>
         </thead>
@@ -66,6 +94,67 @@ export function HoldingsTable({ holdings, isLoading }: HoldingsTableProps) {
               <td className="table-cell">
                 {(() => {
                   const chain = holding.token_definition.chain;
+                  const isBlockchainToken = chain && chain !== 'NONE' && holding.token_definition.deployment_status === 'DEPLOYED';
+                  
+                  if (!isBlockchainToken) {
+                    return <span className="text-muted-foreground text-sm">Off-chain only</span>;
+                  }
+                  
+                  if (isLoadingBalances) {
+                    return (
+                      <div className="h-4 w-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                    );
+                  }
+                  
+                  const status = getOnChainStatus(holding);
+                  if (!status) {
+                    return <span className="text-muted-foreground text-sm">--</span>;
+                  }
+                  
+                  if (status.status === 'synced') {
+                    return (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div className="flex items-center gap-2">
+                              <CheckCircle className="h-4 w-4 text-emerald-500" />
+                              <span className="font-mono text-sm text-emerald-500">
+                                {status.balance.toLocaleString()}
+                              </span>
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p className="text-xs">Fully synced on-chain (Devnet)</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    );
+                  } else {
+                    return (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div className="flex items-center gap-2">
+                              <Clock className="h-4 w-4 text-amber-500" />
+                              <span className="font-mono text-sm text-foreground">
+                                {status.balance.toLocaleString()}
+                              </span>
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p className="text-xs">
+                              {status.pending?.toLocaleString()} tokens pending delivery
+                            </p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    );
+                  }
+                })()}
+              </td>
+              <td className="table-cell">
+                {(() => {
+                  const chain = holding.token_definition.chain;
                   const isBlockchainToken = chain && chain !== 'NONE';
                   const needsEvmWallet = chain === 'ETHEREUM' || chain === 'POLYGON' || chain === 'BSC';
                   const needsSolanaWallet = chain === 'SOLANA';
@@ -79,9 +168,6 @@ export function HoldingsTable({ holdings, isLoading }: HoldingsTableProps) {
                               <Wallet className="h-4 w-4 text-emerald-500" />
                               <span className="font-mono text-xs text-foreground">
                                 {holding.delivery_wallet_address.slice(0, 6)}...{holding.delivery_wallet_address.slice(-4)}
-                              </span>
-                              <span className="text-xs text-muted-foreground">
-                                ({holding.delivery_wallet_type})
                               </span>
                             </div>
                           </TooltipTrigger>
@@ -99,19 +185,19 @@ export function HoldingsTable({ holdings, isLoading }: HoldingsTableProps) {
                           <TooltipTrigger asChild>
                             <div className="flex items-center gap-2 text-amber-500">
                               <AlertTriangle className="h-4 w-4" />
-                              <span className="text-xs font-medium">Wallet required</span>
+                              <span className="text-xs font-medium">Required</span>
                             </div>
                           </TooltipTrigger>
                           <TooltipContent>
                             <p className="text-xs">
-                              Connect a {walletType} wallet in your Profile to receive this token on-chain
+                              Connect a {walletType} wallet in your Profile
                             </p>
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
                     );
                   } else {
-                    return <span className="text-muted-foreground text-sm">Off-chain</span>;
+                    return <span className="text-muted-foreground text-sm">--</span>;
                   }
                 })()}
               </td>
@@ -119,11 +205,6 @@ export function HoldingsTable({ holdings, isLoading }: HoldingsTableProps) {
                 <p className="text-foreground">
                   {holding.token_definition.asset?.name}
                 </p>
-              </td>
-              <td className="table-cell">
-                <span className={ASSET_TYPE_COLORS[holding.token_definition.asset?.asset_type]}>
-                  {ASSET_TYPE_LABELS[holding.token_definition.asset?.asset_type]}
-                </span>
               </td>
               <td className="table-cell text-right">
                 <Link 
