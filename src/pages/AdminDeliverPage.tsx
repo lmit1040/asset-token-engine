@@ -34,20 +34,35 @@ export default function AdminDeliverPage() {
   async function fetchHoldings() {
     setIsLoading(true);
     try {
-      const { data, error } = await supabase
+      // Fetch holdings with token data
+      const { data: holdingsData, error: holdingsError } = await supabase
         .from('user_token_holdings')
         .select(`
           *,
-          token_definition:token_definitions!token_definition_id(*, asset:assets(*)),
-          user:profiles!user_id(*)
+          token_definition:token_definitions(*, asset:assets(*))
         `)
         .gt('balance', 0)
         .order('assigned_at', { ascending: false });
 
-      if (error) throw error;
-      if (data) {
-        setHoldings(data as unknown as HoldingWithDetails[]);
-      }
+      if (holdingsError) throw holdingsError;
+
+      // Fetch all profiles separately
+      const { data: profilesData, error: profilesError } = await supabase
+        .from('profiles')
+        .select('*');
+
+      if (profilesError) throw profilesError;
+
+      // Create a map for quick profile lookup
+      const profilesMap = new Map(profilesData?.map(p => [p.id, p]) || []);
+
+      // Merge holdings with user profiles
+      const mergedHoldings = holdingsData?.map(holding => ({
+        ...holding,
+        user: profilesMap.get(holding.user_id) || { id: holding.user_id, email: 'Unknown', name: null }
+      })) || [];
+
+      setHoldings(mergedHoldings as unknown as HoldingWithDetails[]);
     } catch (error) {
       console.error('Error fetching holdings:', error);
       toast.error('Failed to load holdings');
