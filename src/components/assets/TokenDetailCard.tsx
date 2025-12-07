@@ -193,10 +193,12 @@ export function TokenDetailCard({ token, isAdmin, onUpdate }: TokenDetailCardPro
 
   const hasConfigChanged = selectedChain !== (token.chain as BlockchainChain) || selectedNetwork !== (token.network as NetworkType);
 
-  const getExplorerUrl = (address: string) => {
+  const getExplorerUrl = (address: string, isToken: boolean = false) => {
     if (token.chain === 'SOLANA') {
-      const cluster = token.network === 'TESTNET' ? 'devnet' : 'mainnet';
-      return `https://explorer.solana.com/address/${address}?cluster=${cluster}`;
+      const cluster = token.network === 'TESTNET' ? 'devnet' : 'mainnet-beta';
+      // Use Solscan for better token display
+      const type = isToken ? 'token' : 'account';
+      return `https://solscan.io/${type}/${address}?cluster=${cluster}`;
     }
     // Default for EVM chains (can be extended)
     return `https://etherscan.io/address/${address}`;
@@ -341,7 +343,7 @@ export function TokenDetailCard({ token, isAdmin, onUpdate }: TokenDetailCardPro
           <div className="pt-2">
             <p className="text-xs text-muted-foreground mb-1">Contract Address (Mint)</p>
             <a
-              href={getExplorerUrl(token.contract_address)}
+              href={getExplorerUrl(token.contract_address, true)}
               target="_blank"
               rel="noopener noreferrer"
               className="text-xs bg-muted px-2 py-1 rounded font-mono break-all flex items-center gap-1 hover:bg-muted/80 transition-colors"
