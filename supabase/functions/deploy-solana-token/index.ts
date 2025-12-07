@@ -72,10 +72,10 @@ const handler = async (req: Request): Promise<Response> => {
       );
     }
 
-    if (tokenDef.deployment_status !== 'NOT_DEPLOYED') {
-      console.error('Token already deployed or pending');
+    if (tokenDef.deployment_status === 'DEPLOYED') {
+      console.error('Token already deployed');
       return new Response(
-        JSON.stringify({ error: 'Token is already deployed or deployment is pending' }),
+        JSON.stringify({ error: 'Token is already deployed' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
