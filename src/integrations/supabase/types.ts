@@ -92,6 +92,41 @@ export type Database = {
         }
         Relationships: []
       }
+      fee_discount_tiers: {
+        Row: {
+          created_at: string
+          discount_percentage: number
+          id: string
+          min_balance: number
+          tier_name: string
+          token_definition_id: string
+        }
+        Insert: {
+          created_at?: string
+          discount_percentage: number
+          id?: string
+          min_balance: number
+          tier_name: string
+          token_definition_id: string
+        }
+        Update: {
+          created_at?: string
+          discount_percentage?: number
+          id?: string
+          min_balance?: number
+          tier_name?: string
+          token_definition_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fee_discount_tiers_token_definition_id_fkey"
+            columns: ["token_definition_id"]
+            isOneToOne: false
+            referencedRelation: "token_definitions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           created_at: string
@@ -159,6 +194,50 @@ export type Database = {
             columns: ["asset_id"]
             isOneToOne: false
             referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      staking_pools: {
+        Row: {
+          apy_percentage: number
+          created_at: string
+          id: string
+          is_active: boolean
+          lock_period_days: number
+          min_stake_amount: number
+          pool_name: string
+          token_definition_id: string
+          total_staked: number
+        }
+        Insert: {
+          apy_percentage?: number
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          lock_period_days?: number
+          min_stake_amount?: number
+          pool_name: string
+          token_definition_id: string
+          total_staked?: number
+        }
+        Update: {
+          apy_percentage?: number
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          lock_period_days?: number
+          min_stake_amount?: number
+          pool_name?: string
+          token_definition_id?: string
+          total_staked?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "staking_pools_token_definition_id_fkey"
+            columns: ["token_definition_id"]
+            isOneToOne: false
+            referencedRelation: "token_definitions"
             referencedColumns: ["id"]
           },
         ]
@@ -239,6 +318,50 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      user_stakes: {
+        Row: {
+          id: string
+          is_active: boolean
+          last_reward_calculation: string
+          rewards_earned: number
+          staked_amount: number
+          staked_at: string
+          staking_pool_id: string
+          unlock_at: string | null
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          is_active?: boolean
+          last_reward_calculation?: string
+          rewards_earned?: number
+          staked_amount?: number
+          staked_at?: string
+          staking_pool_id: string
+          unlock_at?: string | null
+          user_id: string
+        }
+        Update: {
+          id?: string
+          is_active?: boolean
+          last_reward_calculation?: string
+          rewards_earned?: number
+          staked_amount?: number
+          staked_at?: string
+          staking_pool_id?: string
+          unlock_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_stakes_staking_pool_id_fkey"
+            columns: ["staking_pool_id"]
+            isOneToOne: false
+            referencedRelation: "staking_pools"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_token_holdings: {
         Row: {
