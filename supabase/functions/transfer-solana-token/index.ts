@@ -50,13 +50,12 @@ const handler = async (req: Request): Promise<Response> => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Fetch the holding with token definition and user profile
+    // Fetch the holding with token definition (separate query for user profile)
     const { data: holding, error: holdingError } = await supabase
       .from('user_token_holdings')
       .select(`
         *,
-        token_definition:token_definitions(*),
-        user:profiles(*)
+        token_definition:token_definitions(*)
       `)
       .eq('id', holdingId)
       .single();
@@ -69,10 +68,25 @@ const handler = async (req: Request): Promise<Response> => {
       );
     }
 
+    // Fetch user profile separately
+    const { data: user, error: userError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', holding.user_id)
+      .single();
+
+    if (userError || !user) {
+      console.error('User profile not found:', userError);
+      return new Response(
+        JSON.stringify({ error: 'User profile not found' }),
+        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     console.log('Holding found:', JSON.stringify(holding, null, 2));
+    console.log('User found:', user.email);
 
     const tokenDef = holding.token_definition;
-    const user = holding.user;
 
     // Validate token is deployed on Solana
     if (tokenDef.chain !== 'SOLANA') {
