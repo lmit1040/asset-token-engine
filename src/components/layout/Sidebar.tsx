@@ -8,6 +8,7 @@ import {
   Shield,
   Activity,
   RefreshCw,
+  Send,
   LogOut
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -24,6 +25,7 @@ const adminNavigation = [
   { name: 'Users', href: '/admin/users', icon: Users },
   { name: 'Assign Tokens', href: '/admin/assign', icon: Shield },
   { name: 'Transfer Tokens', href: '/admin/transfer', icon: RefreshCw },
+  { name: 'On-Chain Delivery', href: '/admin/deliver', icon: Send },
   { name: 'Activity', href: '/admin/activity', icon: Activity },
 ];
 
