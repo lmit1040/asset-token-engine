@@ -38,8 +38,8 @@ export default function AdminDeliverPage() {
         .from('user_token_holdings')
         .select(`
           *,
-          token_definition:token_definitions(*, asset:assets(*)),
-          user:profiles(*)
+          token_definition:token_definitions!token_definition_id(*, asset:assets(*)),
+          user:profiles!user_id(*)
         `)
         .gt('balance', 0)
         .order('assigned_at', { ascending: false });
