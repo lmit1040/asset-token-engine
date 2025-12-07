@@ -1,7 +1,22 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
-import { Connection, Keypair, PublicKey, Transaction, sendAndConfirmTransaction, SystemProgram } from "https://esm.sh/@solana/web3.js@1.98.0";
-import { createInitializeMint2Instruction, createAssociatedTokenAccountInstruction, MINT_SIZE, TOKEN_PROGRAM_ID, getMinimumBalanceForRentExemptMint, getAssociatedTokenAddressSync } from "https://esm.sh/@solana/spl-token@0.4.9?deps=@solana/web3.js@1.98.0";
+import { 
+  Connection, 
+  Keypair, 
+  PublicKey, 
+  Transaction, 
+  sendAndConfirmTransaction, 
+  SystemProgram
+} from "https://esm.sh/@solana/web3.js@1.98.0";
+import { 
+  createInitializeMint2Instruction, 
+  createAssociatedTokenAccountInstruction, 
+  createMintToInstruction,
+  MINT_SIZE, 
+  TOKEN_PROGRAM_ID, 
+  getMinimumBalanceForRentExemptMint, 
+  getAssociatedTokenAddressSync 
+} from "https://esm.sh/@solana/spl-token@0.4.9?deps=@solana/web3.js@1.98.0";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -121,18 +136,9 @@ const handler = async (req: Request): Promise<Response> => {
       );
     }
 
-    // Parse admin public key (mint authority and freeze authority)
-    let mintAuthority: PublicKey;
-    try {
-      mintAuthority = new PublicKey(adminPublicKey);
-      console.log('Mint authority:', mintAuthority.toBase58());
-    } catch (pubkeyError: unknown) {
-      console.error('Invalid admin public key:', pubkeyError);
-      return new Response(
-        JSON.stringify({ error: 'Invalid admin public key format' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+    // Fee payer is now the mint authority (allows backend to mint tokens)
+    const mintAuthority = feePayerKeypair.publicKey;
+    console.log('Mint authority (fee payer):', mintAuthority.toBase58());
 
     // Generate a new keypair for the mint account
     const mintKeypair = Keypair.generate();
@@ -156,13 +162,13 @@ const handler = async (req: Request): Promise<Response> => {
       })
     );
 
-    // Add instruction to initialize the mint
+    // Add instruction to initialize the mint (fee payer is now mint authority)
     transaction.add(
       createInitializeMint2Instruction(
         mintKeypair.publicKey,
         tokenDef.decimals,
-        mintAuthority,
-        mintAuthority, // freeze authority
+        mintAuthority, // fee payer as mint authority
+        mintAuthority, // fee payer as freeze authority
         TOKEN_PROGRAM_ID
       )
     );
@@ -184,9 +190,20 @@ const handler = async (req: Request): Promise<Response> => {
       )
     );
 
-    // Note: Minting requires the mintAuthority (admin's Phantom wallet) to sign.
-    // Since we can't sign on behalf of the admin, the mint is created with 0 supply.
-    // The admin can mint tokens later using their wallet as the mint authority.
+    // Calculate the amount to mint (total_supply is already the full amount we want)
+    // The total_supply stored is the display amount, multiply by 10^decimals for base units
+    const mintAmount = BigInt(tokenDef.total_supply) * BigInt(10 ** tokenDef.decimals);
+    console.log('Minting amount (base units):', mintAmount.toString());
+
+    // Add instruction to mint tokens to treasury
+    transaction.add(
+      createMintToInstruction(
+        mintKeypair.publicKey, // mint
+        treasuryTokenAccount, // destination
+        mintAuthority, // authority (fee payer)
+        mintAmount // amount in base units
+      )
+    );
 
     console.log('Sending transaction...');
 
@@ -230,12 +247,13 @@ const handler = async (req: Request): Promise<Response> => {
           treasuryAccount: treasuryTokenAccount.toBase58(),
           transactionSignature: signature,
           deploymentStatus: 'DEPLOYED',
+          mintedAmount: mintAmount.toString(),
         }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log('Token deployment successful!');
+    console.log('Token deployment successful! Minted', mintAmount.toString(), 'base units to treasury');
 
     return new Response(
       JSON.stringify({
@@ -243,6 +261,7 @@ const handler = async (req: Request): Promise<Response> => {
         treasuryAccount: treasuryTokenAccount.toBase58(),
         transactionSignature: signature,
         deploymentStatus: 'DEPLOYED',
+        mintedAmount: mintAmount.toString(),
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
