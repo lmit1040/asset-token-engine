@@ -8,3 +8,6 @@ verify_jwt = false
 
 [functions.transfer-solana-token]
 verify_jwt = false
+
+[functions.send-treasury-tokens]
+verify_jwt = false

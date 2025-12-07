@@ -1,7 +1,10 @@
 import { useState } from 'react';
-import { Globe, CheckCircle, XCircle, Rocket, ExternalLink } from 'lucide-react';
+import { Globe, CheckCircle, XCircle, Rocket, ExternalLink, Send, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useWallet } from '@/hooks/useWallet';
@@ -27,11 +30,19 @@ export function TokenDetailCard({ token, isAdmin, onUpdate }: TokenDetailCardPro
   const [selectedNetwork, setSelectedNetwork] = useState<NetworkType>((token.network as NetworkType) || 'NONE');
   const { solanaAddress, connectPhantom, isConnectingSolana } = useWallet();
 
+  // Send tokens state
+  const [sendAmount, setSendAmount] = useState('');
+  const [recipientType, setRecipientType] = useState<'wallet' | 'custom'>('wallet');
+  const [customAddress, setCustomAddress] = useState('');
+  const [isSending, setIsSending] = useState(false);
+  const [lastTxSignature, setLastTxSignature] = useState<string | null>(null);
+
   const deploymentStatus = token.deployment_status as DeploymentStatus;
   const canDeploy = selectedChain !== 'NONE' && selectedNetwork !== 'NONE' && deploymentStatus === 'NOT_DEPLOYED';
   const isDeployed = deploymentStatus === 'DEPLOYED';
   const isPending = deploymentStatus === 'PENDING';
   const isSolanaTestnet = selectedChain === 'SOLANA' && selectedNetwork === 'TESTNET';
+  const canSendTokens = isAdmin && isDeployed && token.chain === 'SOLANA' && token.network === 'TESTNET';
 
   const generateMockContractAddress = () => {
     const chars = '0123456789abcdef';
@@ -204,6 +215,61 @@ export function TokenDetailCard({ token, isAdmin, onUpdate }: TokenDetailCardPro
     return `https://etherscan.io/address/${address}`;
   };
 
+  const handleSendTokens = async () => {
+    const amount = parseFloat(sendAmount);
+    if (isNaN(amount) || amount <= 0) {
+      toast.error('Please enter a valid amount');
+      return;
+    }
+
+    let recipientAddress = '';
+    if (recipientType === 'wallet') {
+      if (!solanaAddress) {
+        toast.info('Please connect your Phantom wallet first');
+        await connectPhantom();
+        return;
+      }
+      recipientAddress = solanaAddress;
+    } else {
+      if (!customAddress.trim()) {
+        toast.error('Please enter a recipient address');
+        return;
+      }
+      recipientAddress = customAddress.trim();
+    }
+
+    setIsSending(true);
+    setLastTxSignature(null);
+    try {
+      toast.info('Sending tokens from treasury...');
+
+      const { data, error } = await supabase.functions.invoke('send-treasury-tokens', {
+        body: {
+          tokenDefinitionId: token.id,
+          recipientAddress,
+          amount,
+        },
+      });
+
+      if (error) {
+        throw new Error(error.message || 'Transfer failed');
+      }
+
+      if (!data.success) {
+        throw new Error(data.error || 'Transfer failed');
+      }
+
+      setLastTxSignature(data.txSignature);
+      setSendAmount('');
+      toast.success(`Sent ${amount} ${token.token_symbol} successfully!`);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to send tokens';
+      toast.error(message);
+    } finally {
+      setIsSending(false);
+    }
+  };
+
   return (
     <div className="bg-muted/30 rounded-lg p-4 border border-border">
       <div className="flex items-start justify-between mb-3">
@@ -369,6 +435,108 @@ export function TokenDetailCard({ token, isAdmin, onUpdate }: TokenDetailCardPro
           </div>
         )}
       </div>
+
+      {/* Send Tokens Section */}
+      {canSendTokens && (
+        <div className="mt-4 pt-4 border-t border-border space-y-3">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Send className="h-4 w-4" />
+            <span className="font-medium">Send Tokens from Treasury</span>
+          </div>
+
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <Label className="text-xs">Amount</Label>
+              <Input
+                type="number"
+                placeholder={`Enter amount (${token.token_symbol})`}
+                value={sendAmount}
+                onChange={(e) => setSendAmount(e.target.value)}
+                className="h-9 text-sm"
+                min="0"
+                step="any"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-xs">Recipient</Label>
+              <RadioGroup
+                value={recipientType}
+                onValueChange={(v) => setRecipientType(v as 'wallet' | 'custom')}
+                className="flex flex-col gap-2"
+              >
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem value="wallet" id="wallet" />
+                  <Label htmlFor="wallet" className="text-sm font-normal cursor-pointer flex items-center gap-1">
+                    <Wallet className="h-3 w-3" />
+                    My connected wallet
+                    {solanaAddress && (
+                      <span className="text-xs text-muted-foreground font-mono">
+                        ({solanaAddress.slice(0, 4)}...{solanaAddress.slice(-4)})
+                      </span>
+                    )}
+                  </Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem value="custom" id="custom" />
+                  <Label htmlFor="custom" className="text-sm font-normal cursor-pointer">
+                    Custom address
+                  </Label>
+                </div>
+              </RadioGroup>
+            </div>
+
+            {recipientType === 'custom' && (
+              <Input
+                placeholder="Enter Solana address"
+                value={customAddress}
+                onChange={(e) => setCustomAddress(e.target.value)}
+                className="h-9 text-sm font-mono"
+              />
+            )}
+
+            {recipientType === 'wallet' && !solanaAddress && (
+              <div className="text-xs text-amber-500 bg-amber-500/10 p-2 rounded">
+                Connect your Phantom wallet to send tokens to your address.
+              </div>
+            )}
+
+            <Button
+              className="w-full"
+              size="sm"
+              disabled={isSending || isConnectingSolana || !sendAmount}
+              onClick={handleSendTokens}
+            >
+              {isSending ? (
+                <>
+                  <div className="h-4 w-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
+                  Sending...
+                </>
+              ) : (
+                <>
+                  <Send className="h-4 w-4" />
+                  Send from Treasury
+                </>
+              )}
+            </Button>
+
+            {lastTxSignature && (
+              <div className="text-xs bg-success/10 text-success p-2 rounded space-y-1">
+                <p className="font-medium">Transaction successful!</p>
+                <a
+                  href={`https://solscan.io/tx/${lastTxSignature}?cluster=devnet`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 hover:underline break-all"
+                >
+                  View on Solscan
+                  <ExternalLink className="h-3 w-3 flex-shrink-0" />
+                </a>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {token.notes && (
         <p className="text-xs text-muted-foreground mt-3 pt-3 border-t border-border">
