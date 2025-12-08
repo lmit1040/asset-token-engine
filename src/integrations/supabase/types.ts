@@ -47,6 +47,95 @@ export type Database = {
         }
         Relationships: []
       }
+      arbitrage_runs: {
+        Row: {
+          actual_profit_lamports: number | null
+          created_at: string
+          error_message: string | null
+          estimated_profit_lamports: number | null
+          finished_at: string | null
+          id: string
+          started_at: string
+          status: Database["public"]["Enums"]["arbitrage_run_status"]
+          strategy_id: string
+          tx_signature: string | null
+          updated_at: string
+        }
+        Insert: {
+          actual_profit_lamports?: number | null
+          created_at?: string
+          error_message?: string | null
+          estimated_profit_lamports?: number | null
+          finished_at?: string | null
+          id?: string
+          started_at?: string
+          status: Database["public"]["Enums"]["arbitrage_run_status"]
+          strategy_id: string
+          tx_signature?: string | null
+          updated_at?: string
+        }
+        Update: {
+          actual_profit_lamports?: number | null
+          created_at?: string
+          error_message?: string | null
+          estimated_profit_lamports?: number | null
+          finished_at?: string | null
+          id?: string
+          started_at?: string
+          status?: Database["public"]["Enums"]["arbitrage_run_status"]
+          strategy_id?: string
+          tx_signature?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "arbitrage_runs_strategy_id_fkey"
+            columns: ["strategy_id"]
+            isOneToOne: false
+            referencedRelation: "arbitrage_strategies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      arbitrage_strategies: {
+        Row: {
+          created_at: string
+          dex_a: string
+          dex_b: string
+          id: string
+          is_enabled: boolean
+          min_profit_lamports: number
+          name: string
+          token_in_mint: string
+          token_out_mint: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          dex_a: string
+          dex_b: string
+          id?: string
+          is_enabled?: boolean
+          min_profit_lamports?: number
+          name: string
+          token_in_mint: string
+          token_out_mint: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          dex_a?: string
+          dex_b?: string
+          id?: string
+          is_enabled?: boolean
+          min_profit_lamports?: number
+          name?: string
+          token_in_mint?: string
+          token_out_mint?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       assets: {
         Row: {
           acquisition_date: string | null
@@ -850,6 +939,7 @@ export type Database = {
     }
     Enums: {
       app_role: "admin" | "standard_user" | "asset_manager"
+      arbitrage_run_status: "SIMULATED" | "EXECUTED" | "FAILED"
       asset_type:
         | "GOLDBACK"
         | "SILVER"
@@ -1008,6 +1098,7 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin", "standard_user", "asset_manager"],
+      arbitrage_run_status: ["SIMULATED", "EXECUTED", "FAILED"],
       asset_type: [
         "GOLDBACK",
         "SILVER",
