@@ -16,7 +16,13 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
-import { Loader2, Check, X, Eye, Package, MapPin, FileText } from 'lucide-react';
+import { Loader2, Check, X, Eye, Package, MapPin, FileText, Paperclip, ExternalLink, Image as ImageIcon } from 'lucide-react';
+
+interface DocumentItem {
+  name: string;
+  url: string;
+  type?: string;
+}
 
 interface SubmissionReviewPanelProps {
   submission: UserAssetSubmission | null;
@@ -127,6 +133,47 @@ export function SubmissionReviewPanel({
                 <FileText className="h-4 w-4" /> Description
               </p>
               <p className="text-sm bg-muted/50 rounded-md p-3">{submission.description}</p>
+            </div>
+          )}
+
+          {/* Attached Documents */}
+          {submission.documents && (
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground flex items-center gap-1.5">
+                <Paperclip className="h-4 w-4" /> Attached Documents
+              </p>
+              <div className="bg-muted/50 rounded-md p-3 space-y-2">
+                {Array.isArray(submission.documents) ? (
+                  (submission.documents as DocumentItem[]).length > 0 ? (
+                    (submission.documents as DocumentItem[]).map((doc, index) => (
+                      <div key={index} className="flex items-center gap-2 text-sm">
+                        {doc.type?.startsWith('image/') ? (
+                          <ImageIcon className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <FileText className="h-4 w-4 text-muted-foreground" />
+                        )}
+                        <a 
+                          href={doc.url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-primary hover:underline flex items-center gap-1"
+                        >
+                          {doc.name || `Document ${index + 1}`}
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No documents attached</p>
+                  )
+                ) : typeof submission.documents === 'object' && submission.documents !== null ? (
+                  <pre className="text-xs overflow-auto max-h-32">
+                    {JSON.stringify(submission.documents, null, 2)}
+                  </pre>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No documents attached</p>
+                )}
+              </div>
             </div>
           )}
 
