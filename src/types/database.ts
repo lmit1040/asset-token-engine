@@ -63,6 +63,7 @@ export interface TokenDefinition {
   contract_address: string | null;
   treasury_account: string | null;
   deployment_status: DeploymentStatus;
+  token_image_url: string | null;
   asset?: Asset;
 }
 
