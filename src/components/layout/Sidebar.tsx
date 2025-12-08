@@ -13,7 +13,8 @@ import {
   Award,
   Vote,
   ArrowRightLeft,
-  FileCheck
+  FileCheck,
+  Wallet
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
@@ -34,6 +35,7 @@ const adminNavigation = [
   { name: 'Transfer Tokens', href: '/admin/transfer', icon: RefreshCw },
   { name: 'On-Chain Delivery', href: '/admin/deliver', icon: Send },
   { name: 'Attestations', href: '/admin/attestations', icon: FileCheck },
+  { name: 'Fee Payers', href: '/admin/fee-payers', icon: Wallet },
   { name: 'Activity', href: '/admin/activity', icon: Activity },
 ];
 

@@ -20,6 +20,7 @@ import AdminTransferPage from "./pages/AdminTransferPage";
 import AdminActivityPage from "./pages/AdminActivityPage";
 import AdminDeliverPage from "./pages/AdminDeliverPage";
 import AdminAttestationsPage from "./pages/AdminAttestationsPage";
+import AdminFeePayersPage from "./pages/AdminFeePayersPage";
 import MxuBenefitsPage from "./pages/MxuBenefitsPage";
 import GovernancePage from "./pages/GovernancePage";
 import ProposalDetailPage from "./pages/ProposalDetailPage";
@@ -55,6 +56,7 @@ const App = () => (
               <Route path="/admin/transfer" element={<AdminTransferPage />} />
               <Route path="/admin/deliver" element={<AdminDeliverPage />} />
               <Route path="/admin/attestations" element={<AdminAttestationsPage />} />
+              <Route path="/admin/fee-payers" element={<AdminFeePayersPage />} />
               <Route path="/admin/activity" element={<AdminActivityPage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
