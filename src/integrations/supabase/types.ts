@@ -127,6 +127,63 @@ export type Database = {
           },
         ]
       }
+      governance_proposals: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          description: string
+          execution_data: Json | null
+          id: string
+          pass_threshold_percentage: number
+          proposal_type: Database["public"]["Enums"]["proposal_type"]
+          quorum_percentage: number
+          status: Database["public"]["Enums"]["proposal_status"]
+          title: string
+          updated_at: string
+          votes_abstain: number
+          votes_against: number
+          votes_for: number
+          voting_ends_at: string | null
+          voting_starts_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          description: string
+          execution_data?: Json | null
+          id?: string
+          pass_threshold_percentage?: number
+          proposal_type?: Database["public"]["Enums"]["proposal_type"]
+          quorum_percentage?: number
+          status?: Database["public"]["Enums"]["proposal_status"]
+          title: string
+          updated_at?: string
+          votes_abstain?: number
+          votes_against?: number
+          votes_for?: number
+          voting_ends_at?: string | null
+          voting_starts_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          description?: string
+          execution_data?: Json | null
+          id?: string
+          pass_threshold_percentage?: number
+          proposal_type?: Database["public"]["Enums"]["proposal_type"]
+          quorum_percentage?: number
+          status?: Database["public"]["Enums"]["proposal_status"]
+          title?: string
+          updated_at?: string
+          votes_abstain?: number
+          votes_against?: number
+          votes_for?: number
+          voting_ends_at?: string | null
+          voting_starts_at?: string | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string
@@ -194,6 +251,41 @@ export type Database = {
             columns: ["asset_id"]
             isOneToOne: false
             referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      proposal_votes: {
+        Row: {
+          id: string
+          proposal_id: string
+          user_id: string
+          vote: Database["public"]["Enums"]["vote_choice"]
+          voted_at: string
+          voting_power: number
+        }
+        Insert: {
+          id?: string
+          proposal_id: string
+          user_id: string
+          vote: Database["public"]["Enums"]["vote_choice"]
+          voted_at?: string
+          voting_power?: number
+        }
+        Update: {
+          id?: string
+          proposal_id?: string
+          user_id?: string
+          vote?: Database["public"]["Enums"]["vote_choice"]
+          voted_at?: string
+          voting_power?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "proposal_votes_proposal_id_fkey"
+            columns: ["proposal_id"]
+            isOneToOne: false
+            referencedRelation: "governance_proposals"
             referencedColumns: ["id"]
           },
         ]
@@ -433,7 +525,20 @@ export type Database = {
       deployment_status: "NOT_DEPLOYED" | "PENDING" | "DEPLOYED"
       network_type: "MAINNET" | "TESTNET" | "NONE"
       owner_entity: "PERSONAL_TRUST" | "BUSINESS_TRUST" | "SPV_LLC"
+      proposal_status:
+        | "DRAFT"
+        | "ACTIVE"
+        | "PASSED"
+        | "REJECTED"
+        | "EXECUTED"
+        | "CANCELLED"
+      proposal_type:
+        | "PARAMETER_CHANGE"
+        | "TOKEN_ADDITION"
+        | "FEE_ADJUSTMENT"
+        | "GENERAL"
       token_model: "ONE_TO_ONE" | "FRACTIONAL" | "VAULT_BASKET"
+      vote_choice: "FOR" | "AGAINST" | "ABSTAIN"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -574,7 +679,22 @@ export const Constants = {
       deployment_status: ["NOT_DEPLOYED", "PENDING", "DEPLOYED"],
       network_type: ["MAINNET", "TESTNET", "NONE"],
       owner_entity: ["PERSONAL_TRUST", "BUSINESS_TRUST", "SPV_LLC"],
+      proposal_status: [
+        "DRAFT",
+        "ACTIVE",
+        "PASSED",
+        "REJECTED",
+        "EXECUTED",
+        "CANCELLED",
+      ],
+      proposal_type: [
+        "PARAMETER_CHANGE",
+        "TOKEN_ADDITION",
+        "FEE_ADJUSTMENT",
+        "GENERAL",
+      ],
       token_model: ["ONE_TO_ONE", "FRACTIONAL", "VAULT_BASKET"],
+      vote_choice: ["FOR", "AGAINST", "ABSTAIN"],
     },
   },
 } as const

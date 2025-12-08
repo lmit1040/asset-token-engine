@@ -10,7 +10,8 @@ import {
   RefreshCw,
   Send,
   LogOut,
-  Landmark
+  Landmark,
+  Vote
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
@@ -20,6 +21,7 @@ const navigation = [
   { name: 'Assets', href: '/assets', icon: Vault },
   { name: 'Tokens', href: '/tokens', icon: Coins },
   { name: 'MXU Staking', href: '/staking', icon: Landmark },
+  { name: 'Governance', href: '/governance', icon: Vote },
   { name: 'Profile', href: '/profile', icon: User },
 ];
 
