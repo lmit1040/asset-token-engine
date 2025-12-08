@@ -50,6 +50,8 @@ export type Database = {
       assets: {
         Row: {
           acquisition_date: string | null
+          archived_at: string | null
+          archived_by: string | null
           asset_type: Database["public"]["Enums"]["asset_type"]
           created_at: string
           created_by: string | null
@@ -64,6 +66,8 @@ export type Database = {
         }
         Insert: {
           acquisition_date?: string | null
+          archived_at?: string | null
+          archived_by?: string | null
           asset_type: Database["public"]["Enums"]["asset_type"]
           created_at?: string
           created_by?: string | null
@@ -78,6 +82,8 @@ export type Database = {
         }
         Update: {
           acquisition_date?: string | null
+          archived_at?: string | null
+          archived_by?: string | null
           asset_type?: Database["public"]["Enums"]["asset_type"]
           created_at?: string
           created_by?: string | null
@@ -545,6 +551,8 @@ export type Database = {
       }
       token_definitions: {
         Row: {
+          archived_at: string | null
+          archived_by: string | null
           asset_id: string
           chain: Database["public"]["Enums"]["blockchain_chain"]
           contract_address: string | null
@@ -562,6 +570,8 @@ export type Database = {
           treasury_account: string | null
         }
         Insert: {
+          archived_at?: string | null
+          archived_by?: string | null
           asset_id: string
           chain?: Database["public"]["Enums"]["blockchain_chain"]
           contract_address?: string | null
@@ -579,6 +589,8 @@ export type Database = {
           treasury_account?: string | null
         }
         Update: {
+          archived_at?: string | null
+          archived_by?: string | null
           asset_id?: string
           chain?: Database["public"]["Enums"]["blockchain_chain"]
           contract_address?: string | null
