@@ -8,6 +8,7 @@ interface AuthContextType {
   session: Session | null;
   role: AppRole | null;
   isAdmin: boolean;
+  isAssetManager: boolean;
   isLoading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string, name?: string) => Promise<{ error: Error | null }>;
@@ -94,6 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       session,
       role,
       isAdmin: role === 'admin',
+      isAssetManager: role === 'asset_manager' || role === 'admin',
       isLoading,
       signIn,
       signUp,

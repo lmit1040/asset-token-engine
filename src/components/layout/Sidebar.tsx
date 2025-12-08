@@ -14,7 +14,10 @@ import {
   Vote,
   ArrowRightLeft,
   FileCheck,
-  Wallet
+  Wallet,
+  FileUp,
+  FolderOpen,
+  ClipboardList
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
@@ -24,6 +27,8 @@ const navigation = [
   { name: 'Assets', href: '/assets', icon: Vault },
   { name: 'Tokens', href: '/tokens', icon: Coins },
   { name: 'Transfers', href: '/transfers', icon: ArrowRightLeft },
+  { name: 'Submit Asset', href: '/submit-asset', icon: FileUp },
+  { name: 'My Submissions', href: '/my-submissions', icon: FolderOpen },
   { name: 'MXU Benefits', href: '/mxu-benefits', icon: Award },
   { name: 'Governance', href: '/governance', icon: Vote },
   { name: 'Profile', href: '/profile', icon: User },
@@ -31,6 +36,7 @@ const navigation = [
 
 const adminNavigation = [
   { name: 'Users', href: '/admin/users', icon: Users },
+  { name: 'Review Submissions', href: '/admin/submissions', icon: ClipboardList },
   { name: 'Assign Tokens', href: '/admin/assign', icon: Shield },
   { name: 'Transfer Tokens', href: '/admin/transfer', icon: RefreshCw },
   { name: 'On-Chain Delivery', href: '/admin/deliver', icon: Send },
@@ -41,7 +47,13 @@ const adminNavigation = [
 
 export function Sidebar() {
   const location = useLocation();
-  const { isAdmin, signOut, user } = useAuth();
+  const { isAdmin, isAssetManager, role, signOut, user } = useAuth();
+  
+  const getRoleDisplay = () => {
+    if (role === 'admin') return 'Administrator';
+    if (role === 'asset_manager') return 'Asset Manager';
+    return 'User';
+  };
 
   return (
     <div className="flex h-full w-64 flex-col bg-sidebar border-r border-sidebar-border">
@@ -78,27 +90,35 @@ export function Sidebar() {
           })}
         </div>
 
-        {isAdmin && (
+        {(isAdmin || isAssetManager) && (
           <div className="pt-4 border-t border-sidebar-border">
             <p className="px-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-              Admin
+              {isAdmin ? 'Admin' : 'Manager'}
             </p>
-            {adminNavigation.map((item) => {
-              const isActive = location.pathname.startsWith(item.href);
-              return (
-                <RouterNavLink
-                  key={item.name}
-                  to={item.href}
-                  className={cn(
-                    'sidebar-link',
-                    isActive && 'active'
-                  )}
-                >
-                  <item.icon className="h-5 w-5" />
-                  {item.name}
-                </RouterNavLink>
-              );
-            })}
+            {adminNavigation
+              .filter((item) => {
+                // Asset managers only see Review Submissions
+                if (!isAdmin && isAssetManager) {
+                  return item.href === '/admin/submissions';
+                }
+                return true;
+              })
+              .map((item) => {
+                const isActive = location.pathname.startsWith(item.href);
+                return (
+                  <RouterNavLink
+                    key={item.name}
+                    to={item.href}
+                    className={cn(
+                      'sidebar-link',
+                      isActive && 'active'
+                    )}
+                  >
+                    <item.icon className="h-5 w-5" />
+                    {item.name}
+                  </RouterNavLink>
+                );
+              })}
           </div>
         )}
       </nav>
@@ -115,8 +135,8 @@ export function Sidebar() {
             <p className="text-sm font-medium text-foreground truncate">
               {user?.email}
             </p>
-            <p className="text-xs text-muted-foreground capitalize">
-              {isAdmin ? 'Administrator' : 'User'}
+            <p className="text-xs text-muted-foreground">
+              {getRoleDisplay()}
             </p>
           </div>
         </div>

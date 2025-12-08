@@ -652,6 +652,74 @@ export type Database = {
           },
         ]
       }
+      user_asset_submissions: {
+        Row: {
+          admin_notes: string | null
+          approved_at: string | null
+          approved_by: string | null
+          asset_type: string
+          created_asset_id: string | null
+          created_at: string
+          description: string | null
+          documents: Json | null
+          estimated_quantity: number | null
+          id: string
+          location_description: string | null
+          status: Database["public"]["Enums"]["submission_status"]
+          submitted_by_role: string
+          title: string
+          unit: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          admin_notes?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
+          asset_type: string
+          created_asset_id?: string | null
+          created_at?: string
+          description?: string | null
+          documents?: Json | null
+          estimated_quantity?: number | null
+          id?: string
+          location_description?: string | null
+          status?: Database["public"]["Enums"]["submission_status"]
+          submitted_by_role: string
+          title: string
+          unit?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          admin_notes?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
+          asset_type?: string
+          created_asset_id?: string | null
+          created_at?: string
+          description?: string | null
+          documents?: Json | null
+          estimated_quantity?: number | null
+          id?: string
+          location_description?: string | null
+          status?: Database["public"]["Enums"]["submission_status"]
+          submitted_by_role?: string
+          title?: string
+          unit?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_asset_submissions_created_asset_id_fkey"
+            columns: ["created_asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           id: string
@@ -769,7 +837,7 @@ export type Database = {
       }
     }
     Enums: {
-      app_role: "admin" | "standard_user"
+      app_role: "admin" | "standard_user" | "asset_manager"
       asset_type:
         | "GOLDBACK"
         | "SILVER"
@@ -796,6 +864,7 @@ export type Database = {
         | "TOKEN_ADDITION"
         | "FEE_ADJUSTMENT"
         | "GENERAL"
+      submission_status: "PENDING" | "UNDER_REVIEW" | "APPROVED" | "REJECTED"
       token_model: "ONE_TO_ONE" | "FRACTIONAL" | "VAULT_BASKET"
       transfer_request_status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED"
       vote_choice: "FOR" | "AGAINST" | "ABSTAIN"
@@ -926,7 +995,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "standard_user"],
+      app_role: ["admin", "standard_user", "asset_manager"],
       asset_type: [
         "GOLDBACK",
         "SILVER",
@@ -956,6 +1025,7 @@ export const Constants = {
         "FEE_ADJUSTMENT",
         "GENERAL",
       ],
+      submission_status: ["PENDING", "UNDER_REVIEW", "APPROVED", "REJECTED"],
       token_model: ["ONE_TO_ONE", "FRACTIONAL", "VAULT_BASKET"],
       transfer_request_status: ["PENDING", "APPROVED", "REJECTED", "CANCELLED"],
       vote_choice: ["FOR", "AGAINST", "ABSTAIN"],

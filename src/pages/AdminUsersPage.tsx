@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
-import { Profile, UserRole, AppRole } from '@/types/database';
+import { Profile, UserRole, AppRole, APP_ROLE_LABELS } from '@/types/database';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import {
@@ -149,7 +149,7 @@ export default function AdminUsersPage() {
     >
       <div className="space-y-6 animate-fade-in">
         {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="glass-card p-4">
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
@@ -176,8 +176,21 @@ export default function AdminUsersPage() {
           </div>
           <div className="glass-card p-4">
             <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-lg bg-blue-500/10 flex items-center justify-center">
+                <Shield className="h-5 w-5 text-blue-500" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Asset Managers</p>
+                <p className="text-2xl font-bold text-foreground">
+                  {users.filter((u) => u.role === 'asset_manager').length}
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="glass-card p-4">
+            <div className="flex items-center gap-3">
               <div className="h-10 w-10 rounded-lg bg-secondary flex items-center justify-center">
-                <Shield className="h-5 w-5 text-muted-foreground" />
+                <Users className="h-5 w-5 text-muted-foreground" />
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Standard Users</p>
@@ -249,10 +262,12 @@ export default function AdminUsersPage() {
                         className={
                           user.role === 'admin'
                             ? 'badge-gold'
+                            : user.role === 'asset_manager'
+                            ? 'bg-blue-500/10 text-blue-500 border border-blue-500/20 px-2.5 py-0.5 rounded-full text-xs font-medium'
                             : 'bg-muted text-muted-foreground px-2.5 py-0.5 rounded-full text-xs font-medium'
                         }
                       >
-                        {user.role === 'admin' ? 'Administrator' : 'Standard User'}
+                        {APP_ROLE_LABELS[user.role]}
                       </span>
                     </td>
                     <td className="table-cell text-muted-foreground">
@@ -269,6 +284,7 @@ export default function AdminUsersPage() {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="standard_user">Standard User</SelectItem>
+                          <SelectItem value="asset_manager">Asset Manager</SelectItem>
                           <SelectItem value="admin">Administrator</SelectItem>
                         </SelectContent>
                       </Select>
@@ -288,11 +304,16 @@ export default function AdminUsersPage() {
             <AlertDialogTitle>Change User Role</AlertDialogTitle>
             <AlertDialogDescription>
               Are you sure you want to change <strong>{roleChangeDialog?.userName}</strong>'s role
-              from <strong>{roleChangeDialog?.currentRole === 'admin' ? 'Administrator' : 'Standard User'}</strong> to{' '}
-              <strong>{roleChangeDialog?.newRole === 'admin' ? 'Administrator' : 'Standard User'}</strong>?
+              from <strong>{roleChangeDialog?.currentRole ? APP_ROLE_LABELS[roleChangeDialog.currentRole] : ''}</strong> to{' '}
+              <strong>{roleChangeDialog?.newRole ? APP_ROLE_LABELS[roleChangeDialog.newRole] : ''}</strong>?
               {roleChangeDialog?.newRole === 'admin' && (
                 <span className="block mt-2 text-destructive">
                   Warning: Administrators have full access to manage assets, tokens, and other users.
+                </span>
+              )}
+              {roleChangeDialog?.newRole === 'asset_manager' && (
+                <span className="block mt-2 text-amber-500">
+                  Note: Asset Managers can review user asset submissions and mark them as "Under Review".
                 </span>
               )}
             </AlertDialogDescription>
