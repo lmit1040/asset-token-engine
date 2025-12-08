@@ -9,11 +9,51 @@ import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Plus, Play, Zap, RefreshCw, AlertTriangle, Edit2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { Link } from 'react-router-dom';
+
+// Supported DEXs by Jupiter Aggregator
+const SUPPORTED_DEXS = [
+  'Raydium',
+  'Raydium CLMM',
+  'Raydium CP',
+  'Orca',
+  'Orca (Whirlpools)',
+  'Whirlpool',
+  'Meteora',
+  'Meteora DLMM',
+  'Phoenix',
+  'Lifinity',
+  'Lifinity V2',
+  'Cropper',
+  'Cykura',
+  'Saros',
+  'Step Finance',
+  'Penguin',
+  'Sencha',
+  'Saber',
+  'Aldrin',
+  'Crema',
+  'Invariant',
+  'Marinade',
+  'Stepn',
+  'OpenBook',
+  'Serum',
+  'GooseFX',
+  'Dradex',
+  'Balansol',
+  'Marco Polo',
+  'Oasis',
+  'BonkSwap',
+  'Pump.fun',
+  'FluxBeam',
+  'Helium Network',
+  'Jupiter',
+];
 
 interface ArbitrageStrategy {
   id: string;
@@ -248,19 +288,39 @@ export default function AdminArbitrageStrategiesPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>DEX A</Label>
-                    <Input
-                      placeholder="e.g., RAYDIUM"
+                    <Select
                       value={formData.dex_a}
-                      onChange={(e) => setFormData({ ...formData, dex_a: e.target.value })}
-                    />
+                      onValueChange={(value) => setFormData({ ...formData, dex_a: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select DEX A" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {SUPPORTED_DEXS.map((dex) => (
+                          <SelectItem key={dex} value={dex}>
+                            {dex}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-2">
                     <Label>DEX B</Label>
-                    <Input
-                      placeholder="e.g., ORCA"
+                    <Select
                       value={formData.dex_b}
-                      onChange={(e) => setFormData({ ...formData, dex_b: e.target.value })}
-                    />
+                      onValueChange={(value) => setFormData({ ...formData, dex_b: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select DEX B" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {SUPPORTED_DEXS.map((dex) => (
+                          <SelectItem key={dex} value={dex}>
+                            {dex}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
                 <div className="space-y-2">
