@@ -18,7 +18,8 @@ import {
   FileUp,
   FolderOpen,
   ClipboardList,
-  Archive
+  Archive,
+  Zap
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
@@ -43,6 +44,7 @@ const adminNavigation = [
   { name: 'On-Chain Delivery', href: '/admin/deliver', icon: Send },
   { name: 'Attestations', href: '/admin/attestations', icon: FileCheck },
   { name: 'Fee Payers', href: '/admin/fee-payers', icon: Wallet },
+  { name: 'Arbitrage', href: '/admin/arbitrage/strategies', icon: Zap },
   { name: 'Archived', href: '/admin/archived', icon: Archive },
   { name: 'Activity', href: '/admin/activity', icon: Activity },
 ];

@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Plus, Wallet, RefreshCw, Trash2, AlertTriangle } from 'lucide-react';
+import { Plus, Wallet, RefreshCw, Trash2, AlertTriangle, Zap } from 'lucide-react';
 import { FeePayerKey } from '@/types/feePayer';
 import { format } from 'date-fns';
 
@@ -19,6 +19,7 @@ export default function AdminFeePayersPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isToppingUp, setIsToppingUp] = useState(false);
   const [newFeePayer, setNewFeePayer] = useState({ label: '', public_key: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -125,6 +126,22 @@ export default function AdminFeePayersPage() {
     setIsRefreshing(false);
   };
 
+  const runTopUp = async () => {
+    setIsToppingUp(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('top-up-fee-payers');
+      if (error) throw error;
+      const toppedUp = data.results?.filter((r: { topped_up: boolean }) => r.topped_up).length || 0;
+      toast.success(`Top-up complete: ${toppedUp} wallets funded`);
+      console.log('Top-up results:', data);
+      fetchFeePayers();
+    } catch (error) {
+      console.error(error);
+      toast.error('Failed to run top-up');
+    }
+    setIsToppingUp(false);
+  };
+
   const activeCount = feePayers.filter(fp => fp.is_active).length;
   const totalBalance = feePayers.reduce((sum, fp) => sum + (fp.balance_sol || 0), 0);
 
@@ -163,6 +180,14 @@ export default function AdminFeePayersPage() {
             >
               <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
               Refresh Balances
+            </Button>
+            <Button 
+              variant="outline" 
+              onClick={runTopUp}
+              disabled={isToppingUp}
+            >
+              <Zap className={`h-4 w-4 mr-2 ${isToppingUp ? 'animate-pulse' : ''}`} />
+              {isToppingUp ? 'Topping Up...' : 'Run Top-Up Check'}
             </Button>
           </div>
 

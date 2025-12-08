@@ -32,3 +32,12 @@ verify_jwt = false
 
 [functions.send-submission-notification]
 verify_jwt = false
+
+[functions.scan-arbitrage]
+verify_jwt = false
+
+[functions.execute-arbitrage]
+verify_jwt = false
+
+[functions.top-up-fee-payers]
+verify_jwt = false

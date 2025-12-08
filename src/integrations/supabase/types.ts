@@ -302,6 +302,30 @@ export type Database = {
         }
         Relationships: []
       }
+      fee_payer_topups: {
+        Row: {
+          amount_lamports: number
+          created_at: string
+          fee_payer_public_key: string
+          id: string
+          tx_signature: string | null
+        }
+        Insert: {
+          amount_lamports: number
+          created_at?: string
+          fee_payer_public_key: string
+          id?: string
+          tx_signature?: string | null
+        }
+        Update: {
+          amount_lamports?: number
+          created_at?: string
+          fee_payer_public_key?: string
+          id?: string
+          tx_signature?: string | null
+        }
+        Relationships: []
+      }
       governance_proposals: {
         Row: {
           created_at: string

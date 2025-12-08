@@ -22,6 +22,8 @@ import AdminDeliverPage from "./pages/AdminDeliverPage";
 import AdminAttestationsPage from "./pages/AdminAttestationsPage";
 import AdminFeePayersPage from "./pages/AdminFeePayersPage";
 import AdminArchivedPage from "./pages/AdminArchivedPage";
+import AdminArbitrageStrategiesPage from "./pages/AdminArbitrageStrategiesPage";
+import AdminArbitrageRunsPage from "./pages/AdminArbitrageRunsPage";
 import MxuBenefitsPage from "./pages/MxuBenefitsPage";
 import GovernancePage from "./pages/GovernancePage";
 import ProposalDetailPage from "./pages/ProposalDetailPage";
@@ -64,6 +66,8 @@ const App = () => (
               <Route path="/admin/attestations" element={<AdminAttestationsPage />} />
               <Route path="/admin/submissions" element={<AdminSubmissionsPage />} />
               <Route path="/admin/fee-payers" element={<AdminFeePayersPage />} />
+              <Route path="/admin/arbitrage/strategies" element={<AdminArbitrageStrategiesPage />} />
+              <Route path="/admin/arbitrage/runs" element={<AdminArbitrageRunsPage />} />
               <Route path="/admin/archived" element={<AdminArchivedPage />} />
               <Route path="/admin/activity" element={<AdminActivityPage />} />
               <Route path="*" element={<NotFound />} />
