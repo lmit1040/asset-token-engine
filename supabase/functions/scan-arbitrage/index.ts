@@ -35,6 +35,19 @@ interface JupiterQuoteResponse {
   timeTaken?: number;
 }
 
+// Validate Solana base58 address format
+function isValidSolanaAddress(address: string): boolean {
+  // Solana addresses are base58-encoded, 32-44 characters
+  // Valid base58 alphabet: 123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz
+  const base58Regex = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+  return base58Regex.test(address);
+}
+
+interface StrategyValidation {
+  valid: boolean;
+  errors: string[];
+}
+
 // Fetch quote from Jupiter API
 async function fetchJupiterQuote(
   inputMint: string,
@@ -144,6 +157,59 @@ serve(async (req) => {
       console.log(`[scan-arbitrage] Simulating strategy: ${strategy.name}`);
       console.log(`[scan-arbitrage] Token In: ${strategy.token_in_mint}, Token Out: ${strategy.token_out_mint}`);
       console.log(`[scan-arbitrage] DEX A: ${strategy.dex_a}, DEX B: ${strategy.dex_b}`);
+
+      // Validate token mint addresses
+      const validationErrors: string[] = [];
+      if (!isValidSolanaAddress(strategy.token_in_mint)) {
+        validationErrors.push(`Invalid token_in_mint address: ${strategy.token_in_mint}`);
+      }
+      if (!isValidSolanaAddress(strategy.token_out_mint)) {
+        validationErrors.push(`Invalid token_out_mint address: ${strategy.token_out_mint}`);
+      }
+
+      if (validationErrors.length > 0) {
+        console.error(`[scan-arbitrage] Strategy ${strategy.name} has invalid addresses:`, validationErrors);
+        
+        // Log the failed validation as a run
+        const { data: runData, error: runError } = await supabase
+          .from('arbitrage_runs')
+          .insert({
+            strategy_id: strategy.id,
+            started_at: startedAt,
+            finished_at: new Date().toISOString(),
+            status: 'SIMULATED',
+            estimated_profit_lamports: 0,
+            actual_profit_lamports: null,
+            tx_signature: null,
+            error_message: `Validation failed: ${validationErrors.join('; ')}`,
+          })
+          .select()
+          .single();
+
+        results.push({
+          strategy_id: strategy.id,
+          strategy_name: strategy.name,
+          dex_a: strategy.dex_a,
+          dex_b: strategy.dex_b,
+          dex_used_a: null,
+          dex_used_b: null,
+          token_in_mint: strategy.token_in_mint,
+          token_out_mint: strategy.token_out_mint,
+          input_lamports: 0,
+          output_leg_a: 0,
+          output_leg_b: 0,
+          estimated_profit_lamports: 0,
+          estimated_profit_sol: 0,
+          meets_min_threshold: false,
+          price_source: null,
+          run_id: runData?.id || null,
+          error: `Invalid Solana addresses: ${validationErrors.join('; ')}`,
+          validation_errors: validationErrors,
+        });
+        continue;
+      }
+
+      console.log(`[scan-arbitrage] Token addresses validated successfully`);
 
       // Use 0.1 SOL worth as test input (100 million lamports = 0.1 SOL)
       const inputLamports = 100_000_000;
