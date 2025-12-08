@@ -43,9 +43,68 @@ function isValidSolanaAddress(address: string): boolean {
   return base58Regex.test(address);
 }
 
-interface StrategyValidation {
-  valid: boolean;
-  errors: string[];
+// Supported DEXs by Jupiter Aggregator
+const SUPPORTED_DEXS = new Set([
+  'Raydium',
+  'Raydium CLMM',
+  'Raydium CP',
+  'Orca',
+  'Orca (Whirlpools)',
+  'Whirlpool',
+  'Meteora',
+  'Meteora DLMM',
+  'Phoenix',
+  'Lifinity',
+  'Lifinity V2',
+  'Cropper',
+  'Cykura',
+  'Saros',
+  'Step Finance',
+  'Penguin',
+  'Sencha',
+  'Saber',
+  'Aldrin',
+  'Crema',
+  'Invariant',
+  'Marinade',
+  'Stepn',
+  'OpenBook',
+  'Serum',
+  'GooseFX',
+  'Dradex',
+  'Balansol',
+  'Marco Polo',
+  'Oasis',
+  'BonkSwap',
+  'Pump.fun',
+  'FluxBeam',
+  'Helium Network',
+  'Jupiter', // Meta-DEX itself
+]);
+
+// Validate DEX name
+function isValidDexName(dexName: string): { valid: boolean; suggestion?: string } {
+  const normalizedInput = dexName.toLowerCase().trim();
+  
+  // Direct match
+  for (const dex of SUPPORTED_DEXS) {
+    if (dex.toLowerCase() === normalizedInput) {
+      return { valid: true };
+    }
+  }
+  
+  // Partial match for suggestions
+  for (const dex of SUPPORTED_DEXS) {
+    if (dex.toLowerCase().includes(normalizedInput) || normalizedInput.includes(dex.toLowerCase())) {
+      return { valid: false, suggestion: dex };
+    }
+  }
+  
+  return { valid: false };
+}
+
+function getSupportedDexList(): string[] {
+  return Array.from(SUPPORTED_DEXS).sort();
 }
 
 // Fetch quote from Jupiter API
@@ -158,13 +217,25 @@ serve(async (req) => {
       console.log(`[scan-arbitrage] Token In: ${strategy.token_in_mint}, Token Out: ${strategy.token_out_mint}`);
       console.log(`[scan-arbitrage] DEX A: ${strategy.dex_a}, DEX B: ${strategy.dex_b}`);
 
-      // Validate token mint addresses
+      // Validate token mint addresses and DEX names
       const validationErrors: string[] = [];
       if (!isValidSolanaAddress(strategy.token_in_mint)) {
         validationErrors.push(`Invalid token_in_mint address: ${strategy.token_in_mint}`);
       }
       if (!isValidSolanaAddress(strategy.token_out_mint)) {
         validationErrors.push(`Invalid token_out_mint address: ${strategy.token_out_mint}`);
+      }
+      
+      // Validate DEX names
+      const dexAValidation = isValidDexName(strategy.dex_a);
+      if (!dexAValidation.valid) {
+        const suggestion = dexAValidation.suggestion ? ` (did you mean "${dexAValidation.suggestion}"?)` : '';
+        validationErrors.push(`Unsupported DEX A: "${strategy.dex_a}"${suggestion}`);
+      }
+      const dexBValidation = isValidDexName(strategy.dex_b);
+      if (!dexBValidation.valid) {
+        const suggestion = dexBValidation.suggestion ? ` (did you mean "${dexBValidation.suggestion}"?)` : '';
+        validationErrors.push(`Unsupported DEX B: "${strategy.dex_b}"${suggestion}`);
       }
 
       if (validationErrors.length > 0) {
@@ -311,9 +382,11 @@ serve(async (req) => {
       success: true,
       message: 'Arbitrage simulation scan complete using REAL Jupiter DEX prices',
       price_source: 'Jupiter Aggregator API (v6) - aggregates Raydium, Orca, and other Solana DEXs',
+      supported_dexs: getSupportedDexList(),
       simulations: results,
       total_strategies: results.length,
       profitable_count: results.filter(r => r.meets_min_threshold && r.estimated_profit_lamports > 0).length,
+      validation_failed_count: results.filter(r => (r.validation_errors?.length ?? 0) > 0).length,
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
