@@ -22,6 +22,7 @@ import AdminDeliverPage from "./pages/AdminDeliverPage";
 import StakingPage from "./pages/StakingPage";
 import GovernancePage from "./pages/GovernancePage";
 import ProposalDetailPage from "./pages/ProposalDetailPage";
+import MarketplacePage from "./pages/MarketplacePage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -44,6 +45,7 @@ const App = () => (
               <Route path="/assets/:id" element={<AssetDetailPage />} />
               <Route path="/tokens" element={<TokensPage />} />
               <Route path="/staking" element={<StakingPage />} />
+              <Route path="/marketplace" element={<MarketplacePage />} />
               <Route path="/governance" element={<GovernancePage />} />
               <Route path="/governance/:id" element={<ProposalDetailPage />} />
               <Route path="/profile" element={<ProfilePage />} />

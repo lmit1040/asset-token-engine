@@ -11,7 +11,8 @@ import {
   Send,
   LogOut,
   Landmark,
-  Vote
+  Vote,
+  Store
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
@@ -20,6 +21,7 @@ const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Assets', href: '/assets', icon: Vault },
   { name: 'Tokens', href: '/tokens', icon: Coins },
+  { name: 'Marketplace', href: '/marketplace', icon: Store },
   { name: 'MXU Staking', href: '/staking', icon: Landmark },
   { name: 'Governance', href: '/governance', icon: Vote },
   { name: 'Profile', href: '/profile', icon: User },

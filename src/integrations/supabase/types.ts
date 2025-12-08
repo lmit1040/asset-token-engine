@@ -184,6 +184,135 @@ export type Database = {
         }
         Relationships: []
       }
+      marketplace_orders: {
+        Row: {
+          created_at: string
+          expires_at: string | null
+          filled_quantity: number
+          id: string
+          order_type: Database["public"]["Enums"]["order_type"]
+          price_per_token: number
+          quantity: number
+          status: Database["public"]["Enums"]["order_status"]
+          token_definition_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at?: string | null
+          filled_quantity?: number
+          id?: string
+          order_type: Database["public"]["Enums"]["order_type"]
+          price_per_token: number
+          quantity: number
+          status?: Database["public"]["Enums"]["order_status"]
+          token_definition_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string | null
+          filled_quantity?: number
+          id?: string
+          order_type?: Database["public"]["Enums"]["order_type"]
+          price_per_token?: number
+          quantity?: number
+          status?: Database["public"]["Enums"]["order_status"]
+          token_definition_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "marketplace_orders_token_definition_id_fkey"
+            columns: ["token_definition_id"]
+            isOneToOne: false
+            referencedRelation: "token_definitions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "marketplace_orders_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      marketplace_trades: {
+        Row: {
+          buy_order_id: string
+          buyer_id: string
+          executed_at: string
+          id: string
+          price_per_token: number
+          quantity: number
+          sell_order_id: string
+          seller_id: string
+          token_definition_id: string
+        }
+        Insert: {
+          buy_order_id: string
+          buyer_id: string
+          executed_at?: string
+          id?: string
+          price_per_token: number
+          quantity: number
+          sell_order_id: string
+          seller_id: string
+          token_definition_id: string
+        }
+        Update: {
+          buy_order_id?: string
+          buyer_id?: string
+          executed_at?: string
+          id?: string
+          price_per_token?: number
+          quantity?: number
+          sell_order_id?: string
+          seller_id?: string
+          token_definition_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "marketplace_trades_buy_order_id_fkey"
+            columns: ["buy_order_id"]
+            isOneToOne: false
+            referencedRelation: "marketplace_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "marketplace_trades_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "marketplace_trades_sell_order_id_fkey"
+            columns: ["sell_order_id"]
+            isOneToOne: false
+            referencedRelation: "marketplace_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "marketplace_trades_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "marketplace_trades_token_definition_id_fkey"
+            columns: ["token_definition_id"]
+            isOneToOne: false
+            referencedRelation: "token_definitions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           created_at: string
@@ -524,6 +653,8 @@ export type Database = {
       blockchain_chain: "ETHEREUM" | "POLYGON" | "BSC" | "SOLANA" | "NONE"
       deployment_status: "NOT_DEPLOYED" | "PENDING" | "DEPLOYED"
       network_type: "MAINNET" | "TESTNET" | "NONE"
+      order_status: "OPEN" | "PARTIALLY_FILLED" | "FILLED" | "CANCELLED"
+      order_type: "BUY" | "SELL"
       owner_entity: "PERSONAL_TRUST" | "BUSINESS_TRUST" | "SPV_LLC"
       proposal_status:
         | "DRAFT"
@@ -678,6 +809,8 @@ export const Constants = {
       blockchain_chain: ["ETHEREUM", "POLYGON", "BSC", "SOLANA", "NONE"],
       deployment_status: ["NOT_DEPLOYED", "PENDING", "DEPLOYED"],
       network_type: ["MAINNET", "TESTNET", "NONE"],
+      order_status: ["OPEN", "PARTIALLY_FILLED", "FILLED", "CANCELLED"],
+      order_type: ["BUY", "SELL"],
       owner_entity: ["PERSONAL_TRUST", "BUSINESS_TRUST", "SPV_LLC"],
       proposal_status: [
         "DRAFT",
