@@ -9,6 +9,7 @@ const corsHeaders = {
 interface BalanceRequest {
   walletAddress: string;
   mintAddresses?: string[];
+  isTreasuryAccount?: boolean; // If true, walletAddress is a token account, not a wallet
 }
 
 interface TokenBalance {
@@ -25,7 +26,7 @@ serve(async (req) => {
   }
 
   try {
-    const { walletAddress, mintAddresses }: BalanceRequest = await req.json();
+    const { walletAddress, mintAddresses, isTreasuryAccount }: BalanceRequest = await req.json();
 
     if (!walletAddress) {
       console.error('Missing walletAddress parameter');
@@ -35,7 +36,7 @@ serve(async (req) => {
       );
     }
 
-    console.log(`Fetching balances for wallet: ${walletAddress}`);
+    console.log(`Fetching balances for ${isTreasuryAccount ? 'token account' : 'wallet'}: ${walletAddress}`);
     if (mintAddresses?.length) {
       console.log(`Filtering for mints: ${mintAddresses.join(', ')}`);
     }
@@ -44,9 +45,9 @@ serve(async (req) => {
     const rpcUrl = Deno.env.get('SOLANA_DEVNET_RPC_URL') || 'https://api.devnet.solana.com';
     const connection = new Connection(rpcUrl, 'confirmed');
 
-    let walletPubkey: PublicKey;
+    let addressPubkey: PublicKey;
     try {
-      walletPubkey = new PublicKey(walletAddress);
+      addressPubkey = new PublicKey(walletAddress);
     } catch {
       console.error('Invalid wallet address format');
       return new Response(
@@ -55,59 +56,86 @@ serve(async (req) => {
       );
     }
 
-    // Fetch all token accounts for the wallet
-    const tokenAccounts = await connection.getParsedTokenAccountsByOwner(walletPubkey, {
-      programId: new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'),
-    });
-
-    console.log(`Found ${tokenAccounts.value.length} token accounts`);
-
     const balances: TokenBalance[] = [];
-    const mintFilter = mintAddresses ? new Set(mintAddresses) : null;
 
-    for (const { account } of tokenAccounts.value) {
-      const parsedInfo = account.data.parsed?.info;
-      if (!parsedInfo) continue;
-
-      const mint = parsedInfo.mint;
-      const tokenAmount = parsedInfo.tokenAmount;
-
-      // Skip if we're filtering and this mint isn't in the list
-      if (mintFilter && !mintFilter.has(mint)) continue;
-
-      balances.push({
-        mint,
-        balance: tokenAmount.uiAmount || 0,
-        rawBalance: tokenAmount.amount,
-        decimals: tokenAmount.decimals,
+    // If this is a treasury/token account (ATA), fetch balance directly
+    if (isTreasuryAccount && mintAddresses?.length === 1) {
+      try {
+        console.log('Fetching balance for token account directly...');
+        const tokenAccountBalance = await connection.getTokenAccountBalance(addressPubkey);
+        
+        console.log('Token account balance:', tokenAccountBalance.value);
+        
+        balances.push({
+          mint: mintAddresses[0],
+          balance: tokenAccountBalance.value.uiAmount || 0,
+          rawBalance: tokenAccountBalance.value.amount,
+          decimals: tokenAccountBalance.value.decimals,
+        });
+      } catch (e) {
+        console.warn(`Could not fetch token account balance:`, e);
+        // Fall back to zero balance
+        balances.push({
+          mint: mintAddresses[0],
+          balance: 0,
+          rawBalance: '0',
+          decimals: 0,
+        });
+      }
+    } else {
+      // Standard wallet - fetch all token accounts owned by this wallet
+      const tokenAccounts = await connection.getParsedTokenAccountsByOwner(addressPubkey, {
+        programId: new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'),
       });
-    }
 
-    // If specific mints were requested, add zero balances for any not found
-    if (mintAddresses) {
-      const foundMints = new Set(balances.map(b => b.mint));
-      for (const mint of mintAddresses) {
-        if (!foundMints.has(mint)) {
-          // Fetch mint info to get decimals
-          try {
-            const mintPubkey = new PublicKey(mint);
-            const mintInfo = await connection.getParsedAccountInfo(mintPubkey);
-            const decimals = (mintInfo.value?.data as { parsed?: { info?: { decimals?: number } } })?.parsed?.info?.decimals || 0;
-            
-            balances.push({
-              mint,
-              balance: 0,
-              rawBalance: '0',
-              decimals,
-            });
-          } catch (e) {
-            console.warn(`Could not fetch mint info for ${mint}:`, e);
-            balances.push({
-              mint,
-              balance: 0,
-              rawBalance: '0',
-              decimals: 0,
-            });
+      console.log(`Found ${tokenAccounts.value.length} token accounts`);
+
+      const mintFilter = mintAddresses ? new Set(mintAddresses) : null;
+
+      for (const { account } of tokenAccounts.value) {
+        const parsedInfo = account.data.parsed?.info;
+        if (!parsedInfo) continue;
+
+        const mint = parsedInfo.mint;
+        const tokenAmount = parsedInfo.tokenAmount;
+
+        // Skip if we're filtering and this mint isn't in the list
+        if (mintFilter && !mintFilter.has(mint)) continue;
+
+        balances.push({
+          mint,
+          balance: tokenAmount.uiAmount || 0,
+          rawBalance: tokenAmount.amount,
+          decimals: tokenAmount.decimals,
+        });
+      }
+
+      // If specific mints were requested, add zero balances for any not found
+      if (mintAddresses) {
+        const foundMints = new Set(balances.map(b => b.mint));
+        for (const mint of mintAddresses) {
+          if (!foundMints.has(mint)) {
+            // Fetch mint info to get decimals
+            try {
+              const mintPubkey = new PublicKey(mint);
+              const mintInfo = await connection.getParsedAccountInfo(mintPubkey);
+              const decimals = (mintInfo.value?.data as { parsed?: { info?: { decimals?: number } } })?.parsed?.info?.decimals || 0;
+              
+              balances.push({
+                mint,
+                balance: 0,
+                rawBalance: '0',
+                decimals,
+              });
+            } catch (e) {
+              console.warn(`Could not fetch mint info for ${mint}:`, e);
+              balances.push({
+                mint,
+                balance: 0,
+                rawBalance: '0',
+                decimals: 0,
+              });
+            }
           }
         }
       }

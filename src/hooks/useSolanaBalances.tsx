@@ -12,7 +12,7 @@ interface UseSolanaBalancesReturn {
   balances: Record<string, TokenBalance>;
   isLoading: boolean;
   error: string | null;
-  fetchBalances: (walletAddress: string, mintAddresses?: string[]) => Promise<void>;
+  fetchBalances: (walletAddress: string, mintAddresses?: string[], isTreasuryAccount?: boolean) => Promise<void>;
   getBalance: (mint: string) => TokenBalance | null;
 }
 
@@ -21,7 +21,7 @@ export function useSolanaBalances(): UseSolanaBalancesReturn {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchBalances = useCallback(async (walletAddress: string, mintAddresses?: string[]) => {
+  const fetchBalances = useCallback(async (walletAddress: string, mintAddresses?: string[], isTreasuryAccount?: boolean) => {
     if (!walletAddress) return;
     
     setIsLoading(true);
@@ -32,6 +32,7 @@ export function useSolanaBalances(): UseSolanaBalancesReturn {
         body: {
           walletAddress,
           mintAddresses,
+          isTreasuryAccount,
         },
       });
 

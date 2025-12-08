@@ -57,7 +57,8 @@ export function TokenDetailCard({ token, isAdmin, onUpdate }: TokenDetailCardPro
   const fetchTreasuryBalance = useCallback(async () => {
     if (!token.treasury_account || !token.contract_address || !isDeployed) return;
     
-    await fetchBalances(token.treasury_account, [token.contract_address]);
+    // Pass isTreasuryAccount=true since treasury_account is an ATA, not a wallet
+    await fetchBalances(token.treasury_account, [token.contract_address], true);
   }, [token.treasury_account, token.contract_address, isDeployed, fetchBalances]);
 
   useEffect(() => {
