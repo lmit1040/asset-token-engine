@@ -1,12 +1,14 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
-import { 
+import { Buffer } from "https://esm.sh/buffer@6.0.3";
+import {
   Connection, 
   Keypair, 
   PublicKey, 
   Transaction, 
   sendAndConfirmTransaction, 
-  SystemProgram
+  SystemProgram,
+  TransactionInstruction
 } from "https://esm.sh/@solana/web3.js@1.98.0";
 import { 
   createInitializeMint2Instruction, 
@@ -26,6 +28,123 @@ const corsHeaders = {
 interface DeployTokenRequest {
   tokenDefinitionId: string;
   adminPublicKey: string;
+}
+
+// Metaplex Token Metadata Program ID
+const TOKEN_METADATA_PROGRAM_ID = new PublicKey('metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s');
+
+// Helper to derive metadata PDA
+function getMetadataPDA(mint: PublicKey): PublicKey {
+  const [pda] = PublicKey.findProgramAddressSync(
+    [
+      new TextEncoder().encode('metadata'),
+      TOKEN_METADATA_PROGRAM_ID.toBytes(),
+      mint.toBytes(),
+    ],
+    TOKEN_METADATA_PROGRAM_ID
+  );
+  return pda;
+}
+
+// Create Metaplex CreateMetadataAccountV3 instruction
+function createMetadataInstruction(
+  metadataPDA: PublicKey,
+  mint: PublicKey,
+  mintAuthority: PublicKey,
+  payer: PublicKey,
+  updateAuthority: PublicKey,
+  name: string,
+  symbol: string,
+  uri: string
+): TransactionInstruction {
+  // Truncate name to 32 chars and symbol to 10 chars as per Metaplex limits
+  const truncatedName = name.slice(0, 32);
+  const truncatedSymbol = symbol.slice(0, 10);
+  const truncatedUri = uri.slice(0, 200);
+
+  const encoder = new TextEncoder();
+  
+  // Encode strings with length prefix (4 bytes little-endian)
+  const nameBytes = encoder.encode(truncatedName);
+  const nameBuffer = new Uint8Array(4 + nameBytes.length);
+  new DataView(nameBuffer.buffer).setUint32(0, nameBytes.length, true);
+  nameBuffer.set(nameBytes, 4);
+
+  const symbolBytes = encoder.encode(truncatedSymbol);
+  const symbolBuffer = new Uint8Array(4 + symbolBytes.length);
+  new DataView(symbolBuffer.buffer).setUint32(0, symbolBytes.length, true);
+  symbolBuffer.set(symbolBytes, 4);
+
+  const uriBytes = encoder.encode(truncatedUri);
+  const uriBuffer = new Uint8Array(4 + uriBytes.length);
+  new DataView(uriBuffer.buffer).setUint32(0, uriBytes.length, true);
+  uriBuffer.set(uriBytes, 4);
+
+  // Build the instruction data
+  // CreateMetadataAccountV3 structure:
+  // - discriminator (1 byte): 33
+  // - data: DataV2 struct
+  //   - name (string)
+  //   - symbol (string) 
+  //   - uri (string)
+  //   - seller_fee_basis_points (u16): 0
+  //   - creators (Option<Vec<Creator>>): None (1 byte: 0)
+  //   - collection (Option<Collection>): None (1 byte: 0)
+  //   - uses (Option<Uses>): None (1 byte: 0)
+  // - is_mutable (bool): true (1 byte: 1)
+  // - collection_details (Option<CollectionDetails>): None (1 byte: 0)
+
+  const totalLength = 1 + nameBuffer.length + symbolBuffer.length + uriBuffer.length + 2 + 1 + 1 + 1 + 1 + 1;
+  const data = new Uint8Array(totalLength);
+  let offset = 0;
+
+  // Discriminator for CreateMetadataAccountV3
+  data[offset++] = 33;
+
+  // Name
+  data.set(nameBuffer, offset);
+  offset += nameBuffer.length;
+
+  // Symbol
+  data.set(symbolBuffer, offset);
+  offset += symbolBuffer.length;
+
+  // URI
+  data.set(uriBuffer, offset);
+  offset += uriBuffer.length;
+
+  // seller_fee_basis_points = 0 (u16 little-endian)
+  data[offset++] = 0;
+  data[offset++] = 0;
+
+  // creators = None
+  data[offset++] = 0;
+
+  // collection = None
+  data[offset++] = 0;
+
+  // uses = None
+  data[offset++] = 0;
+
+  // is_mutable = true
+  data[offset++] = 1;
+
+  // collection_details = None
+  data[offset++] = 0;
+
+  return new TransactionInstruction({
+    keys: [
+      { pubkey: metadataPDA, isSigner: false, isWritable: true },
+      { pubkey: mint, isSigner: false, isWritable: false },
+      { pubkey: mintAuthority, isSigner: true, isWritable: false },
+      { pubkey: payer, isSigner: true, isWritable: true },
+      { pubkey: updateAuthority, isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    programId: TOKEN_METADATA_PROGRAM_ID,
+    // deno-lint-ignore no-explicit-any
+    data: Buffer.from(data) as any,
+  });
 }
 
 const handler = async (req: Request): Promise<Response> => {
@@ -205,7 +324,24 @@ const handler = async (req: Request): Promise<Response> => {
       )
     );
 
-    console.log('Sending transaction...');
+    // Add Metaplex Token Metadata instruction
+    const metadataPDA = getMetadataPDA(mintKeypair.publicKey);
+    console.log('Metadata PDA:', metadataPDA.toBase58());
+
+    transaction.add(
+      createMetadataInstruction(
+        metadataPDA,
+        mintKeypair.publicKey,
+        mintAuthority, // mint authority
+        feePayerKeypair.publicKey, // payer
+        mintAuthority, // update authority
+        tokenDef.token_name,
+        tokenDef.token_symbol,
+        '' // Empty URI for now - can add IPFS metadata later
+      )
+    );
+
+    console.log('Sending transaction with metadata...');
 
     // Send and confirm transaction
     let signature: string;
@@ -245,6 +381,7 @@ const handler = async (req: Request): Promise<Response> => {
           warning: 'Token deployed but failed to update database',
           mintAddress: mintKeypair.publicKey.toBase58(),
           treasuryAccount: treasuryTokenAccount.toBase58(),
+          metadataAddress: metadataPDA.toBase58(),
           transactionSignature: signature,
           deploymentStatus: 'DEPLOYED',
           mintedAmount: mintAmount.toString(),
@@ -253,12 +390,13 @@ const handler = async (req: Request): Promise<Response> => {
       );
     }
 
-    console.log('Token deployment successful! Minted', mintAmount.toString(), 'base units to treasury');
+    console.log('Token deployment with metadata successful! Minted', mintAmount.toString(), 'base units to treasury');
 
     return new Response(
       JSON.stringify({
         mintAddress: mintKeypair.publicKey.toBase58(),
         treasuryAccount: treasuryTokenAccount.toBase58(),
+        metadataAddress: metadataPDA.toBase58(),
         transactionSignature: signature,
         deploymentStatus: 'DEPLOYED',
         mintedAmount: mintAmount.toString(),
