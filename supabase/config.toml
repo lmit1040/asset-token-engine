@@ -41,3 +41,9 @@ verify_jwt = false
 
 [functions.top-up-fee-payers]
 verify_jwt = false
+
+[functions.generate-fee-payer]
+verify_jwt = false
+
+[functions.get-fee-payer-keypair]
+verify_jwt = false

@@ -275,9 +275,11 @@ export type Database = {
           created_at: string
           id: string
           is_active: boolean
+          is_generated: boolean
           label: string
           last_used_at: string | null
           public_key: string
+          secret_key_encrypted: string | null
           usage_count: number
         }
         Insert: {
@@ -285,9 +287,11 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          is_generated?: boolean
           label: string
           last_used_at?: string | null
           public_key: string
+          secret_key_encrypted?: string | null
           usage_count?: number
         }
         Update: {
@@ -295,9 +299,11 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          is_generated?: boolean
           label?: string
           last_used_at?: string | null
           public_key?: string
+          secret_key_encrypted?: string | null
           usage_count?: number
         }
         Relationships: []
