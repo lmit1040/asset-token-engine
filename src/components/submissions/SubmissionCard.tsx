@@ -3,7 +3,13 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { UserAssetSubmission, SUBMISSION_STATUS_LABELS, SUBMISSION_STATUS_COLORS } from '@/types/submissions';
 import { ASSET_TYPE_LABELS, AssetType } from '@/types/database';
-import { Clock, MapPin, Package } from 'lucide-react';
+import { Clock, MapPin, Package, Paperclip } from 'lucide-react';
+
+interface DocumentItem {
+  name: string;
+  url: string;
+  type?: string;
+}
 
 interface SubmissionCardProps {
   submission: UserAssetSubmission;
@@ -56,6 +62,14 @@ export function SubmissionCard({ submission, showUser, userEmail, onClick }: Sub
           <p className="text-sm text-muted-foreground line-clamp-2">
             {submission.description}
           </p>
+        )}
+
+        {/* Document count indicator */}
+        {submission.documents && Array.isArray(submission.documents) && (submission.documents as DocumentItem[]).length > 0 && (
+          <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <Paperclip className="h-4 w-4" />
+            <span>{(submission.documents as DocumentItem[]).length} document{(submission.documents as DocumentItem[]).length !== 1 ? 's' : ''} attached</span>
+          </div>
         )}
 
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground pt-2 border-t border-border">
