@@ -147,6 +147,30 @@ export function SubmissionReviewPanel({
 
       if (assetError) throw assetError;
 
+      // Copy uploaded documents to proof_of_reserve_files
+      if (submission.documents && Array.isArray(submission.documents)) {
+        const docs = submission.documents as DocumentItem[];
+        if (docs.length > 0) {
+          const proofFiles = docs.map((doc) => ({
+            asset_id: newAsset.id,
+            file_name: doc.name || 'Uploaded Document',
+            file_url: doc.url,
+            file_type: doc.type || 'application/octet-stream',
+            file_hash: btoa(doc.url).slice(0, 64), // Generate hash from URL as placeholder
+            uploaded_by: user?.id,
+          }));
+
+          const { error: proofError } = await supabase
+            .from('proof_of_reserve_files')
+            .insert(proofFiles);
+
+          if (proofError) {
+            console.error('Failed to copy proof files:', proofError);
+            // Don't fail the whole operation, just log the error
+          }
+        }
+      }
+
       // Update the submission with the created asset reference
       await updateSubmissionStatus('APPROVED', newAsset.id);
       
