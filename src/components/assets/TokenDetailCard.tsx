@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Globe, CheckCircle, XCircle, Rocket, ExternalLink, Send, Wallet, RefreshCw } from 'lucide-react';
+import { Globe, CheckCircle, XCircle, Rocket, ExternalLink, Send, Wallet, RefreshCw, Tag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
@@ -27,6 +27,7 @@ interface TokenDetailCardProps {
 
 export function TokenDetailCard({ token, isAdmin, onUpdate }: TokenDetailCardProps) {
   const [isDeploying, setIsDeploying] = useState(false);
+  const [isAddingMetadata, setIsAddingMetadata] = useState(false);
   const [selectedChain, setSelectedChain] = useState<BlockchainChain>((token.chain as BlockchainChain) || 'NONE');
   const [selectedNetwork, setSelectedNetwork] = useState<NetworkType>((token.network as NetworkType) || 'NONE');
   const { solanaAddress, connectPhantom, isConnectingSolana } = useWallet();
@@ -48,6 +49,7 @@ export function TokenDetailCard({ token, isAdmin, onUpdate }: TokenDetailCardPro
   const isPending = deploymentStatus === 'PENDING';
   const isSolanaTestnet = selectedChain === 'SOLANA' && selectedNetwork === 'TESTNET';
   const canSendTokens = isAdmin && isDeployed && token.chain === 'SOLANA' && token.network === 'TESTNET';
+  const canAddMetadata = isAdmin && isDeployed && token.chain === 'SOLANA';
 
   // Fetch treasury balance when token is deployed with a treasury account
   const fetchTreasuryBalance = useCallback(async () => {
@@ -294,6 +296,36 @@ export function TokenDetailCard({ token, isAdmin, onUpdate }: TokenDetailCardPro
     }
   };
 
+  const handleAddMetadata = async () => {
+    if (!canAddMetadata) return;
+
+    setIsAddingMetadata(true);
+    try {
+      toast.info('Adding Metaplex metadata to token...');
+
+      const { data, error } = await supabase.functions.invoke('add-token-metadata', {
+        body: {
+          tokenDefinitionId: token.id,
+        },
+      });
+
+      if (error) {
+        throw new Error(error.message || 'Failed to add metadata');
+      }
+
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      toast.success(`Metadata added! Token will now show as "${token.token_symbol}" on explorers.`);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to add metadata';
+      toast.error(message);
+    } finally {
+      setIsAddingMetadata(false);
+    }
+  };
+
   return (
     <div className="bg-muted/30 rounded-lg p-4 border border-border">
       <div className="flex items-start justify-between mb-3">
@@ -482,6 +514,34 @@ export function TokenDetailCard({ token, isAdmin, onUpdate }: TokenDetailCardPro
                 )}
               </div>
             )}
+          </div>
+        )}
+
+        {/* Add Metadata Button for deployed Solana tokens */}
+        {canAddMetadata && (
+          <div className="pt-3">
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              disabled={isAddingMetadata}
+              onClick={handleAddMetadata}
+            >
+              {isAddingMetadata ? (
+                <>
+                  <div className="h-4 w-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                  Adding Metadata...
+                </>
+              ) : (
+                <>
+                  <Tag className="h-4 w-4" />
+                  Add Token Metadata (Name/Symbol)
+                </>
+              )}
+            </Button>
+            <p className="text-xs text-muted-foreground mt-1">
+              Adds Metaplex metadata so the token displays correctly on Solana explorers.
+            </p>
           </div>
         )}
       </div>
