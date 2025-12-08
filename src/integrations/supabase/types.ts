@@ -92,6 +92,53 @@ export type Database = {
         }
         Relationships: []
       }
+      attestations: {
+        Row: {
+          asset_id: string
+          attestation_date: string
+          attested_by: string | null
+          created_at: string
+          id: string
+          notes: string | null
+          proof_file_ids: string[] | null
+          status: Database["public"]["Enums"]["attestation_status"]
+          updated_at: string
+          verification_hash: string | null
+        }
+        Insert: {
+          asset_id: string
+          attestation_date?: string
+          attested_by?: string | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          proof_file_ids?: string[] | null
+          status?: Database["public"]["Enums"]["attestation_status"]
+          updated_at?: string
+          verification_hash?: string | null
+        }
+        Update: {
+          asset_id?: string
+          attestation_date?: string
+          attested_by?: string | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          proof_file_ids?: string[] | null
+          status?: Database["public"]["Enums"]["attestation_status"]
+          updated_at?: string
+          verification_hash?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "attestations_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       fee_discount_tiers: {
         Row: {
           created_at: string
@@ -525,6 +572,53 @@ export type Database = {
           },
         ]
       }
+      transfer_requests: {
+        Row: {
+          amount: number
+          created_at: string
+          from_user_id: string
+          id: string
+          message: string | null
+          resolved_at: string | null
+          status: Database["public"]["Enums"]["transfer_request_status"]
+          to_user_id: string
+          token_definition_id: string
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          from_user_id: string
+          id?: string
+          message?: string | null
+          resolved_at?: string | null
+          status?: Database["public"]["Enums"]["transfer_request_status"]
+          to_user_id: string
+          token_definition_id: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          from_user_id?: string
+          id?: string
+          message?: string | null
+          resolved_at?: string | null
+          status?: Database["public"]["Enums"]["transfer_request_status"]
+          to_user_id?: string
+          token_definition_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "transfer_requests_token_definition_id_fkey"
+            columns: ["token_definition_id"]
+            isOneToOne: false
+            referencedRelation: "token_definitions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           id: string
@@ -650,6 +744,7 @@ export type Database = {
         | "GOLD_CERTIFICATE"
         | "SILVER_CERTIFICATE"
         | "OTHER"
+      attestation_status: "PENDING" | "ATTESTED" | "REJECTED"
       blockchain_chain: "ETHEREUM" | "POLYGON" | "BSC" | "SOLANA" | "NONE"
       deployment_status: "NOT_DEPLOYED" | "PENDING" | "DEPLOYED"
       network_type: "MAINNET" | "TESTNET" | "NONE"
@@ -669,6 +764,7 @@ export type Database = {
         | "FEE_ADJUSTMENT"
         | "GENERAL"
       token_model: "ONE_TO_ONE" | "FRACTIONAL" | "VAULT_BASKET"
+      transfer_request_status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED"
       vote_choice: "FOR" | "AGAINST" | "ABSTAIN"
     }
     CompositeTypes: {
@@ -806,6 +902,7 @@ export const Constants = {
         "SILVER_CERTIFICATE",
         "OTHER",
       ],
+      attestation_status: ["PENDING", "ATTESTED", "REJECTED"],
       blockchain_chain: ["ETHEREUM", "POLYGON", "BSC", "SOLANA", "NONE"],
       deployment_status: ["NOT_DEPLOYED", "PENDING", "DEPLOYED"],
       network_type: ["MAINNET", "TESTNET", "NONE"],
@@ -827,6 +924,7 @@ export const Constants = {
         "GENERAL",
       ],
       token_model: ["ONE_TO_ONE", "FRACTIONAL", "VAULT_BASKET"],
+      transfer_request_status: ["PENDING", "APPROVED", "REJECTED", "CANCELLED"],
       vote_choice: ["FOR", "AGAINST", "ABSTAIN"],
     },
   },

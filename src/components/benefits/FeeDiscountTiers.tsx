@@ -1,7 +1,7 @@
 import { Check, Percent, TrendingUp } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { FeeDiscountTier } from '@/types/staking';
+import { FeeDiscountTier } from '@/types/benefits';
 import { cn } from '@/lib/utils';
 
 interface FeeDiscountTiersProps {
