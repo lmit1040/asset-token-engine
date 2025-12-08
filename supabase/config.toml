@@ -29,3 +29,6 @@ verify_jwt = false
 
 [functions.refresh-fee-payer-balances]
 verify_jwt = false
+
+[functions.send-submission-notification]
+verify_jwt = false
