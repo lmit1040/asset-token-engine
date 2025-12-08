@@ -2,11 +2,11 @@ import { useEffect, useState, useCallback } from 'react';
 import { Coins, Percent, Award } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { StatCard } from '@/components/dashboard/StatCard';
-import { FeeDiscountTiers } from '@/components/staking/FeeDiscountTiers';
+import { FeeDiscountTiers } from '@/components/benefits/FeeDiscountTiers';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from '@/hooks/use-toast';
-import { FeeDiscountTier } from '@/types/staking';
+import { FeeDiscountTier } from '@/types/benefits';
 
 export default function MxuBenefitsPage() {
   const { user } = useAuth();

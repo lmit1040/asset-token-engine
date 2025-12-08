@@ -11,7 +11,9 @@ import {
   Send,
   LogOut,
   Award,
-  Vote
+  Vote,
+  ArrowRightLeft,
+  FileCheck
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
@@ -20,6 +22,7 @@ const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Assets', href: '/assets', icon: Vault },
   { name: 'Tokens', href: '/tokens', icon: Coins },
+  { name: 'Transfers', href: '/transfers', icon: ArrowRightLeft },
   { name: 'MXU Benefits', href: '/mxu-benefits', icon: Award },
   { name: 'Governance', href: '/governance', icon: Vote },
   { name: 'Profile', href: '/profile', icon: User },
@@ -30,6 +33,7 @@ const adminNavigation = [
   { name: 'Assign Tokens', href: '/admin/assign', icon: Shield },
   { name: 'Transfer Tokens', href: '/admin/transfer', icon: RefreshCw },
   { name: 'On-Chain Delivery', href: '/admin/deliver', icon: Send },
+  { name: 'Attestations', href: '/admin/attestations', icon: FileCheck },
   { name: 'Activity', href: '/admin/activity', icon: Activity },
 ];
 

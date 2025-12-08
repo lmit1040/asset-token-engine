@@ -19,9 +19,11 @@ import AdminAssignPage from "./pages/AdminAssignPage";
 import AdminTransferPage from "./pages/AdminTransferPage";
 import AdminActivityPage from "./pages/AdminActivityPage";
 import AdminDeliverPage from "./pages/AdminDeliverPage";
+import AdminAttestationsPage from "./pages/AdminAttestationsPage";
 import MxuBenefitsPage from "./pages/MxuBenefitsPage";
 import GovernancePage from "./pages/GovernancePage";
 import ProposalDetailPage from "./pages/ProposalDetailPage";
+import TransfersPage from "./pages/TransfersPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -43,6 +45,7 @@ const App = () => (
               <Route path="/assets/:id/edit" element={<EditAssetPage />} />
               <Route path="/assets/:id" element={<AssetDetailPage />} />
               <Route path="/tokens" element={<TokensPage />} />
+              <Route path="/transfers" element={<TransfersPage />} />
               <Route path="/mxu-benefits" element={<MxuBenefitsPage />} />
               <Route path="/governance" element={<GovernancePage />} />
               <Route path="/governance/:id" element={<ProposalDetailPage />} />
@@ -51,6 +54,7 @@ const App = () => (
               <Route path="/admin/assign" element={<AdminAssignPage />} />
               <Route path="/admin/transfer" element={<AdminTransferPage />} />
               <Route path="/admin/deliver" element={<AdminDeliverPage />} />
+              <Route path="/admin/attestations" element={<AdminAttestationsPage />} />
               <Route path="/admin/activity" element={<AdminActivityPage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
