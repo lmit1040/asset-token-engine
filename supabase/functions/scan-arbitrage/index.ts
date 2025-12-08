@@ -6,6 +6,72 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Jupiter Quote API for real DEX price fetching
+const JUPITER_QUOTE_API = 'https://quote-api.jup.ag/v6/quote';
+
+interface JupiterQuoteResponse {
+  inputMint: string;
+  inAmount: string;
+  outputMint: string;
+  outAmount: string;
+  otherAmountThreshold: string;
+  swapMode: string;
+  slippageBps: number;
+  priceImpactPct: string;
+  routePlan: Array<{
+    swapInfo: {
+      ammKey: string;
+      label: string;
+      inputMint: string;
+      outputMint: string;
+      inAmount: string;
+      outAmount: string;
+      feeAmount: string;
+      feeMint: string;
+    };
+    percent: number;
+  }>;
+  contextSlot?: number;
+  timeTaken?: number;
+}
+
+// Fetch quote from Jupiter API
+async function fetchJupiterQuote(
+  inputMint: string,
+  outputMint: string,
+  amountLamports: number,
+  slippageBps: number = 50
+): Promise<JupiterQuoteResponse | null> {
+  try {
+    const url = `${JUPITER_QUOTE_API}?inputMint=${inputMint}&outputMint=${outputMint}&amount=${amountLamports}&slippageBps=${slippageBps}`;
+    console.log(`[scan-arbitrage] Fetching Jupiter quote: ${inputMint} -> ${outputMint}, amount: ${amountLamports}`);
+    
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[scan-arbitrage] Jupiter API error: ${response.status} - ${errorText}`);
+      return null;
+    }
+    
+    const data = await response.json();
+    console.log(`[scan-arbitrage] Jupiter quote received: outAmount=${data.outAmount}, routes=${data.routePlan?.length || 0}`);
+    return data;
+  } catch (error) {
+    console.error(`[scan-arbitrage] Failed to fetch Jupiter quote:`, error);
+    return null;
+  }
+}
+
+// Get primary DEX used in a route
+function getPrimaryDex(quote: JupiterQuoteResponse): string {
+  if (!quote.routePlan || quote.routePlan.length === 0) return 'Unknown';
+  
+  // Find the DEX with highest percentage in the route
+  const sortedRoutes = [...quote.routePlan].sort((a, b) => b.percent - a.percent);
+  return sortedRoutes[0]?.swapInfo?.label || 'Unknown';
+}
+
 serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -13,7 +79,7 @@ serve(async (req) => {
   }
 
   try {
-    console.log('[scan-arbitrage] Starting arbitrage simulation scan...');
+    console.log('[scan-arbitrage] Starting arbitrage simulation scan with REAL DEX prices...');
 
     // Get authorization header
     const authHeader = req.headers.get('Authorization');
@@ -76,25 +142,57 @@ serve(async (req) => {
     for (const strategy of strategies || []) {
       const startedAt = new Date().toISOString();
       console.log(`[scan-arbitrage] Simulating strategy: ${strategy.name}`);
+      console.log(`[scan-arbitrage] Token In: ${strategy.token_in_mint}, Token Out: ${strategy.token_out_mint}`);
+      console.log(`[scan-arbitrage] DEX A: ${strategy.dex_a}, DEX B: ${strategy.dex_b}`);
 
-      // TODO: Real DEX price fetching logic goes here
-      // For now, we use placeholder/stub price simulation
-      // In production, this would:
-      // 1. Query DEX A (e.g., Raydium) for token_in -> token_out price
-      // 2. Query DEX B (e.g., Orca) for token_out -> token_in price
-      // 3. Calculate round-trip profit
+      // Use 0.1 SOL worth as test input (100 million lamports = 0.1 SOL)
+      const inputLamports = 100_000_000;
+      
+      let estimatedProfitLamports = 0;
+      let priceSourceA = 'Jupiter';
+      let priceSourceB = 'Jupiter';
+      let dexUsedA = strategy.dex_a;
+      let dexUsedB = strategy.dex_b;
+      let quoteErrorA: string | null = null;
+      let quoteErrorB: string | null = null;
+      let outAmountA = 0;
+      let outAmountB = 0;
 
-      // Stub: Generate a random estimated profit for simulation
-      const priceOnDexA = 1.0 + (Math.random() * 0.1 - 0.05); // 0.95 to 1.05
-      const priceOnDexB = 1.0 + (Math.random() * 0.1 - 0.05); // 0.95 to 1.05
-      
-      // Simulate 1 SOL worth of input (1 billion lamports)
-      const inputLamports = 1_000_000_000;
-      
-      // Calculate hypothetical round-trip
-      const afterDexA = inputLamports * priceOnDexA;
-      const afterDexB = afterDexA * priceOnDexB;
-      const estimatedProfitLamports = Math.floor(afterDexB - inputLamports);
+      // Step 1: Get quote for token_in -> token_out (leg A)
+      const quoteA = await fetchJupiterQuote(
+        strategy.token_in_mint,
+        strategy.token_out_mint,
+        inputLamports
+      );
+
+      if (quoteA) {
+        outAmountA = parseInt(quoteA.outAmount, 10);
+        dexUsedA = getPrimaryDex(quoteA);
+        console.log(`[scan-arbitrage] Leg A: ${inputLamports} -> ${outAmountA} via ${dexUsedA}`);
+
+        // Step 2: Get quote for token_out -> token_in (leg B - round trip)
+        const quoteB = await fetchJupiterQuote(
+          strategy.token_out_mint,
+          strategy.token_in_mint,
+          outAmountA
+        );
+
+        if (quoteB) {
+          outAmountB = parseInt(quoteB.outAmount, 10);
+          dexUsedB = getPrimaryDex(quoteB);
+          console.log(`[scan-arbitrage] Leg B: ${outAmountA} -> ${outAmountB} via ${dexUsedB}`);
+
+          // Calculate round-trip profit
+          estimatedProfitLamports = outAmountB - inputLamports;
+          console.log(`[scan-arbitrage] Round-trip profit: ${estimatedProfitLamports} lamports (${(estimatedProfitLamports / 1_000_000_000).toFixed(6)} SOL)`);
+        } else {
+          quoteErrorB = 'Failed to fetch return leg quote from Jupiter';
+          console.warn(`[scan-arbitrage] ${quoteErrorB}`);
+        }
+      } else {
+        quoteErrorA = 'Failed to fetch initial leg quote from Jupiter';
+        console.warn(`[scan-arbitrage] ${quoteErrorA}`);
+      }
 
       const finishedAt = new Date().toISOString();
 
@@ -109,7 +207,7 @@ serve(async (req) => {
           estimated_profit_lamports: estimatedProfitLamports,
           actual_profit_lamports: null,
           tx_signature: null,
-          error_message: null,
+          error_message: quoteErrorA || quoteErrorB || null,
         })
         .select()
         .single();
@@ -125,20 +223,28 @@ serve(async (req) => {
         strategy_name: strategy.name,
         dex_a: strategy.dex_a,
         dex_b: strategy.dex_b,
+        dex_used_a: dexUsedA,
+        dex_used_b: dexUsedB,
         token_in_mint: strategy.token_in_mint,
         token_out_mint: strategy.token_out_mint,
+        input_lamports: inputLamports,
+        output_leg_a: outAmountA,
+        output_leg_b: outAmountB,
         estimated_profit_lamports: estimatedProfitLamports,
         estimated_profit_sol: estimatedProfitLamports / 1_000_000_000,
         meets_min_threshold: estimatedProfitLamports >= strategy.min_profit_lamports,
+        price_source: 'Jupiter Aggregator (Real DEX Prices)',
         run_id: runData?.id || null,
+        error: quoteErrorA || quoteErrorB || null,
       });
     }
 
-    console.log(`[scan-arbitrage] Scan complete. ${results.length} strategies simulated.`);
+    console.log(`[scan-arbitrage] Scan complete. ${results.length} strategies simulated with REAL prices.`);
 
     return new Response(JSON.stringify({
       success: true,
-      message: 'Arbitrage simulation scan complete',
+      message: 'Arbitrage simulation scan complete using REAL Jupiter DEX prices',
+      price_source: 'Jupiter Aggregator API (v6) - aggregates Raydium, Orca, and other Solana DEXs',
       simulations: results,
       total_strategies: results.length,
       profitable_count: results.filter(r => r.meets_min_threshold && r.estimated_profit_lamports > 0).length,
