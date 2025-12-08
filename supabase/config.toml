@@ -20,3 +20,6 @@ verify_jwt = false
 
 [functions.update-token-metadata]
 verify_jwt = false
+
+[functions.mint-to-treasury]
+verify_jwt = false

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Globe, CheckCircle, XCircle, Rocket, ExternalLink, Send, Wallet, RefreshCw, Tag, Upload } from 'lucide-react';
+import { Globe, CheckCircle, XCircle, Rocket, ExternalLink, Send, Wallet, RefreshCw, Tag, Upload, Coins } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
@@ -29,6 +29,7 @@ export function TokenDetailCard({ token, isAdmin, onUpdate }: TokenDetailCardPro
   const [isDeploying, setIsDeploying] = useState(false);
   const [isAddingMetadata, setIsAddingMetadata] = useState(false);
   const [isUpdatingMetadata, setIsUpdatingMetadata] = useState(false);
+  const [isMinting, setIsMinting] = useState(false);
   const [selectedChain, setSelectedChain] = useState<BlockchainChain>((token.chain as BlockchainChain) || 'NONE');
   const [selectedNetwork, setSelectedNetwork] = useState<NetworkType>((token.network as NetworkType) || 'NONE');
   const { solanaAddress, connectPhantom, isConnectingSolana } = useWallet();
@@ -370,6 +371,44 @@ export function TokenDetailCard({ token, isAdmin, onUpdate }: TokenDetailCardPro
     }
   };
 
+  const handleMintToTreasury = async () => {
+    if (!isAdmin || !isDeployed || token.chain !== 'SOLANA') return;
+
+    setIsMinting(true);
+    try {
+      toast.info('Minting tokens to treasury...');
+
+      const { data, error } = await supabase.functions.invoke('mint-to-treasury', {
+        body: {
+          tokenDefinitionId: token.id,
+        },
+      });
+
+      if (error) {
+        throw new Error(error.message || 'Failed to mint tokens');
+      }
+
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      if (data.message) {
+        toast.info(data.message);
+      } else {
+        toast.success(`Minted ${Number(data.mintedAmount).toLocaleString()} tokens to treasury!`);
+      }
+      
+      // Refresh treasury balance
+      fetchTreasuryBalance();
+      onUpdate();
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to mint tokens';
+      toast.error(message);
+    } finally {
+      setIsMinting(false);
+    }
+  };
+
   return (
     <div className="bg-muted/30 rounded-lg p-4 border border-border">
       <div className="flex items-start justify-between mb-3">
@@ -557,6 +596,28 @@ export function TokenDetailCard({ token, isAdmin, onUpdate }: TokenDetailCardPro
                   <span className="text-xs text-muted-foreground">--</span>
                 )}
               </div>
+            )}
+            {/* Mint to Treasury button if balance is 0 */}
+            {isAdmin && isDeployed && token.chain === 'SOLANA' && treasuryBalance === 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full mt-2"
+                disabled={isMinting}
+                onClick={handleMintToTreasury}
+              >
+                {isMinting ? (
+                  <>
+                    <div className="h-4 w-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                    Minting...
+                  </>
+                ) : (
+                  <>
+                    <Coins className="h-4 w-4" />
+                    Mint Supply to Treasury
+                  </>
+                )}
+              </Button>
             )}
           </div>
         )}
