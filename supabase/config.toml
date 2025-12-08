@@ -26,3 +26,6 @@ verify_jwt = false
 
 [functions.upload-token-image]
 verify_jwt = false
+
+[functions.execute-trade]
+verify_jwt = false
