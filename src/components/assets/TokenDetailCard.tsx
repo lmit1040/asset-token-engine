@@ -9,6 +9,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useWallet } from '@/hooks/useWallet';
 import { useSolanaBalances } from '@/hooks/useSolanaBalances';
+import { TokenImageUpload } from './TokenImageUpload';
 import { 
   TokenDefinition, 
   TOKEN_MODEL_LABELS, 
@@ -20,7 +21,7 @@ import {
 } from '@/types/database';
 
 interface TokenDetailCardProps {
-  token: TokenDefinition;
+  token: TokenDefinition & { token_image_url?: string | null };
   isAdmin: boolean;
   onUpdate: () => void;
 }
@@ -340,6 +341,7 @@ export function TokenDetailCard({ token, isAdmin, onUpdate }: TokenDetailCardPro
         body: {
           tokenDefinitionId: token.id,
           description: `${token.token_name} (${token.token_symbol}) - A tokenized asset on MetallumX Vault platform.`,
+          imageUrl: token.token_image_url || undefined,
         },
       });
 
@@ -623,6 +625,18 @@ export function TokenDetailCard({ token, isAdmin, onUpdate }: TokenDetailCardPro
           </div>
         )}
 
+        {/* Token Image Upload for deployed Solana tokens */}
+        {canAddMetadata && (
+          <div className="pt-3 border-t border-border">
+            <TokenImageUpload
+              tokenId={token.id}
+              tokenSymbol={token.token_symbol}
+              currentImageUrl={token.token_image_url}
+              onUploadComplete={() => onUpdate()}
+            />
+          </div>
+        )}
+
         {/* Add Metadata Button for deployed Solana tokens */}
         {canAddMetadata && (
           <div className="pt-3 space-y-2">
@@ -649,7 +663,7 @@ export function TokenDetailCard({ token, isAdmin, onUpdate }: TokenDetailCardPro
               variant="default"
               size="sm"
               className="w-full"
-              disabled={isUpdatingMetadata}
+              disabled={isUpdatingMetadata || !token.token_image_url}
               onClick={handleUpdateMetadataWithIPFS}
             >
               {isUpdatingMetadata ? (
@@ -665,7 +679,9 @@ export function TokenDetailCard({ token, isAdmin, onUpdate }: TokenDetailCardPro
               )}
             </Button>
             <p className="text-xs text-muted-foreground">
-              First add metadata, then update with IPFS URI for full Solscan display.
+              {!token.token_image_url 
+                ? 'Upload an icon first, then update metadata on-chain.'
+                : 'First add metadata, then update with IPFS URI for full Solscan display.'}
             </p>
           </div>
         )}

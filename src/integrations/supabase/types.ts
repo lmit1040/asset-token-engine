@@ -253,6 +253,7 @@ export type Database = {
           id: string
           network: Database["public"]["Enums"]["network_type"]
           notes: string | null
+          token_image_url: string | null
           token_model: Database["public"]["Enums"]["token_model"]
           token_name: string
           token_symbol: string
@@ -269,6 +270,7 @@ export type Database = {
           id?: string
           network?: Database["public"]["Enums"]["network_type"]
           notes?: string | null
+          token_image_url?: string | null
           token_model: Database["public"]["Enums"]["token_model"]
           token_name: string
           token_symbol: string
@@ -285,6 +287,7 @@ export type Database = {
           id?: string
           network?: Database["public"]["Enums"]["network_type"]
           notes?: string | null
+          token_image_url?: string | null
           token_model?: Database["public"]["Enums"]["token_model"]
           token_name?: string
           token_symbol?: string
