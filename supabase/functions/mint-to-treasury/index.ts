@@ -79,27 +79,29 @@ const handler = async (req: Request): Promise<Response> => {
       );
     }
 
-    // Get fee payer keypair
-    const feePayerSecretKey = Deno.env.get('SOLANA_FEE_PAYER_SECRET_KEY');
-    if (!feePayerSecretKey) {
+    // Get fee payer keypair from database (automatic rotation)
+    console.log('Fetching fee payer from database...');
+    const feePayerResponse = await fetch(`${supabaseUrl}/functions/v1/get-fee-payer-keypair`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${supabaseServiceKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ prefer_least_used: true }),
+    });
+
+    if (!feePayerResponse.ok) {
+      const errorData = await feePayerResponse.json();
+      console.error('Failed to get fee payer:', errorData);
       return new Response(
-        JSON.stringify({ error: 'Server configuration error: fee payer not configured' }),
+        JSON.stringify({ error: errorData.error || 'Failed to get fee payer keypair' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    let feePayerKeypair: Keypair;
-    try {
-      const secretKeyArray = JSON.parse(feePayerSecretKey);
-      feePayerKeypair = Keypair.fromSecretKey(new Uint8Array(secretKeyArray));
-      console.log('Fee payer public key:', feePayerKeypair.publicKey.toBase58());
-    } catch (parseError) {
-      console.error('Failed to parse fee payer secret key:', parseError);
-      return new Response(
-        JSON.stringify({ error: 'Server configuration error: invalid fee payer key format' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+    const feePayerData = await feePayerResponse.json();
+    const feePayerKeypair = Keypair.fromSecretKey(new Uint8Array(feePayerData.secret_key_array));
+    console.log('Using fee payer:', feePayerData.public_key, '(label:', feePayerData.label, ')');
 
     // Connect to Solana Devnet
     const rpcUrl = Deno.env.get('SOLANA_DEVNET_RPC_URL') || 'https://api.devnet.solana.com';

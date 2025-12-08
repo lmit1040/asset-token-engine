@@ -96,21 +96,26 @@ serve(async (req) => {
       Deno.env.get("SOLANA_DEVNET_RPC_URL") || "https://api.devnet.solana.com";
     const connection = new Connection(rpcUrl, "confirmed");
 
-    // Load fee payer keypair (also the treasury owner)
-    const feePayerSecretKey = Deno.env.get("SOLANA_FEE_PAYER_SECRET_KEY");
-    if (!feePayerSecretKey) {
-      throw new Error("SOLANA_FEE_PAYER_SECRET_KEY not configured");
+    // Get fee payer keypair from database (automatic rotation)
+    console.log("Fetching fee payer from database...");
+    const feePayerResponse = await fetch(`${supabaseUrl}/functions/v1/get-fee-payer-keypair`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${supabaseServiceKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ prefer_least_used: true }),
+    });
+
+    if (!feePayerResponse.ok) {
+      const errorData = await feePayerResponse.json();
+      console.error("Failed to get fee payer:", errorData);
+      throw new Error(errorData.error || "Failed to get fee payer keypair");
     }
 
-    let feePayer: Keypair;
-    try {
-      const secretKeyArray = JSON.parse(feePayerSecretKey);
-      feePayer = Keypair.fromSecretKey(new Uint8Array(secretKeyArray));
-    } catch {
-      throw new Error("Invalid SOLANA_FEE_PAYER_SECRET_KEY format");
-    }
-
-    console.log("Fee payer public key:", feePayer.publicKey.toString());
+    const feePayerData = await feePayerResponse.json();
+    const feePayer = Keypair.fromSecretKey(new Uint8Array(feePayerData.secret_key_array));
+    console.log("Using fee payer:", feePayerData.public_key, "(label:", feePayerData.label, ")");
 
     // Parse addresses
     const mintPubkey = new PublicKey(token.contract_address);
