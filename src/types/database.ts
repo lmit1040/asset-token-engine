@@ -1,7 +1,13 @@
 export type AssetType = 'GOLDBACK' | 'SILVER' | 'COPPER' | 'GOLD_CERTIFICATE' | 'SILVER_CERTIFICATE' | 'OTHER';
 export type OwnerEntity = 'PERSONAL_TRUST' | 'BUSINESS_TRUST' | 'SPV_LLC';
 export type TokenModel = 'ONE_TO_ONE' | 'FRACTIONAL' | 'VAULT_BASKET';
-export type AppRole = 'admin' | 'standard_user';
+export type AppRole = 'admin' | 'asset_manager' | 'standard_user';
+
+export const APP_ROLE_LABELS: Record<AppRole, string> = {
+  admin: 'Administrator',
+  asset_manager: 'Asset Manager',
+  standard_user: 'Standard User',
+};
 export type BlockchainChain = 'ETHEREUM' | 'POLYGON' | 'BSC' | 'SOLANA' | 'NONE';
 export type NetworkType = 'MAINNET' | 'TESTNET' | 'NONE';
 export type DeploymentStatus = 'NOT_DEPLOYED' | 'PENDING' | 'DEPLOYED';
