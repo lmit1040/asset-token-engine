@@ -19,10 +19,9 @@ import AdminAssignPage from "./pages/AdminAssignPage";
 import AdminTransferPage from "./pages/AdminTransferPage";
 import AdminActivityPage from "./pages/AdminActivityPage";
 import AdminDeliverPage from "./pages/AdminDeliverPage";
-import StakingPage from "./pages/StakingPage";
+import MxuBenefitsPage from "./pages/MxuBenefitsPage";
 import GovernancePage from "./pages/GovernancePage";
 import ProposalDetailPage from "./pages/ProposalDetailPage";
-import MarketplacePage from "./pages/MarketplacePage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -44,8 +43,7 @@ const App = () => (
               <Route path="/assets/:id/edit" element={<EditAssetPage />} />
               <Route path="/assets/:id" element={<AssetDetailPage />} />
               <Route path="/tokens" element={<TokensPage />} />
-              <Route path="/staking" element={<StakingPage />} />
-              <Route path="/marketplace" element={<MarketplacePage />} />
+              <Route path="/mxu-benefits" element={<MxuBenefitsPage />} />
               <Route path="/governance" element={<GovernancePage />} />
               <Route path="/governance/:id" element={<ProposalDetailPage />} />
               <Route path="/profile" element={<ProfilePage />} />
