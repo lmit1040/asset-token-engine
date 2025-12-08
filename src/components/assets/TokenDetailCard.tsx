@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Globe, CheckCircle, XCircle, Rocket, ExternalLink, Send, Wallet, RefreshCw, Tag } from 'lucide-react';
+import { Globe, CheckCircle, XCircle, Rocket, ExternalLink, Send, Wallet, RefreshCw, Tag, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
@@ -28,6 +28,7 @@ interface TokenDetailCardProps {
 export function TokenDetailCard({ token, isAdmin, onUpdate }: TokenDetailCardProps) {
   const [isDeploying, setIsDeploying] = useState(false);
   const [isAddingMetadata, setIsAddingMetadata] = useState(false);
+  const [isUpdatingMetadata, setIsUpdatingMetadata] = useState(false);
   const [selectedChain, setSelectedChain] = useState<BlockchainChain>((token.chain as BlockchainChain) || 'NONE');
   const [selectedNetwork, setSelectedNetwork] = useState<NetworkType>((token.network as NetworkType) || 'NONE');
   const { solanaAddress, connectPhantom, isConnectingSolana } = useWallet();
@@ -326,6 +327,49 @@ export function TokenDetailCard({ token, isAdmin, onUpdate }: TokenDetailCardPro
     }
   };
 
+  const handleUpdateMetadataWithIPFS = async () => {
+    if (!canAddMetadata) return;
+
+    setIsUpdatingMetadata(true);
+    try {
+      toast.info('Uploading metadata to IPFS and updating on-chain...');
+
+      const { data, error } = await supabase.functions.invoke('update-token-metadata', {
+        body: {
+          tokenDefinitionId: token.id,
+          description: `${token.token_name} (${token.token_symbol}) - A tokenized asset on MetallumX Vault platform.`,
+        },
+      });
+
+      if (error) {
+        throw new Error(error.message || 'Failed to update metadata');
+      }
+
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      toast.success(
+        <div className="space-y-1">
+          <p>Metadata uploaded to IPFS and updated on-chain!</p>
+          <a 
+            href={data.ipfsUri} 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="text-xs underline"
+          >
+            View on IPFS
+          </a>
+        </div>
+      );
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to update metadata';
+      toast.error(message);
+    } finally {
+      setIsUpdatingMetadata(false);
+    }
+  };
+
   return (
     <div className="bg-muted/30 rounded-lg p-4 border border-border">
       <div className="flex items-start justify-between mb-3">
@@ -519,7 +563,7 @@ export function TokenDetailCard({ token, isAdmin, onUpdate }: TokenDetailCardPro
 
         {/* Add Metadata Button for deployed Solana tokens */}
         {canAddMetadata && (
-          <div className="pt-3">
+          <div className="pt-3 space-y-2">
             <Button
               variant="outline"
               size="sm"
@@ -539,8 +583,27 @@ export function TokenDetailCard({ token, isAdmin, onUpdate }: TokenDetailCardPro
                 </>
               )}
             </Button>
-            <p className="text-xs text-muted-foreground mt-1">
-              Adds Metaplex metadata so the token displays correctly on Solana explorers.
+            <Button
+              variant="default"
+              size="sm"
+              className="w-full"
+              disabled={isUpdatingMetadata}
+              onClick={handleUpdateMetadataWithIPFS}
+            >
+              {isUpdatingMetadata ? (
+                <>
+                  <div className="h-4 w-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
+                  Uploading to IPFS...
+                </>
+              ) : (
+                <>
+                  <Upload className="h-4 w-4" />
+                  Update Metadata with IPFS URI
+                </>
+              )}
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              First add metadata, then update with IPFS URI for full Solscan display.
             </p>
           </div>
         )}
