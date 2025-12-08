@@ -216,6 +216,7 @@ export default function AdminSubmissionsPage() {
       <SubmissionReviewPanel
         submission={selectedSubmission}
         userEmail={selectedSubmission ? profiles[selectedSubmission.user_id]?.email : undefined}
+        userName={selectedSubmission ? profiles[selectedSubmission.user_id]?.name || undefined : undefined}
         open={reviewPanelOpen}
         onOpenChange={setReviewPanelOpen}
         onUpdate={fetchSubmissions}

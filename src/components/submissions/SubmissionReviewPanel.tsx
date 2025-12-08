@@ -35,6 +35,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { Loader2, Check, X, Eye, Package, MapPin, FileText, Paperclip, ExternalLink, Image as ImageIcon, ArrowRight } from 'lucide-react';
+import { sendSubmissionNotification } from '@/lib/sendSubmissionNotification';
 
 interface DocumentItem {
   name: string;
@@ -45,6 +46,7 @@ interface DocumentItem {
 interface SubmissionReviewPanelProps {
   submission: UserAssetSubmission | null;
   userEmail?: string;
+  userName?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onUpdate: () => void;
@@ -53,6 +55,7 @@ interface SubmissionReviewPanelProps {
 export function SubmissionReviewPanel({
   submission,
   userEmail,
+  userName,
   open,
   onOpenChange,
   onUpdate,
@@ -110,6 +113,18 @@ export function SubmissionReviewPanel({
         .eq('id', submission.id);
 
       if (error) throw error;
+
+      // Send email notification to submitter
+      if (userEmail && (newStatus === 'UNDER_REVIEW' || newStatus === 'APPROVED' || newStatus === 'REJECTED')) {
+        sendSubmissionNotification({
+          recipientEmail: userEmail,
+          recipientName: userName || userEmail.split('@')[0],
+          submissionTitle: submission.title,
+          newStatus,
+          adminNotes: adminNotes || undefined,
+          createdAssetId,
+        }).catch(err => console.error('Failed to send notification:', err));
+      }
 
       toast.success(`Submission ${SUBMISSION_STATUS_LABELS[newStatus].toLowerCase()}`);
       onOpenChange(false);
