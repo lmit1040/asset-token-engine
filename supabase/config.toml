@@ -17,3 +17,6 @@ verify_jwt = false
 
 [functions.add-token-metadata]
 verify_jwt = false
+
+[functions.update-token-metadata]
+verify_jwt = false
