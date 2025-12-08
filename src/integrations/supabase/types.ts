@@ -174,6 +174,39 @@ export type Database = {
           },
         ]
       }
+      fee_payer_keys: {
+        Row: {
+          balance_sol: number | null
+          created_at: string
+          id: string
+          is_active: boolean
+          label: string
+          last_used_at: string | null
+          public_key: string
+          usage_count: number
+        }
+        Insert: {
+          balance_sol?: number | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          label: string
+          last_used_at?: string | null
+          public_key: string
+          usage_count?: number
+        }
+        Update: {
+          balance_sol?: number | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          label?: string
+          last_used_at?: string | null
+          public_key?: string
+          usage_count?: number
+        }
+        Relationships: []
+      }
       governance_proposals: {
         Row: {
           created_at: string
