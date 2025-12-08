@@ -18,6 +18,7 @@ export default function TokensPage() {
       const { data } = await supabase
         .from('token_definitions')
         .select('*, asset:assets(*)')
+        .is('archived_at', null)
         .order('created_at', { ascending: false });
       
       if (data) setTokens(data as unknown as TokenWithAsset[]);

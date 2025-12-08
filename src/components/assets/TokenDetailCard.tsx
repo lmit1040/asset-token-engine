@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Globe, CheckCircle, XCircle, Rocket, ExternalLink, Send, Wallet, RefreshCw, Tag, Upload, Coins } from 'lucide-react';
+import { Globe, CheckCircle, XCircle, Rocket, ExternalLink, Send, Wallet, RefreshCw, Tag, Upload, Coins, Archive } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { useWallet } from '@/hooks/useWallet';
 import { useSolanaBalances } from '@/hooks/useSolanaBalances';
 import { TokenImageUpload } from './TokenImageUpload';
+import { useAuth } from '@/hooks/useAuth';
 import { 
   TokenDefinition, 
   TOKEN_MODEL_LABELS, 
@@ -19,6 +20,17 @@ import {
   NetworkType,
   DeploymentStatus 
 } from '@/types/database';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 interface TokenDetailCardProps {
   token: TokenDefinition & { token_image_url?: string | null };
@@ -27,10 +39,12 @@ interface TokenDetailCardProps {
 }
 
 export function TokenDetailCard({ token, isAdmin, onUpdate }: TokenDetailCardProps) {
+  const { user } = useAuth();
   const [isDeploying, setIsDeploying] = useState(false);
   const [isAddingMetadata, setIsAddingMetadata] = useState(false);
   const [isUpdatingMetadata, setIsUpdatingMetadata] = useState(false);
   const [isMinting, setIsMinting] = useState(false);
+  const [isArchiving, setIsArchiving] = useState(false);
   const [selectedChain, setSelectedChain] = useState<BlockchainChain>((token.chain as BlockchainChain) || 'NONE');
   const [selectedNetwork, setSelectedNetwork] = useState<NetworkType>((token.network as NetworkType) || 'NONE');
   const { solanaAddress, connectPhantom, isConnectingSolana } = useWallet();
@@ -409,6 +423,30 @@ export function TokenDetailCard({ token, isAdmin, onUpdate }: TokenDetailCardPro
       toast.error(message);
     } finally {
       setIsMinting(false);
+    }
+  };
+
+  const handleArchiveToken = async () => {
+    if (!user) return;
+    
+    setIsArchiving(true);
+    try {
+      const { error } = await supabase
+        .from('token_definitions')
+        .update({
+          archived_at: new Date().toISOString(),
+          archived_by: user.id,
+        })
+        .eq('id', token.id);
+
+      if (error) throw error;
+      toast.success('Token archived successfully');
+      onUpdate();
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to archive token';
+      toast.error(message);
+    } finally {
+      setIsArchiving(false);
     }
   };
 
@@ -793,6 +831,46 @@ export function TokenDetailCard({ token, isAdmin, onUpdate }: TokenDetailCardPro
         <p className="text-xs text-muted-foreground mt-3 pt-3 border-t border-border">
           {token.notes}
         </p>
+      )}
+
+      {/* Archive Token */}
+      {isAdmin && (
+        <div className="mt-3 pt-3 border-t border-border">
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full text-amber-500 border-amber-500/50 hover:bg-amber-500/10"
+                disabled={isArchiving}
+              >
+                {isArchiving ? (
+                  <>
+                    <div className="h-4 w-4 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
+                    Archiving...
+                  </>
+                ) : (
+                  <>
+                    <Archive className="h-4 w-4" />
+                    Archive Token
+                  </>
+                )}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Archive Token</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will archive this token definition and hide it from the main view. Archived tokens can be restored by an admin. On-chain tokens will not be affected.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleArchiveToken} className="bg-amber-500 hover:bg-amber-600">Archive</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
       )}
     </div>
   );

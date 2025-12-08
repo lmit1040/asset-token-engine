@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Edit, Trash2, Upload, FileText, Shield, Plus } from 'lucide-react';
+import { ArrowLeft, Edit, Archive, Upload, FileText, Shield, Plus } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
@@ -59,16 +59,22 @@ export default function AssetDetailPage() {
     fetchData();
   }, [fetchData]);
 
-  const handleDelete = async () => {
-    if (!id) return;
+  const handleArchive = async () => {
+    if (!id || !user) return;
     
     try {
-      const { error } = await supabase.from('assets').delete().eq('id', id);
+      const { error } = await supabase
+        .from('assets')
+        .update({
+          archived_at: new Date().toISOString(),
+          archived_by: user.id,
+        })
+        .eq('id', id);
       if (error) throw error;
-      toast.success('Asset deleted successfully');
+      toast.success('Asset archived successfully');
       navigate('/assets');
     } catch (error: any) {
-      toast.error(error.message || 'Failed to delete asset');
+      toast.error(error.message || 'Failed to archive asset');
     }
   };
 
@@ -116,21 +122,21 @@ export default function AssetDetailPage() {
               </Button>
               <AlertDialog>
                 <AlertDialogTrigger asChild>
-                  <Button variant="destructive">
-                    <Trash2 className="h-4 w-4" />
-                    Delete
+                  <Button variant="outline" className="text-amber-500 border-amber-500/50 hover:bg-amber-500/10">
+                    <Archive className="h-4 w-4" />
+                    Archive
                   </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
-                    <AlertDialogTitle>Delete Asset</AlertDialogTitle>
+                    <AlertDialogTitle>Archive Asset</AlertDialogTitle>
                     <AlertDialogDescription>
-                      This will permanently delete this asset and all associated proof files and token definitions. This action cannot be undone.
+                      This will archive this asset and hide it from the main view. Archived assets can be restored by an admin. Associated token definitions will also be hidden.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+                    <AlertDialogAction onClick={handleArchive} className="bg-amber-500 hover:bg-amber-600">Archive</AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>

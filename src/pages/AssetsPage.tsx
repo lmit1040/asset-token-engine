@@ -27,6 +27,7 @@ export default function AssetsPage() {
     const { data, error } = await supabase
       .from('assets')
       .select('*')
+      .is('archived_at', null)
       .order('created_at', { ascending: false });
 
     if (data && !error) {
