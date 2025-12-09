@@ -16,6 +16,7 @@ import { toast } from 'sonner';
 import { Plus, Play, Zap, RefreshCw, AlertTriangle, Edit2, Wallet, Droplets } from 'lucide-react';
 import { format } from 'date-fns';
 import { Link } from 'react-router-dom';
+import { OpsWalletTransactionHistory } from '@/components/wallet/OpsWalletTransactionHistory';
 
 // Supported Solana DEXs by Jupiter Aggregator
 const SUPPORTED_SOLANA_DEXS = [
@@ -870,6 +871,9 @@ export default function AdminArbitrageStrategiesPage() {
             </Card>
           </TabsContent>
         </Tabs>
+
+        {/* OPS Wallet Transaction History */}
+        <OpsWalletTransactionHistory />
       </div>
     </DashboardLayout>
   );
