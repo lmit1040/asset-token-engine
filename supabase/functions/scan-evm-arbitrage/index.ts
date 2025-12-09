@@ -44,10 +44,18 @@ const SUPPORTED_EVM_DEXS = [
   'Aave V3',
   'QuickSwap',
   'PancakeSwap',
-  '1inch',
+  '0x',
   'Curve',
   'Balancer',
 ];
+
+// 0x API endpoints per network
+const ZEROX_API_URLS: Record<string, string> = {
+  ETHEREUM: 'https://api.0x.org',
+  POLYGON: 'https://polygon.api.0x.org',
+  ARBITRUM: 'https://arbitrum.api.0x.org',
+  BSC: 'https://bsc.api.0x.org',
+};
 
 // Validate Ethereum address format
 function isValidEvmAddress(address: string): boolean {
@@ -56,7 +64,6 @@ function isValidEvmAddress(address: string): boolean {
 
 // Get RPC URL for the network
 function getRpcUrl(network: string): string | null {
-  // These would typically come from environment variables in production
   const rpcUrls: Record<string, string> = {
     ETHEREUM: Deno.env.get('ETHEREUM_RPC_URL') || 'https://eth.llamarpc.com',
     POLYGON: Deno.env.get('POLYGON_RPC_URL') || 'https://polygon.llamarpc.com',
@@ -66,60 +73,51 @@ function getRpcUrl(network: string): string | null {
   return rpcUrls[network] || null;
 }
 
-// Fetch price quote from 1inch API (aggregates multiple DEXs)
-async function fetch1inchQuote(
+// Fetch price quote from 0x Swap API (aggregates multiple DEXs)
+async function fetch0xQuote(
   network: string,
   tokenIn: string,
   tokenOut: string,
   amountWei: string
-): Promise<{ toAmount: string; estimatedGas: string; protocols: string[] } | null> {
-  const chainIds: Record<string, number> = {
-    ETHEREUM: 1,
-    POLYGON: 137,
-    ARBITRUM: 42161,
-    BSC: 56,
-  };
-
-  const chainId = chainIds[network];
-  if (!chainId) {
-    console.error(`[scan-evm-arbitrage] Unsupported network: ${network}`);
+): Promise<{ toAmount: string; estimatedGas: string; sources: string[] } | null> {
+  const baseUrl = ZEROX_API_URLS[network];
+  if (!baseUrl) {
+    console.error(`[scan-evm-arbitrage] Unsupported 0x network: ${network}`);
     return null;
   }
 
   try {
-    // Using 1inch API for price quotes (aggregates Uniswap, SushiSwap, etc.)
-    const url = `https://api.1inch.dev/swap/v6.0/${chainId}/quote?src=${tokenIn}&dst=${tokenOut}&amount=${amountWei}`;
+    // 0x Swap API v1 quote endpoint
+    const url = `${baseUrl}/swap/v1/quote?sellToken=${tokenIn}&buyToken=${tokenOut}&sellAmount=${amountWei}`;
     
-    const apiKey = Deno.env.get('ONEINCH_API_KEY');
-    if (!apiKey) {
-      console.warn('[scan-evm-arbitrage] 1inch API key not configured, using simulation');
-      // Return simulated quote for demo purposes
-      return simulateEvmQuote(tokenIn, tokenOut, amountWei);
+    const headers: Record<string, string> = {
+      'Accept': 'application/json',
+    };
+    
+    // Optional: Add API key for higher rate limits
+    const apiKey = Deno.env.get('ZEROX_API_KEY');
+    if (apiKey) {
+      headers['0x-api-key'] = apiKey;
     }
 
-    console.log(`[scan-evm-arbitrage] Fetching 1inch quote: ${tokenIn} -> ${tokenOut}`);
-    
-    const response = await fetch(url, {
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Accept': 'application/json',
-      },
-    });
+    console.log(`[scan-evm-arbitrage] Fetching 0x quote: ${tokenIn} -> ${tokenOut}`);
+
+    const response = await fetch(url, { headers });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`[scan-evm-arbitrage] 1inch API error: ${response.status} - ${errorText}`);
+      console.error(`[scan-evm-arbitrage] 0x API error: ${response.status} - ${errorText}`);
       return simulateEvmQuote(tokenIn, tokenOut, amountWei);
     }
 
     const data = await response.json();
     return {
-      toAmount: data.toAmount,
-      estimatedGas: data.gas || '0',
-      protocols: data.protocols?.flat()?.map((p: any) => p.name) || [],
+      toAmount: data.buyAmount,
+      estimatedGas: data.estimatedGas || '0',
+      sources: data.sources?.filter((s: any) => s.proportion !== '0').map((s: any) => s.name) || [],
     };
   } catch (error) {
-    console.error('[scan-evm-arbitrage] Failed to fetch 1inch quote:', error);
+    console.error('[scan-evm-arbitrage] Failed to fetch 0x quote:', error);
     return simulateEvmQuote(tokenIn, tokenOut, amountWei);
   }
 }
@@ -129,8 +127,8 @@ function simulateEvmQuote(
   tokenIn: string,
   tokenOut: string,
   amountWei: string
-): { toAmount: string; estimatedGas: string; protocols: string[] } {
-  console.log('[scan-evm-arbitrage] Using simulated quote (no API key configured)');
+): { toAmount: string; estimatedGas: string; sources: string[] } {
+  console.log('[scan-evm-arbitrage] Using simulated quote (0x API unavailable)');
   
   // Simulate a small slippage (0.1% - 0.5%)
   const amount = BigInt(amountWei);
@@ -140,7 +138,7 @@ function simulateEvmQuote(
   return {
     toAmount: outputAmount.toString(),
     estimatedGas: '150000',
-    protocols: ['Simulated'],
+    sources: ['Simulated'],
   };
 }
 
@@ -267,9 +265,10 @@ serve(async (req) => {
       
       let estimatedProfitWei = BigInt(0);
       let quoteError: string | null = null;
+      let usedSources: string[] = [];
 
       // Step 1: Get quote for token_in -> token_out (leg A)
-      const quoteA = await fetch1inchQuote(
+      const quoteA = await fetch0xQuote(
         strategy.evm_network,
         strategy.token_in_mint,
         strategy.token_out_mint,
@@ -278,9 +277,10 @@ serve(async (req) => {
 
       if (quoteA) {
         console.log(`[scan-evm-arbitrage] Leg A output: ${quoteA.toAmount}`);
+        usedSources = quoteA.sources;
 
         // Step 2: Get quote for token_out -> token_in (leg B - round trip)
-        const quoteB = await fetch1inchQuote(
+        const quoteB = await fetch0xQuote(
           strategy.evm_network,
           strategy.token_out_mint,
           strategy.token_in_mint,
@@ -323,6 +323,8 @@ serve(async (req) => {
         console.error(`[scan-evm-arbitrage] Failed to insert run:`, runError);
       }
 
+      const isSimulated = usedSources.includes('Simulated');
+
       results.push({
         strategy_id: strategy.id,
         strategy_name: strategy.name,
@@ -336,13 +338,16 @@ serve(async (req) => {
         estimated_profit_wei: estimatedProfitWei.toString(),
         estimated_profit_eth: Number(estimatedProfitWei) / 1e18,
         meets_min_threshold: Number(estimatedProfitWei) >= strategy.min_profit_lamports * 1_000_000_000,
-        price_source: Deno.env.get('ONEINCH_API_KEY') ? '1inch Aggregator' : 'Simulated',
+        price_source: isSimulated ? 'Simulated' : '0x Aggregator',
+        liquidity_sources: usedSources,
         run_id: runData?.id,
         error: quoteError,
       });
     }
 
     console.log(`[scan-evm-arbitrage] Scan complete. ${results.length} EVM strategies simulated.`);
+
+    const hasRealPrices = results.some(r => r.price_source === '0x Aggregator');
 
     return new Response(JSON.stringify({
       success: true,
@@ -351,9 +356,9 @@ serve(async (req) => {
       simulations: results,
       total_strategies: results.length,
       profitable_count: results.filter(r => r.meets_min_threshold && Number(r.estimated_profit_wei) > 0).length,
-      note: Deno.env.get('ONEINCH_API_KEY') 
-        ? 'Using real 1inch API prices' 
-        : 'Using simulated prices (add ONEINCH_API_KEY for real prices)',
+      note: hasRealPrices 
+        ? 'Using real 0x API prices' 
+        : 'Using simulated prices (0x API may be rate-limited or unavailable)',
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
