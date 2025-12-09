@@ -1,42 +1,13 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { getZeroXQuote, isValidEvmAddress, calculateArbitrageProfit, isSupportedZeroXNetwork } from "../_shared/zerox-client.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// EVM DEX Router addresses (for reference in strategies)
-const EVM_DEXS = {
-  'Uniswap V2': {
-    ethereum: '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D',
-    polygon: '0xedf6066a2b290C185783862C7F4776A2C8077AD1',
-  },
-  'Uniswap V3': {
-    ethereum: '0xE592427A0AEce92De3Edee1F18E0157C05861564',
-    polygon: '0xE592427A0AEce92De3Edee1F18E0157C05861564',
-    arbitrum: '0xE592427A0AEce92De3Edee1F18E0157C05861564',
-  },
-  'SushiSwap': {
-    ethereum: '0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F',
-    polygon: '0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506',
-    arbitrum: '0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506',
-  },
-  'Aave V3': {
-    ethereum: '0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2',
-    polygon: '0x794a61358D6845594F94dc1DB02A252b5b4814aD',
-    arbitrum: '0x794a61358D6845594F94dc1DB02A252b5b4814aD',
-  },
-  'QuickSwap': {
-    polygon: '0xa5E0829CaEd8fFDD4De3c43696c57F7D7A678ff4',
-  },
-  'PancakeSwap': {
-    bsc: '0x10ED43C718714eb63d5aA57B78B54704E256024E',
-    ethereum: '0xEfF92A263d31888d860bD50809A8D171709b7b1c',
-  },
-};
-
-// Supported EVM DEXs
+// Supported EVM DEXs (via 0x aggregator)
 const SUPPORTED_EVM_DEXS = [
   'Uniswap V2',
   'Uniswap V3',
@@ -48,112 +19,6 @@ const SUPPORTED_EVM_DEXS = [
   'Curve',
   'Balancer',
 ];
-
-// 0x API endpoints per network
-const ZEROX_API_URLS: Record<string, string> = {
-  ETHEREUM: 'https://api.0x.org',
-  POLYGON: 'https://polygon.api.0x.org',
-  ARBITRUM: 'https://arbitrum.api.0x.org',
-  BSC: 'https://bsc.api.0x.org',
-};
-
-// Validate Ethereum address format
-function isValidEvmAddress(address: string): boolean {
-  return /^0x[a-fA-F0-9]{40}$/.test(address);
-}
-
-// Get RPC URL for the network
-function getRpcUrl(network: string): string | null {
-  const rpcUrls: Record<string, string> = {
-    ETHEREUM: Deno.env.get('ETHEREUM_RPC_URL') || 'https://eth.llamarpc.com',
-    POLYGON: Deno.env.get('POLYGON_RPC_URL') || 'https://polygon.llamarpc.com',
-    ARBITRUM: Deno.env.get('ARBITRUM_RPC_URL') || 'https://arbitrum.llamarpc.com',
-    BSC: Deno.env.get('BSC_RPC_URL') || 'https://bsc.llamarpc.com',
-  };
-  return rpcUrls[network] || null;
-}
-
-// Chain IDs for 0x API v2
-const CHAIN_IDS: Record<string, number> = {
-  ETHEREUM: 1,
-  POLYGON: 137,
-  ARBITRUM: 42161,
-  BSC: 56,
-};
-
-// Fetch price quote from 0x Swap API v2 (aggregates multiple DEXs)
-async function fetch0xQuote(
-  network: string,
-  tokenIn: string,
-  tokenOut: string,
-  amountWei: string
-): Promise<{ toAmount: string; estimatedGas: string; sources: string[] } | null> {
-  const chainId = CHAIN_IDS[network];
-  if (!chainId) {
-    console.error(`[scan-evm-arbitrage] Unsupported 0x network: ${network}`);
-    return null;
-  }
-
-  // API key is required for 0x API v2
-  const apiKey = Deno.env.get('ZEROX_API_KEY');
-  if (!apiKey) {
-    console.warn('[scan-evm-arbitrage] ZEROX_API_KEY not set, using simulation');
-    return simulateEvmQuote(tokenIn, tokenOut, amountWei);
-  }
-
-  try {
-    // 0x Swap API v2 price endpoint (no transaction data, just pricing)
-    const url = `https://api.0x.org/swap/permit2/price?chainId=${chainId}&sellToken=${tokenIn}&buyToken=${tokenOut}&sellAmount=${amountWei}`;
-    
-    const headers: Record<string, string> = {
-      'Accept': 'application/json',
-      '0x-api-key': apiKey,
-      '0x-version': 'v2',
-    };
-
-    console.log(`[scan-evm-arbitrage] Fetching 0x v2 quote: ${tokenIn} -> ${tokenOut} on chain ${chainId}`);
-
-    const response = await fetch(url, { headers });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[scan-evm-arbitrage] 0x API error: ${response.status} - ${errorText}`);
-      return simulateEvmQuote(tokenIn, tokenOut, amountWei);
-    }
-
-    const data = await response.json();
-    console.log(`[scan-evm-arbitrage] 0x response:`, JSON.stringify(data).slice(0, 500));
-    
-    return {
-      toAmount: data.buyAmount,
-      estimatedGas: data.gas || data.estimatedGas || '150000',
-      sources: data.route?.fills?.map((f: any) => f.source) || ['0x Aggregator'],
-    };
-  } catch (error) {
-    console.error('[scan-evm-arbitrage] Failed to fetch 0x quote:', error);
-    return simulateEvmQuote(tokenIn, tokenOut, amountWei);
-  }
-}
-
-// Simulate EVM quote when API is not available
-function simulateEvmQuote(
-  tokenIn: string,
-  tokenOut: string,
-  amountWei: string
-): { toAmount: string; estimatedGas: string; sources: string[] } {
-  console.log('[scan-evm-arbitrage] Using simulated quote (0x API unavailable)');
-  
-  // Simulate a small slippage (0.1% - 0.5%)
-  const amount = BigInt(amountWei);
-  const slippage = 0.997 + Math.random() * 0.003; // 0.3% average slippage
-  const outputAmount = BigInt(Math.floor(Number(amount) * slippage));
-  
-  return {
-    toAmount: outputAmount.toString(),
-    estimatedGas: '150000',
-    sources: ['Simulated'],
-  };
-}
 
 serve(async (req) => {
   // Handle CORS preflight
@@ -194,7 +59,7 @@ serve(async (req) => {
       console.log(`[scan-evm-arbitrage] Token In: ${strategy.token_in_mint}, Token Out: ${strategy.token_out_mint}`);
       console.log(`[scan-evm-arbitrage] DEX A: ${strategy.dex_a}, DEX B: ${strategy.dex_b}`);
 
-      // Validate token addresses
+      // Validate inputs
       const validationErrors: string[] = [];
       if (!isValidEvmAddress(strategy.token_in_mint)) {
         validationErrors.push(`Invalid token_in address: ${strategy.token_in_mint}`);
@@ -204,6 +69,9 @@ serve(async (req) => {
       }
       if (!strategy.evm_network) {
         validationErrors.push('EVM network not specified');
+      }
+      if (strategy.evm_network && !isSupportedZeroXNetwork(strategy.evm_network)) {
+        validationErrors.push(`Unsupported EVM network: ${strategy.evm_network}`);
       }
 
       if (validationErrors.length > 0) {
@@ -229,7 +97,7 @@ serve(async (req) => {
           evm_network: strategy.evm_network,
           dex_a: strategy.dex_a,
           dex_b: strategy.dex_b,
-          estimated_profit_wei: 0,
+          estimated_profit_wei: '0',
           meets_min_threshold: false,
           run_id: runData?.id,
           error: validationErrors.join('; '),
@@ -245,30 +113,30 @@ serve(async (req) => {
       let usedSources: string[] = [];
 
       // Step 1: Get quote for token_in -> token_out (leg A)
-      const quoteA = await fetch0xQuote(
-        strategy.evm_network,
-        strategy.token_in_mint,
-        strategy.token_out_mint,
-        inputWei
-      );
+      const quoteA = await getZeroXQuote({
+        network: strategy.evm_network,
+        sellToken: strategy.token_in_mint,
+        buyToken: strategy.token_out_mint,
+        sellAmount: inputWei,
+      });
 
       if (quoteA) {
-        console.log(`[scan-evm-arbitrage] Leg A output: ${quoteA.toAmount}`);
+        console.log(`[scan-evm-arbitrage] Leg A output: ${quoteA.buyAmount}`);
         usedSources = quoteA.sources;
 
         // Step 2: Get quote for token_out -> token_in (leg B - round trip)
-        const quoteB = await fetch0xQuote(
-          strategy.evm_network,
-          strategy.token_out_mint,
-          strategy.token_in_mint,
-          quoteA.toAmount
-        );
+        const quoteB = await getZeroXQuote({
+          network: strategy.evm_network,
+          sellToken: strategy.token_out_mint,
+          buyToken: strategy.token_in_mint,
+          sellAmount: quoteA.buyAmount,
+        });
 
         if (quoteB) {
-          console.log(`[scan-evm-arbitrage] Leg B output: ${quoteB.toAmount}`);
+          console.log(`[scan-evm-arbitrage] Leg B output: ${quoteB.buyAmount}`);
           
           // Calculate round-trip profit
-          estimatedProfitWei = BigInt(quoteB.toAmount) - BigInt(inputWei);
+          estimatedProfitWei = calculateArbitrageProfit(inputWei, quoteB.buyAmount);
           console.log(`[scan-evm-arbitrage] Round-trip profit: ${estimatedProfitWei} wei`);
         } else {
           quoteError = 'Failed to fetch return leg quote';
@@ -300,8 +168,6 @@ serve(async (req) => {
         console.error(`[scan-evm-arbitrage] Failed to insert run:`, runError);
       }
 
-      const isSimulated = usedSources.includes('Simulated');
-
       results.push({
         strategy_id: strategy.id,
         strategy_name: strategy.name,
@@ -315,7 +181,7 @@ serve(async (req) => {
         estimated_profit_wei: estimatedProfitWei.toString(),
         estimated_profit_eth: Number(estimatedProfitWei) / 1e18,
         meets_min_threshold: Number(estimatedProfitWei) >= strategy.min_profit_lamports * 1_000_000_000,
-        price_source: isSimulated ? 'Simulated' : '0x Aggregator',
+        price_source: '0x Aggregator',
         liquidity_sources: usedSources,
         run_id: runData?.id,
         error: quoteError,
@@ -324,8 +190,6 @@ serve(async (req) => {
 
     console.log(`[scan-evm-arbitrage] Scan complete. ${results.length} EVM strategies simulated.`);
 
-    const hasRealPrices = results.some(r => r.price_source === '0x Aggregator');
-
     return new Response(JSON.stringify({
       success: true,
       message: 'EVM arbitrage simulation scan complete',
@@ -333,9 +197,7 @@ serve(async (req) => {
       simulations: results,
       total_strategies: results.length,
       profitable_count: results.filter(r => r.meets_min_threshold && Number(r.estimated_profit_wei) > 0).length,
-      note: hasRealPrices 
-        ? 'Using real 0x API prices' 
-        : 'Using simulated prices (0x API may be rate-limited or unavailable)',
+      note: 'Using real 0x API prices via zerox-client helper',
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

@@ -1,0 +1,172 @@
+// 0x Swap API v2 Client Helper
+// Used for EVM DEX price fetching and swap quotes
+
+// 0x API endpoints per network
+const ZEROX_API_URLS: Record<string, string> = {
+  POLYGON: "https://polygon.api.0x.org",
+  ETHEREUM: "https://api.0x.org",
+  ARBITRUM: "https://arbitrum.api.0x.org",
+  BSC: "https://bsc.api.0x.org",
+};
+
+// Chain IDs for 0x API
+const CHAIN_IDS: Record<string, number> = {
+  POLYGON: 137,
+  ETHEREUM: 1,
+  ARBITRUM: 42161,
+  BSC: 56,
+};
+
+export interface ZeroXQuote {
+  sellToken: string;
+  buyToken: string;
+  sellAmount: string;
+  buyAmount: string;
+  price: string;
+  guaranteedPrice?: string;
+  to?: string;
+  data?: string;
+  gas: string;
+  gasPrice?: string;
+  estimatedGas: string;
+  sources: string[];
+  allowanceTarget?: string;
+}
+
+export interface ZeroXQuoteParams {
+  network: string;
+  sellToken: string;
+  buyToken: string;
+  sellAmount: string;
+  takerAddress?: string;
+}
+
+export class ZeroXApiError extends Error {
+  public statusCode: number;
+  public reason: string;
+
+  constructor(message: string, statusCode: number, reason: string) {
+    super(message);
+    this.name = "ZeroXApiError";
+    this.statusCode = statusCode;
+    this.reason = reason;
+  }
+}
+
+/**
+ * Get a swap quote from 0x API v2
+ * Returns null if quote fails (no liquidity, etc.)
+ */
+export async function getZeroXQuote(params: ZeroXQuoteParams): Promise<ZeroXQuote | null> {
+  const { network, sellToken, buyToken, sellAmount, takerAddress } = params;
+  const normalizedNetwork = network.toUpperCase();
+
+  const baseUrl = ZEROX_API_URLS[normalizedNetwork];
+  if (!baseUrl) {
+    console.error(`[zerox-client] Unsupported network: ${normalizedNetwork}`);
+    return null;
+  }
+
+  const chainId = CHAIN_IDS[normalizedNetwork];
+  const apiKey = Deno.env.get("ZEROX_API_KEY");
+
+  // Build URL with query params
+  const url = new URL(`${baseUrl}/swap/permit2/quote`);
+  url.searchParams.set("sellToken", sellToken);
+  url.searchParams.set("buyToken", buyToken);
+  url.searchParams.set("sellAmount", sellAmount);
+  url.searchParams.set("chainId", chainId.toString());
+  
+  if (takerAddress) {
+    url.searchParams.set("taker", takerAddress);
+  }
+
+  console.log(`[zerox-client] Fetching quote: ${sellToken} -> ${buyToken} on ${normalizedNetwork}`);
+
+  try {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+
+    // Add API key if available (enables higher rate limits)
+    if (apiKey) {
+      headers["0x-api-key"] = apiKey;
+    }
+
+    const response = await fetch(url.toString(), { headers });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[zerox-client] API error (${response.status}): ${errorText.substring(0, 500)}`);
+      
+      // Don't throw for common non-critical errors
+      if (response.status === 400 || response.status === 404) {
+        return null; // No liquidity or invalid params
+      }
+      
+      throw new ZeroXApiError(
+        `0x API error: ${response.status}`,
+        response.status,
+        errorText
+      );
+    }
+
+    const data = await response.json();
+    console.log(`[zerox-client] Quote received: buyAmount=${data.buyAmount}`);
+
+    return {
+      sellToken: data.sellToken || sellToken,
+      buyToken: data.buyToken || buyToken,
+      sellAmount: data.sellAmount || sellAmount,
+      buyAmount: data.buyAmount,
+      price: data.price || "0",
+      guaranteedPrice: data.guaranteedPrice,
+      to: data.to,
+      data: data.data,
+      gas: data.gas || "0",
+      gasPrice: data.gasPrice,
+      estimatedGas: data.estimatedGas || data.gas || "0",
+      sources: data.sources?.map((s: { name: string }) => s.name) || [],
+      allowanceTarget: data.allowanceTarget,
+    };
+  } catch (error) {
+    if (error instanceof ZeroXApiError) {
+      throw error;
+    }
+    console.error(`[zerox-client] Unexpected error:`, error);
+    return null;
+  }
+}
+
+/**
+ * Calculate round-trip arbitrage profit in wei
+ */
+export function calculateArbitrageProfit(
+  inputAmount: string,
+  outputAmount: string
+): bigint {
+  const input = BigInt(inputAmount);
+  const output = BigInt(outputAmount);
+  return output - input;
+}
+
+/**
+ * Check if a network is supported by 0x
+ */
+export function isSupportedZeroXNetwork(network: string): boolean {
+  return network.toUpperCase() in ZEROX_API_URLS;
+}
+
+/**
+ * Get list of supported networks
+ */
+export function getSupportedZeroXNetworks(): string[] {
+  return Object.keys(ZEROX_API_URLS);
+}
+
+/**
+ * Validate EVM address format
+ */
+export function isValidEvmAddress(address: string): boolean {
+  return /^0x[a-fA-F0-9]{40}$/.test(address);
+}
