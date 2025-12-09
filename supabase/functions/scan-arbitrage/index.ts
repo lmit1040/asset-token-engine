@@ -1,47 +1,17 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import {
+  getJupiterQuote,
+  calculateArbitrageProfit,
+  isValidSolanaAddress,
+  JupiterQuoteResponse,
+  JupiterApiError,
+} from "../_shared/jupiter-client.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
-
-// Jupiter Quote API for real DEX price fetching
-const JUPITER_QUOTE_API = 'https://quote-api.jup.ag/v6/quote';
-
-interface JupiterQuoteResponse {
-  inputMint: string;
-  inAmount: string;
-  outputMint: string;
-  outAmount: string;
-  otherAmountThreshold: string;
-  swapMode: string;
-  slippageBps: number;
-  priceImpactPct: string;
-  routePlan: Array<{
-    swapInfo: {
-      ammKey: string;
-      label: string;
-      inputMint: string;
-      outputMint: string;
-      inAmount: string;
-      outAmount: string;
-      feeAmount: string;
-      feeMint: string;
-    };
-    percent: number;
-  }>;
-  contextSlot?: number;
-  timeTaken?: number;
-}
-
-// Validate Solana base58 address format
-function isValidSolanaAddress(address: string): boolean {
-  // Solana addresses are base58-encoded, 32-44 characters
-  // Valid base58 alphabet: 123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz
-  const base58Regex = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
-  return base58Regex.test(address);
-}
 
 // Supported DEXs by Jupiter Aggregator
 const SUPPORTED_DEXS = new Set([
@@ -79,21 +49,19 @@ const SUPPORTED_DEXS = new Set([
   'Pump.fun',
   'FluxBeam',
   'Helium Network',
-  'Jupiter', // Meta-DEX itself
+  'Jupiter',
 ]);
 
 // Validate DEX name
 function isValidDexName(dexName: string): { valid: boolean; suggestion?: string } {
   const normalizedInput = dexName.toLowerCase().trim();
   
-  // Direct match
   for (const dex of SUPPORTED_DEXS) {
     if (dex.toLowerCase() === normalizedInput) {
       return { valid: true };
     }
   }
   
-  // Partial match for suggestions
   for (const dex of SUPPORTED_DEXS) {
     if (dex.toLowerCase().includes(normalizedInput) || normalizedInput.includes(dex.toLowerCase())) {
       return { valid: false, suggestion: dex };
@@ -107,39 +75,9 @@ function getSupportedDexList(): string[] {
   return Array.from(SUPPORTED_DEXS).sort();
 }
 
-// Fetch quote from Jupiter API
-async function fetchJupiterQuote(
-  inputMint: string,
-  outputMint: string,
-  amountLamports: number,
-  slippageBps: number = 50
-): Promise<JupiterQuoteResponse | null> {
-  try {
-    const url = `${JUPITER_QUOTE_API}?inputMint=${inputMint}&outputMint=${outputMint}&amount=${amountLamports}&slippageBps=${slippageBps}`;
-    console.log(`[scan-arbitrage] Fetching Jupiter quote: ${inputMint} -> ${outputMint}, amount: ${amountLamports}`);
-    
-    const response = await fetch(url);
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[scan-arbitrage] Jupiter API error: ${response.status} - ${errorText}`);
-      return null;
-    }
-    
-    const data = await response.json();
-    console.log(`[scan-arbitrage] Jupiter quote received: outAmount=${data.outAmount}, routes=${data.routePlan?.length || 0}`);
-    return data;
-  } catch (error) {
-    console.error(`[scan-arbitrage] Failed to fetch Jupiter quote:`, error);
-    return null;
-  }
-}
-
 // Get primary DEX used in a route
 function getPrimaryDex(quote: JupiterQuoteResponse): string {
   if (!quote.routePlan || quote.routePlan.length === 0) return 'Unknown';
-  
-  // Find the DEX with highest percentage in the route
   const sortedRoutes = [...quote.routePlan].sort((a, b) => b.percent - a.percent);
   return sortedRoutes[0]?.swapInfo?.label || 'Unknown';
 }
@@ -163,7 +101,6 @@ serve(async (req) => {
       });
     }
 
-    // Extract JWT token from "Bearer <token>" format
     const jwt = authHeader.replace('Bearer ', '');
     console.log('[scan-arbitrage] JWT token received, length:', jwt.length);
 
@@ -231,7 +168,6 @@ serve(async (req) => {
         validationErrors.push(`Invalid token_out_mint address: ${strategy.token_out_mint}`);
       }
       
-      // Validate DEX names
       const dexAValidation = isValidDexName(strategy.dex_a);
       if (!dexAValidation.valid) {
         const suggestion = dexAValidation.suggestion ? ` (did you mean "${dexAValidation.suggestion}"?)` : '';
@@ -244,10 +180,9 @@ serve(async (req) => {
       }
 
       if (validationErrors.length > 0) {
-        console.error(`[scan-arbitrage] Strategy ${strategy.name} has invalid addresses:`, validationErrors);
+        console.error(`[scan-arbitrage] Strategy ${strategy.name} has validation errors:`, validationErrors);
         
-        // Log the failed validation as a run
-        const { data: runData, error: runError } = await supabase
+        await supabase
           .from('arbitrage_runs')
           .insert({
             strategy_id: strategy.id,
@@ -258,9 +193,7 @@ serve(async (req) => {
             actual_profit_lamports: null,
             tx_signature: null,
             error_message: `Validation failed: ${validationErrors.join('; ')}`,
-          })
-          .select()
-          .single();
+          });
 
         results.push({
           strategy_id: strategy.id,
@@ -278,8 +211,8 @@ serve(async (req) => {
           estimated_profit_sol: 0,
           meets_min_threshold: false,
           price_source: null,
-          run_id: runData?.id || null,
-          error: `Invalid Solana addresses: ${validationErrors.join('; ')}`,
+          run_id: null,
+          error: `Validation failed: ${validationErrors.join('; ')}`,
           validation_errors: validationErrors,
         });
         continue;
@@ -288,52 +221,60 @@ serve(async (req) => {
       console.log(`[scan-arbitrage] Token addresses validated successfully`);
 
       // Use 0.1 SOL worth as test input (100 million lamports = 0.1 SOL)
-      const inputLamports = 100_000_000;
+      const inputLamports = BigInt(100_000_000);
       
-      let estimatedProfitLamports = 0;
-      let priceSourceA = 'Jupiter';
-      let priceSourceB = 'Jupiter';
+      let estimatedProfitLamports = BigInt(0);
       let dexUsedA = strategy.dex_a;
       let dexUsedB = strategy.dex_b;
-      let quoteErrorA: string | null = null;
-      let quoteErrorB: string | null = null;
-      let outAmountA = 0;
-      let outAmountB = 0;
+      let quoteError: string | null = null;
+      let outAmountA = BigInt(0);
+      let outAmountB = BigInt(0);
 
-      // Step 1: Get quote for token_in -> token_out (leg A)
-      const quoteA = await fetchJupiterQuote(
-        strategy.token_in_mint,
-        strategy.token_out_mint,
-        inputLamports
-      );
-
-      if (quoteA) {
-        outAmountA = parseInt(quoteA.outAmount, 10);
-        dexUsedA = getPrimaryDex(quoteA);
-        console.log(`[scan-arbitrage] Leg A: ${inputLamports} -> ${outAmountA} via ${dexUsedA}`);
-
-        // Step 2: Get quote for token_out -> token_in (leg B - round trip)
-        const quoteB = await fetchJupiterQuote(
-          strategy.token_out_mint,
+      try {
+        // Step 1: Get quote for token_in -> token_out (leg A) using jupiter-client
+        const quoteA = await getJupiterQuote(
           strategy.token_in_mint,
-          outAmountA
+          strategy.token_out_mint,
+          inputLamports,
+          50 // 0.5% slippage
         );
 
-        if (quoteB) {
-          outAmountB = parseInt(quoteB.outAmount, 10);
-          dexUsedB = getPrimaryDex(quoteB);
-          console.log(`[scan-arbitrage] Leg B: ${outAmountA} -> ${outAmountB} via ${dexUsedB}`);
+        if (quoteA) {
+          outAmountA = BigInt(quoteA.outAmount);
+          dexUsedA = getPrimaryDex(quoteA);
+          console.log(`[scan-arbitrage] Leg A: ${inputLamports} -> ${outAmountA} via ${dexUsedA}`);
 
-          // Calculate round-trip profit
-          estimatedProfitLamports = outAmountB - inputLamports;
-          console.log(`[scan-arbitrage] Round-trip profit: ${estimatedProfitLamports} lamports (${(estimatedProfitLamports / 1_000_000_000).toFixed(6)} SOL)`);
+          // Step 2: Get quote for token_out -> token_in (leg B - round trip)
+          const quoteB = await getJupiterQuote(
+            strategy.token_out_mint,
+            strategy.token_in_mint,
+            outAmountA,
+            50
+          );
+
+          if (quoteB) {
+            outAmountB = BigInt(quoteB.outAmount);
+            dexUsedB = getPrimaryDex(quoteB);
+            console.log(`[scan-arbitrage] Leg B: ${outAmountA} -> ${outAmountB} via ${dexUsedB}`);
+
+            // Calculate round-trip profit using helper
+            estimatedProfitLamports = calculateArbitrageProfit(inputLamports, quoteA, quoteB);
+            console.log(`[scan-arbitrage] Round-trip profit: ${estimatedProfitLamports} lamports`);
+          } else {
+            quoteError = 'No route found for return leg';
+            console.warn(`[scan-arbitrage] ${quoteError}`);
+          }
         } else {
-          quoteErrorB = 'Failed to fetch return leg quote from Jupiter';
-          console.warn(`[scan-arbitrage] ${quoteErrorB}`);
+          quoteError = 'No route found for initial leg';
+          console.warn(`[scan-arbitrage] ${quoteError}`);
         }
-      } else {
-        quoteErrorA = 'Failed to fetch initial leg quote from Jupiter';
-        console.warn(`[scan-arbitrage] ${quoteErrorA}`);
+      } catch (error) {
+        if (error instanceof JupiterApiError) {
+          quoteError = `Jupiter API error: ${error.message}`;
+        } else {
+          quoteError = `Unexpected error: ${error instanceof Error ? error.message : 'Unknown'}`;
+        }
+        console.error(`[scan-arbitrage] ${quoteError}`);
       }
 
       const finishedAt = new Date().toISOString();
@@ -346,10 +287,10 @@ serve(async (req) => {
           started_at: startedAt,
           finished_at: finishedAt,
           status: 'SIMULATED',
-          estimated_profit_lamports: estimatedProfitLamports,
+          estimated_profit_lamports: Number(estimatedProfitLamports),
           actual_profit_lamports: null,
           tx_signature: null,
-          error_message: quoteErrorA || quoteErrorB || null,
+          error_message: quoteError,
         })
         .select()
         .single();
@@ -369,15 +310,15 @@ serve(async (req) => {
         dex_used_b: dexUsedB,
         token_in_mint: strategy.token_in_mint,
         token_out_mint: strategy.token_out_mint,
-        input_lamports: inputLamports,
-        output_leg_a: outAmountA,
-        output_leg_b: outAmountB,
-        estimated_profit_lamports: estimatedProfitLamports,
-        estimated_profit_sol: estimatedProfitLamports / 1_000_000_000,
-        meets_min_threshold: estimatedProfitLamports >= strategy.min_profit_lamports,
+        input_lamports: Number(inputLamports),
+        output_leg_a: Number(outAmountA),
+        output_leg_b: Number(outAmountB),
+        estimated_profit_lamports: Number(estimatedProfitLamports),
+        estimated_profit_sol: Number(estimatedProfitLamports) / 1_000_000_000,
+        meets_min_threshold: Number(estimatedProfitLamports) >= strategy.min_profit_lamports,
         price_source: 'Jupiter Aggregator (Real DEX Prices)',
         run_id: runData?.id || null,
-        error: quoteErrorA || quoteErrorB || null,
+        error: quoteError,
       });
     }
 
