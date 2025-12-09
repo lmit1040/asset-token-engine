@@ -261,18 +261,32 @@ export default function AdminArbitrageStrategiesPage() {
     setIsScanning(false);
   };
 
-  const executeArbitrage = async (strategyId: string) => {
+  const executeArbitrage = async (strategyId: string, chainType: ChainType) => {
+    const functionName = chainType === 'EVM' ? 'execute-evm-arbitrage' : 'execute-arbitrage';
+    const loadingToast = toast.loading(`Executing ${chainType} arbitrage...`);
+    
     try {
-      const { data, error } = await supabase.functions.invoke('execute-arbitrage', {
+      const { data, error } = await supabase.functions.invoke(functionName, {
         body: { strategy_id: strategyId }
       });
+      
+      toast.dismiss(loadingToast);
+      
       if (error) throw error;
       
-      toast.success('Stub execution complete (no real trades)');
+      if (data.success) {
+        const profitDisplay = chainType === 'EVM' 
+          ? `${data.estimated_profit_eth?.toFixed(6) || '0'} ETH`
+          : `${(data.estimated_profit_lamports / 1e9)?.toFixed(6) || '0'} SOL`;
+        toast.success(`Arbitrage executed! Profit: ${profitDisplay}`);
+      } else {
+        toast.info(data.message || 'Trade not profitable');
+      }
       console.log('Execution result:', data);
-    } catch (error) {
+    } catch (error: any) {
+      toast.dismiss(loadingToast);
       console.error('Execution error:', error);
-      toast.error('Failed to execute arbitrage');
+      toast.error(`Failed to execute ${chainType} arbitrage: ${error?.message || 'Unknown error'}`);
     }
   };
 
@@ -291,7 +305,7 @@ export default function AdminArbitrageStrategiesPage() {
           <AlertTriangle className="h-4 w-4 text-amber-500" />
           <AlertDescription className="text-amber-700 dark:text-amber-300">
             <strong>INTERNAL ONLY:</strong> This feature is for internal platform cost optimization only. 
-            It does NOT interact with user funds. Current implementation uses STUB execution (no real trades).
+            It does NOT interact with user funds. <strong>EVM execution is LIVE on Polygon.</strong> Solana uses stub execution.
           </AlertDescription>
         </Alert>
 
@@ -568,11 +582,11 @@ export default function AdminArbitrageStrategiesPage() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => executeArbitrage(strategy.id)}
+                                onClick={() => executeArbitrage(strategy.id, 'SOLANA')}
                                 disabled={!strategy.is_enabled}
                               >
                                 <Play className="h-4 w-4 mr-1" />
-                                Execute (Stub)
+                                Execute
                               </Button>
                             </div>
                           </TableCell>
@@ -652,11 +666,11 @@ export default function AdminArbitrageStrategiesPage() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => executeArbitrage(strategy.id)}
+                                onClick={() => executeArbitrage(strategy.id, 'EVM')}
                                 disabled={!strategy.is_enabled}
                               >
-                                <Play className="h-4 w-4 mr-1" />
-                                Execute (Stub)
+                                <Zap className="h-4 w-4 mr-1" />
+                                Execute
                               </Button>
                             </div>
                           </TableCell>
