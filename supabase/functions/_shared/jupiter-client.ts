@@ -56,6 +56,32 @@ export interface JupiterSwapResponse {
 }
 
 /**
+ * Jupiter swap instructions response structure
+ * Used for building atomic multi-swap transactions
+ */
+export interface JupiterSwapInstructionsResponse {
+  tokenLedgerInstruction: SerializedInstruction | null;
+  computeBudgetInstructions: SerializedInstruction[];
+  setupInstructions: SerializedInstruction[];
+  swapInstruction: SerializedInstruction;
+  cleanupInstruction: SerializedInstruction | null;
+  addressLookupTableAddresses: string[];
+}
+
+/**
+ * Serialized instruction from Jupiter API
+ */
+export interface SerializedInstruction {
+  programId: string;
+  accounts: Array<{
+    pubkey: string;
+    isSigner: boolean;
+    isWritable: boolean;
+  }>;
+  data: string; // Base64 encoded
+}
+
+/**
  * Error type for Jupiter API failures
  */
 export class JupiterApiError extends Error {
@@ -201,6 +227,73 @@ export async function getJupiterSwapTransaction(
     console.error('[jupiter-client] Unexpected error getting swap transaction:', error);
     throw new JupiterApiError(
       `Failed to get Jupiter swap transaction: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      undefined,
+      error
+    );
+  }
+}
+
+/**
+ * Get swap instructions from Jupiter (for building atomic multi-swap transactions)
+ * 
+ * @param quoteResponse - The quote response from getJupiterQuote
+ * @param userPublicKey - The public key that will sign and execute the swap
+ * @param wrapUnwrapSOL - Whether to automatically wrap/unwrap SOL (default: true)
+ * @returns Swap instructions response or null on failure
+ */
+export async function getJupiterSwapInstructions(
+  quoteResponse: JupiterQuoteResponse,
+  userPublicKey: string,
+  wrapUnwrapSOL: boolean = true
+): Promise<JupiterSwapInstructionsResponse | null> {
+  try {
+    const url = `${JUPITER_API_BASE}/swap-instructions`;
+    
+    const requestBody = {
+      quoteResponse,
+      userPublicKey,
+      wrapAndUnwrapSol: wrapUnwrapSOL,
+      // TODO: Consider adding for production:
+      // dynamicComputeUnitLimit: true,
+      // prioritizationFeeLamports: 'auto',
+    };
+
+    console.log('[jupiter-client] Requesting swap instructions for user:', userPublicKey);
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[jupiter-client] Swap instructions API error:', response.status, errorText);
+      throw new JupiterApiError(
+        `Jupiter swap-instructions API failed: ${response.status}`,
+        response.status,
+        errorText
+      );
+    }
+
+    const instructionsResponse: JupiterSwapInstructionsResponse = await response.json();
+    console.log('[jupiter-client] Swap instructions received:', {
+      setupCount: instructionsResponse.setupInstructions?.length || 0,
+      hasSwap: !!instructionsResponse.swapInstruction,
+      hasCleanup: !!instructionsResponse.cleanupInstruction,
+      lookupTables: instructionsResponse.addressLookupTableAddresses?.length || 0,
+    });
+
+    return instructionsResponse;
+  } catch (error) {
+    if (error instanceof JupiterApiError) {
+      throw error;
+    }
+    console.error('[jupiter-client] Unexpected error getting swap instructions:', error);
+    throw new JupiterApiError(
+      `Failed to get Jupiter swap instructions: ${error instanceof Error ? error.message : 'Unknown error'}`,
       undefined,
       error
     );
