@@ -47,3 +47,6 @@ verify_jwt = false
 
 [functions.get-fee-payer-keypair]
 verify_jwt = false
+
+[functions.scan-evm-arbitrage]
+verify_jwt = false
