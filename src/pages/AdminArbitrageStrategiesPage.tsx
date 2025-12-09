@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Plus, Play, Zap, RefreshCw, AlertTriangle, Edit2 } from 'lucide-react';
+import { Plus, Play, Zap, RefreshCw, AlertTriangle, Edit2, Wallet } from 'lucide-react';
 import { format } from 'date-fns';
 import { Link } from 'react-router-dom';
 
@@ -105,6 +105,11 @@ const emptyStrategy = {
   evm_network: null as string | null,
 };
 
+interface OpsWalletInfo {
+  solana: { address: string; balance: string } | null;
+  evm: { address: string; balance: string; network: string } | null;
+}
+
 export default function AdminArbitrageStrategiesPage() {
   const [strategies, setStrategies] = useState<ArbitrageStrategy[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -113,6 +118,8 @@ export default function AdminArbitrageStrategiesPage() {
   const [editingStrategy, setEditingStrategy] = useState<ArbitrageStrategy | null>(null);
   const [formData, setFormData] = useState(emptyStrategy);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [opsWallets, setOpsWallets] = useState<OpsWalletInfo>({ solana: null, evm: null });
+  const [isLoadingWallets, setIsLoadingWallets] = useState(false);
 
   const fetchStrategies = async () => {
     setIsLoading(true);
@@ -130,8 +137,37 @@ export default function AdminArbitrageStrategiesPage() {
     setIsLoading(false);
   };
 
+  const fetchOpsWallets = async () => {
+    setIsLoadingWallets(true);
+    try {
+      // Fetch Solana OPS wallet
+      const { data: solanaData } = await supabase.functions.invoke('get-ops-wallet-info');
+      
+      // Fetch EVM OPS wallet
+      const { data: evmData } = await supabase.functions.invoke('get-evm-ops-wallet-info', {
+        body: null,
+      });
+
+      setOpsWallets({
+        solana: solanaData?.configured ? {
+          address: solanaData.address,
+          balance: `${solanaData.balance_sol?.toFixed(4) || '0'} SOL`,
+        } : null,
+        evm: evmData?.configured ? {
+          address: evmData.address,
+          balance: evmData.balance_display || `${parseFloat(evmData.balance || '0').toFixed(4)} MATIC`,
+          network: evmData.network || 'POLYGON',
+        } : null,
+      });
+    } catch (error) {
+      console.error('Failed to fetch OPS wallets:', error);
+    }
+    setIsLoadingWallets(false);
+  };
+
   useEffect(() => {
     fetchStrategies();
+    fetchOpsWallets();
   }, []);
 
   const handleOpenModal = (strategy?: ArbitrageStrategy) => {
@@ -308,6 +344,63 @@ export default function AdminArbitrageStrategiesPage() {
             It does NOT interact with user funds. <strong>EVM execution is LIVE on Polygon.</strong> Solana uses stub execution.
           </AlertDescription>
         </Alert>
+
+        {/* OPS Wallet Balances */}
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Wallet className="h-5 w-5 text-primary" />
+                <CardTitle className="text-lg">OPS Wallet Balances</CardTitle>
+              </div>
+              <Button variant="ghost" size="sm" onClick={fetchOpsWallets} disabled={isLoadingWallets}>
+                <RefreshCw className={`h-4 w-4 ${isLoadingWallets ? 'animate-spin' : ''}`} />
+              </Button>
+            </div>
+            <CardDescription>Internal wallets used for arbitrage execution</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Solana OPS Wallet */}
+              <div className="border rounded-lg p-4 space-y-2">
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="bg-purple-500/10 text-purple-600 border-purple-500/30">
+                    Solana
+                  </Badge>
+                  {opsWallets.solana ? (
+                    <Badge variant="secondary">{opsWallets.solana.balance}</Badge>
+                  ) : (
+                    <Badge variant="destructive">Not configured</Badge>
+                  )}
+                </div>
+                {opsWallets.solana && (
+                  <p className="text-xs font-mono text-muted-foreground break-all">
+                    {opsWallets.solana.address}
+                  </p>
+                )}
+              </div>
+              
+              {/* EVM OPS Wallet */}
+              <div className="border rounded-lg p-4 space-y-2">
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="bg-blue-500/10 text-blue-600 border-blue-500/30">
+                    {opsWallets.evm?.network || 'Polygon'}
+                  </Badge>
+                  {opsWallets.evm ? (
+                    <Badge variant="secondary">{opsWallets.evm.balance}</Badge>
+                  ) : (
+                    <Badge variant="destructive">Not configured</Badge>
+                  )}
+                </div>
+                {opsWallets.evm && (
+                  <p className="text-xs font-mono text-muted-foreground break-all">
+                    {opsWallets.evm.address}
+                  </p>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
