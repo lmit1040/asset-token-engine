@@ -5,6 +5,7 @@ import { StatCard } from '@/components/dashboard/StatCard';
 import { HoldingsTable } from '@/components/dashboard/HoldingsTable';
 import { PortfolioChart } from '@/components/dashboard/PortfolioChart';
 import { TransactionHistory } from '@/components/dashboard/TransactionHistory';
+import { LegalDisclaimer } from '@/components/layout/LegalDisclaimer';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -237,6 +238,9 @@ export default function DashboardPage() {
           </div>
           <TransactionHistory pageSize={10} />
         </div>
+
+        {/* Legal Disclaimer */}
+        <LegalDisclaimer />
       </div>
     </DashboardLayout>
   );
