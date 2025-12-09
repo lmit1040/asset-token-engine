@@ -105,10 +105,23 @@ const emptyStrategy = {
   evm_network: null as string | null,
 };
 
+interface EvmWalletBalance {
+  address: string;
+  balance: string;
+  network: string;
+}
+
 interface OpsWalletInfo {
   solana: { address: string; balance: string; balanceNum: number } | null;
-  evm: { address: string; balance: string; network: string } | null;
+  evm: Record<string, EvmWalletBalance>;
 }
+
+const EVM_NETWORK_OPTIONS = [
+  { value: 'POLYGON', label: 'Polygon', symbol: 'MATIC' },
+  { value: 'ETHEREUM', label: 'Ethereum', symbol: 'ETH' },
+  { value: 'ARBITRUM', label: 'Arbitrum', symbol: 'ETH' },
+  { value: 'BSC', label: 'BNB Chain', symbol: 'BNB' },
+];
 
 export default function AdminArbitrageStrategiesPage() {
   const [strategies, setStrategies] = useState<ArbitrageStrategy[]>([]);
@@ -118,9 +131,10 @@ export default function AdminArbitrageStrategiesPage() {
   const [editingStrategy, setEditingStrategy] = useState<ArbitrageStrategy | null>(null);
   const [formData, setFormData] = useState(emptyStrategy);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [opsWallets, setOpsWallets] = useState<OpsWalletInfo>({ solana: null, evm: null });
+  const [opsWallets, setOpsWallets] = useState<OpsWalletInfo>({ solana: null, evm: {} });
   const [isLoadingWallets, setIsLoadingWallets] = useState(false);
   const [isRequestingAirdrop, setIsRequestingAirdrop] = useState(false);
+  const [selectedEvmNetwork, setSelectedEvmNetwork] = useState('POLYGON');
 
   const fetchStrategies = async () => {
     setIsLoading(true);
@@ -144,27 +158,54 @@ export default function AdminArbitrageStrategiesPage() {
       // Fetch Solana OPS wallet
       const { data: solanaData } = await supabase.functions.invoke('get-ops-wallet-info');
       
-      // Fetch EVM OPS wallet
+      // Fetch EVM OPS wallet for selected network
       const { data: evmData } = await supabase.functions.invoke('get-evm-ops-wallet-info', {
-        body: null,
+        body: { network: selectedEvmNetwork },
       });
 
-      setOpsWallets({
+      setOpsWallets(prev => ({
         solana: solanaData?.publicKey ? {
           address: solanaData.publicKey,
           balance: `${solanaData.balanceSol?.toFixed(4) || '0'} SOL`,
           balanceNum: solanaData.balanceSol || 0,
         } : null,
         evm: evmData?.configured ? {
-          address: evmData.address,
-          balance: evmData.balance_display || `${parseFloat(evmData.balance || '0').toFixed(4)} MATIC`,
-          network: evmData.network || 'POLYGON',
-        } : null,
-      });
+          ...prev.evm,
+          [selectedEvmNetwork]: {
+            address: evmData.address,
+            balance: evmData.balance_display || `${parseFloat(evmData.balance || '0').toFixed(4)}`,
+            network: evmData.network || selectedEvmNetwork,
+          },
+        } : prev.evm,
+      }));
     } catch (error) {
       console.error('Failed to fetch OPS wallets:', error);
     }
     setIsLoadingWallets(false);
+  };
+
+  const fetchEvmBalance = async (network: string) => {
+    try {
+      const { data: evmData } = await supabase.functions.invoke('get-evm-ops-wallet-info', {
+        body: { network },
+      });
+
+      if (evmData?.configured) {
+        setOpsWallets(prev => ({
+          ...prev,
+          evm: {
+            ...prev.evm,
+            [network]: {
+              address: evmData.address,
+              balance: evmData.balance_display || `${parseFloat(evmData.balance || '0').toFixed(4)}`,
+              network: evmData.network || network,
+            },
+          },
+        }));
+      }
+    } catch (error) {
+      console.error(`Failed to fetch ${network} balance:`, error);
+    }
   };
 
   const requestDevnetAirdrop = async () => {
@@ -417,21 +458,38 @@ export default function AdminArbitrageStrategiesPage() {
               </div>
               
               {/* EVM OPS Wallet */}
-              <div className="border rounded-lg p-4 space-y-2">
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="bg-blue-500/10 text-blue-600 border-blue-500/30">
-                    {opsWallets.evm?.network || 'Polygon'}
-                  </Badge>
-                  {opsWallets.evm ? (
-                    <Badge variant="secondary">{opsWallets.evm.balance}</Badge>
-                  ) : (
-                    <Badge variant="destructive">Not configured</Badge>
-                  )}
+              <div className="border rounded-lg p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Select value={selectedEvmNetwork} onValueChange={(v) => {
+                      setSelectedEvmNetwork(v);
+                      if (!opsWallets.evm[v]) {
+                        fetchEvmBalance(v);
+                      }
+                    }}>
+                      <SelectTrigger className="w-[140px] h-7 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {EVM_NETWORK_OPTIONS.map(opt => (
+                          <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {opsWallets.evm[selectedEvmNetwork] ? (
+                      <Badge variant="secondary">{opsWallets.evm[selectedEvmNetwork].balance}</Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-muted-foreground">Loading...</Badge>
+                    )}
+                  </div>
                 </div>
-                {opsWallets.evm && (
+                {opsWallets.evm[selectedEvmNetwork] && (
                   <p className="text-xs font-mono text-muted-foreground break-all">
-                    {opsWallets.evm.address}
+                    {opsWallets.evm[selectedEvmNetwork].address}
                   </p>
+                )}
+                {!opsWallets.evm[selectedEvmNetwork] && !isLoadingWallets && (
+                  <p className="text-xs text-muted-foreground">EVM wallet not configured or failed to load</p>
                 )}
               </div>
             </div>

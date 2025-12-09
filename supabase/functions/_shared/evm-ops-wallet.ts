@@ -4,12 +4,12 @@
 
 import { ethers } from "https://esm.sh/ethers@6.13.2";
 
-// Network RPC URLs (using Ankr free tier)
+// Network RPC URLs (using public free RPCs)
 const NETWORK_RPC_URLS: Record<string, string> = {
-  POLYGON: "https://rpc.ankr.com/polygon",
-  ETHEREUM: "https://rpc.ankr.com/eth",
-  ARBITRUM: "https://rpc.ankr.com/arbitrum",
-  BSC: "https://rpc.ankr.com/bsc",
+  POLYGON: "https://polygon-rpc.com",
+  ETHEREUM: "https://eth.llamarpc.com",
+  ARBITRUM: "https://arb1.arbitrum.io/rpc",
+  BSC: "https://bsc-dataseed1.binance.org",
 };
 
 // Chain IDs for network validation
