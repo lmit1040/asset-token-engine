@@ -1,13 +1,23 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { decode as base64Decode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
-import { 
+
+// Declare EdgeRuntime for background tasks
+declare const EdgeRuntime: {
+  waitUntil: (promise: Promise<unknown>) => void;
+};
+
+import {
   Connection, 
   TransactionMessage, 
   VersionedTransaction, 
   TransactionInstruction,
   PublicKey,
   AddressLookupTableAccount,
+  SystemProgram,
+  Transaction,
+  sendAndConfirmTransaction,
+  LAMPORTS_PER_SOL,
 } from "https://esm.sh/@solana/web3.js@1.87.6";
 import { getOpsWalletKeypair } from "../_shared/ops-wallet.ts";
 import { 
@@ -24,8 +34,12 @@ const corsHeaders = {
 };
 
 // Default trade amount for arbitrage (in lamports for SOL-based pairs)
-// TODO: Make this configurable per strategy
 const DEFAULT_TRADE_AMOUNT_LAMPORTS = BigInt(100_000_000); // 0.1 SOL
+
+// Fee payer auto-refill configuration
+const MIN_BALANCE_THRESHOLD_SOL = 0.05;
+const TOP_UP_AMOUNT_SOL = 0.2;
+const AUTO_REFILL_PROFIT_THRESHOLD_LAMPORTS = 10_000_000; // Only refill if profit >= 0.01 SOL
 
 /**
  * Convert a serialized Jupiter instruction to a TransactionInstruction
@@ -59,6 +73,87 @@ async function getAddressLookupTableAccounts(
   }
   
   return lookupTableAccounts;
+}
+
+/**
+ * Automatically top up fee payers from arbitrage profits (runs in background)
+ */
+async function autoRefillFeePayers(
+  connection: Connection,
+  opsWallet: any,
+  profitLamports: number,
+  supabase: any
+): Promise<void> {
+  console.log('[execute-arbitrage] Starting auto fee payer refill from profits...');
+  
+  try {
+    // Fetch active fee payers
+    const { data: feePayers, error: fpError } = await supabase
+      .from('fee_payer_keys')
+      .select('*')
+      .eq('is_active', true);
+
+    if (fpError || !feePayers?.length) {
+      console.log('[execute-arbitrage] No active fee payers to refill');
+      return;
+    }
+
+    const topUpAmountLamports = Math.floor(TOP_UP_AMOUNT_SOL * LAMPORTS_PER_SOL);
+    let refillCount = 0;
+
+    for (const feePayer of feePayers) {
+      try {
+        const feePayerPubkey = new PublicKey(feePayer.public_key);
+        const balance = await connection.getBalance(feePayerPubkey);
+        const balanceSol = balance / LAMPORTS_PER_SOL;
+
+        if (balanceSol < MIN_BALANCE_THRESHOLD_SOL) {
+          console.log(`[execute-arbitrage] Auto-refilling ${feePayer.label} (${balanceSol.toFixed(4)} SOL)`);
+
+          // Check if OPS wallet has enough balance
+          const opsBalance = await connection.getBalance(opsWallet.publicKey);
+          if (opsBalance < topUpAmountLamports + 5000) {
+            console.warn('[execute-arbitrage] OPS wallet insufficient for auto-refill');
+            break;
+          }
+
+          // Create and send transfer transaction
+          const transaction = new Transaction().add(
+            SystemProgram.transfer({
+              fromPubkey: opsWallet.publicKey,
+              toPubkey: feePayerPubkey,
+              lamports: topUpAmountLamports,
+            })
+          );
+
+          const signature = await sendAndConfirmTransaction(connection, transaction, [opsWallet]);
+          console.log(`[execute-arbitrage] Auto-refill tx: ${signature}`);
+
+          // Log the top-up
+          await supabase.from('fee_payer_topups').insert({
+            fee_payer_public_key: feePayer.public_key,
+            amount_lamports: topUpAmountLamports,
+            tx_signature: signature,
+          });
+
+          // Update fee payer balance
+          const newBalance = await connection.getBalance(feePayerPubkey);
+          await supabase
+            .from('fee_payer_keys')
+            .update({ balance_sol: newBalance / LAMPORTS_PER_SOL })
+            .eq('id', feePayer.id);
+
+          refillCount++;
+        }
+      } catch (err) {
+        console.error(`[execute-arbitrage] Auto-refill error for ${feePayer.label}:`, err);
+      }
+    }
+
+    console.log(`[execute-arbitrage] Auto-refilled ${refillCount} fee payers from arbitrage profits`);
+  } catch (error) {
+    console.error('[execute-arbitrage] Auto-refill background task error:', error);
+  }
 }
 
 serve(async (req) => {
@@ -367,6 +462,15 @@ serve(async (req) => {
 
     console.log(`[execute-arbitrage] Created execution run: ${runData.id}, status: ${status}`);
 
+    // Auto-refill fee payers from profits if execution was successful
+    let autoRefillTriggered = false;
+    if (status === 'EXECUTED' && actualProfitLamports >= AUTO_REFILL_PROFIT_THRESHOLD_LAMPORTS) {
+      console.log('[execute-arbitrage] Triggering auto fee payer refill from profits...');
+      autoRefillTriggered = true;
+      // Run in background using EdgeRuntime.waitUntil
+      EdgeRuntime.waitUntil(autoRefillFeePayers(connection, opsWallet, actualProfitLamports, supabase));
+    }
+
     return new Response(JSON.stringify({
       success: status === 'EXECUTED',
       message: status === 'EXECUTED' 
@@ -379,6 +483,7 @@ serve(async (req) => {
       tx_signature: txSignature,
       status,
       atomic: true,
+      auto_refill_triggered: autoRefillTriggered,
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
