@@ -222,15 +222,41 @@ export default function AdminArbitrageStrategiesPage() {
   const runSimulationScan = async (chainType: ChainType) => {
     setIsScanning(true);
     try {
+      // Debug: Check current session and auth state
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      console.log('[DEBUG] Current session:', sessionData?.session ? {
+        user_id: sessionData.session.user?.id,
+        email: sessionData.session.user?.email,
+        access_token_preview: sessionData.session.access_token?.substring(0, 50) + '...',
+        expires_at: sessionData.session.expires_at,
+      } : 'No session');
+      console.log('[DEBUG] Session error:', sessionError);
+      
+      if (!sessionData?.session) {
+        toast.error('No active session - please log in again');
+        setIsScanning(false);
+        return;
+      }
+
       const functionName = chainType === 'EVM' ? 'scan-evm-arbitrage' : 'scan-arbitrage';
+      console.log(`[DEBUG] Invoking ${functionName} with supabase.functions.invoke...`);
+      
       const { data, error } = await supabase.functions.invoke(functionName);
+      
+      console.log('[DEBUG] Edge function response:', { data, error });
+      
       if (error) throw error;
       
       toast.success(`${chainType} scan complete: ${data.profitable_count} profitable opportunities found`);
       console.log('Scan results:', data);
-    } catch (error) {
-      console.error('Scan error:', error);
-      toast.error(`Failed to run ${chainType} simulation scan`);
+    } catch (error: any) {
+      console.error('[DEBUG] Scan error details:', {
+        message: error?.message,
+        status: error?.status,
+        context: error?.context,
+        fullError: error,
+      });
+      toast.error(`Failed to run ${chainType} simulation scan: ${error?.message || 'Unknown error'}`);
     }
     setIsScanning(false);
   };
