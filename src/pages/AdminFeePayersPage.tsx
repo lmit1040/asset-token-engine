@@ -30,6 +30,11 @@ interface FeePayerKey {
   is_generated: boolean;
 }
 
+interface GeneratedOpsKeypair {
+  publicKey: string;
+  secretKeyArray: number[];
+}
+
 export default function AdminFeePayersPage() {
   const [feePayers, setFeePayers] = useState<FeePayerKey[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -43,6 +48,9 @@ export default function AdminFeePayersPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [opsWallet, setOpsWallet] = useState<OpsWalletInfo | null>(null);
   const [isLoadingOpsWallet, setIsLoadingOpsWallet] = useState(false);
+  const [isGeneratingOpsWallet, setIsGeneratingOpsWallet] = useState(false);
+  const [generatedOpsKeypair, setGeneratedOpsKeypair] = useState<GeneratedOpsKeypair | null>(null);
+  const [isOpsKeypairModalOpen, setIsOpsKeypairModalOpen] = useState(false);
 
   const fetchFeePayers = async () => {
     setIsLoading(true);
@@ -70,6 +78,34 @@ export default function AdminFeePayersPage() {
       console.error('Failed to fetch OPS wallet info:', error);
     }
     setIsLoadingOpsWallet(false);
+  };
+
+  const handleGenerateOpsWallet = async () => {
+    setIsGeneratingOpsWallet(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('generate-ops-wallet-keypair');
+      if (error) throw error;
+      if (data.success) {
+        setGeneratedOpsKeypair({
+          publicKey: data.publicKey,
+          secretKeyArray: data.secretKeyArray
+        });
+        setIsOpsKeypairModalOpen(true);
+      } else {
+        throw new Error(data.error || 'Failed to generate keypair');
+      }
+    } catch (error) {
+      console.error('Failed to generate OPS wallet:', error);
+      toast.error('Failed to generate OPS wallet keypair');
+    }
+    setIsGeneratingOpsWallet(false);
+  };
+
+  const copySecretKeyArray = () => {
+    if (generatedOpsKeypair) {
+      navigator.clipboard.writeText(JSON.stringify(generatedOpsKeypair.secretKeyArray));
+      toast.success('Secret key array copied! Now save it as OPS_WALLET_SECRET_KEY.');
+    }
   };
 
   useEffect(() => {
@@ -292,10 +328,90 @@ export default function AdminFeePayersPage() {
                 </a>
               </div>
             ) : (
-              <div className="text-destructive">Failed to load OPS wallet info. Check that OPS_WALLET_SECRET_KEY is configured.</div>
+              <div className="flex flex-col sm:flex-row gap-4 sm:items-center">
+                <div className="flex-1 text-destructive text-sm">
+                  OPS_WALLET_SECRET_KEY is not configured or has invalid format.
+                </div>
+                <Button 
+                  variant="default" 
+                  size="sm"
+                  onClick={handleGenerateOpsWallet}
+                  disabled={isGeneratingOpsWallet}
+                >
+                  <Sparkles className={`h-3 w-3 mr-1 ${isGeneratingOpsWallet ? 'animate-spin' : ''}`} />
+                  {isGeneratingOpsWallet ? 'Generating...' : 'Generate OPS Wallet Keypair'}
+                </Button>
+              </div>
             )}
           </CardContent>
         </Card>
+
+        {/* OPS Wallet Keypair Modal */}
+        <Dialog open={isOpsKeypairModalOpen} onOpenChange={setIsOpsKeypairModalOpen}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>OPS Wallet Keypair Generated</DialogTitle>
+              <DialogDescription>
+                Copy the secret key array below and save it as <code className="bg-muted px-1 rounded">OPS_WALLET_SECRET_KEY</code> in your Supabase secrets.
+              </DialogDescription>
+            </DialogHeader>
+            {generatedOpsKeypair && (
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label>Public Key</Label>
+                  <div className="flex items-center gap-2">
+                    <code className="text-sm bg-muted px-3 py-2 rounded font-mono flex-1 break-all">
+                      {generatedOpsKeypair.publicKey}
+                    </code>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => {
+                        navigator.clipboard.writeText(generatedOpsKeypair.publicKey);
+                        toast.success('Public key copied!');
+                      }}
+                    >
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Secret Key Array (save as OPS_WALLET_SECRET_KEY)</Label>
+                  <div className="relative">
+                    <pre className="text-xs bg-muted px-3 py-2 rounded font-mono overflow-x-auto max-h-32 overflow-y-auto">
+                      {JSON.stringify(generatedOpsKeypair.secretKeyArray)}
+                    </pre>
+                    <Button
+                      variant="default"
+                      size="sm"
+                      className="absolute top-2 right-2"
+                      onClick={copySecretKeyArray}
+                    >
+                      <Copy className="h-3 w-3 mr-1" />
+                      Copy
+                    </Button>
+                  </div>
+                </div>
+                <div className="bg-amber-500/10 border border-amber-500/30 p-3 rounded-md text-sm">
+                  <AlertTriangle className="h-4 w-4 inline mr-2 text-amber-500" />
+                  <strong>Important:</strong> Save this secret key array now! Once you close this dialog, you cannot retrieve it again. 
+                  Go to your Supabase project → Settings → Secrets and add/update <code className="bg-muted px-1 rounded">OPS_WALLET_SECRET_KEY</code> with the copied value.
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsOpsKeypairModalOpen(false)}>
+                Close
+              </Button>
+              <Button onClick={() => {
+                copySecretKeyArray();
+                window.open('https://supabase.com/dashboard/project/hqohcfwahmkxtpfbhcku/settings/secrets', '_blank');
+              }}>
+                Copy & Open Secrets
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
