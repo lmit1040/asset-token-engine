@@ -1,13 +1,17 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
 import { supabase } from '@/integrations/supabase/client';
-import { RefreshCw, ExternalLink, TrendingUp, Zap, ArrowUpRight, Radio } from 'lucide-react';
-import { format } from 'date-fns';
+import { RefreshCw, ExternalLink, TrendingUp, Zap, ArrowUpRight, Radio, Download, CalendarIcon, X } from 'lucide-react';
+import { format, isAfter, isBefore, startOfDay, endOfDay } from 'date-fns';
 import { toast } from 'sonner';
+import { DateRange } from 'react-day-picker';
 
 interface ArbitrageRun {
   id: string;
@@ -34,11 +38,15 @@ interface FeePayerTopup {
   created_at: string;
 }
 
+type StatusFilter = 'all' | 'EXECUTED' | 'SIMULATED' | 'FAILED';
+
 export function OpsWalletTransactionHistory() {
   const [arbitrageRuns, setArbitrageRuns] = useState<ArbitrageRun[]>([]);
   const [topups, setTopups] = useState<FeePayerTopup[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isLive, setIsLive] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
 
   const fetchStrategyDetails = async (strategyId: string) => {
     const { data } = await supabase
@@ -67,7 +75,7 @@ export function OpsWalletTransactionHistory() {
           finished_at
         `)
         .order('started_at', { ascending: false })
-        .limit(10);
+        .limit(100);
 
       // Fetch strategy details separately
       if (runsData && runsData.length > 0) {
@@ -94,7 +102,7 @@ export function OpsWalletTransactionHistory() {
         .from('fee_payer_topups')
         .select('*')
         .order('created_at', { ascending: false })
-        .limit(10);
+        .limit(100);
 
       setTopups(topupsData || []);
     } catch (error) {
@@ -126,7 +134,7 @@ export function OpsWalletTransactionHistory() {
             setArbitrageRuns(prev => [{
               ...newRun,
               strategy: strategy || undefined
-            }, ...prev.slice(0, 9)]);
+            }, ...prev.slice(0, 99)]);
             toast.info('New arbitrage run detected');
           } else if (payload.eventType === 'UPDATE') {
             const updatedRun = payload.new as ArbitrageRun;
@@ -156,7 +164,7 @@ export function OpsWalletTransactionHistory() {
           setIsLive(true);
           
           const newTopup = payload.new as FeePayerTopup;
-          setTopups(prev => [newTopup, ...prev.slice(0, 9)]);
+          setTopups(prev => [newTopup, ...prev.slice(0, 99)]);
           toast.info('New fee payer top-up detected');
           
           setTimeout(() => setIsLive(false), 2000);
@@ -203,6 +211,83 @@ export function OpsWalletTransactionHistory() {
 
   const truncateSignature = (sig: string) => `${sig.slice(0, 8)}...${sig.slice(-6)}`;
 
+  // Filter arbitrage runs
+  const filteredArbitrageRuns = useMemo(() => {
+    return arbitrageRuns.filter(run => {
+      // Status filter
+      if (statusFilter !== 'all' && run.status !== statusFilter) return false;
+      
+      // Date range filter
+      if (dateRange?.from) {
+        const runDate = new Date(run.started_at);
+        if (isBefore(runDate, startOfDay(dateRange.from))) return false;
+        if (dateRange.to && isAfter(runDate, endOfDay(dateRange.to))) return false;
+      }
+      
+      return true;
+    });
+  }, [arbitrageRuns, statusFilter, dateRange]);
+
+  // Filter topups
+  const filteredTopups = useMemo(() => {
+    return topups.filter(topup => {
+      if (dateRange?.from) {
+        const topupDate = new Date(topup.created_at);
+        if (isBefore(topupDate, startOfDay(dateRange.from))) return false;
+        if (dateRange.to && isAfter(topupDate, endOfDay(dateRange.to))) return false;
+      }
+      return true;
+    });
+  }, [topups, dateRange]);
+
+  const clearFilters = () => {
+    setStatusFilter('all');
+    setDateRange(undefined);
+  };
+
+  const hasActiveFilters = statusFilter !== 'all' || dateRange?.from;
+
+  // CSV Export
+  const exportArbitrageCSV = () => {
+    const headers = ['Time', 'Strategy', 'Chain', 'Status', 'Estimated Profit (SOL)', 'Actual Profit (SOL)', 'TX Signature'];
+    const rows = filteredArbitrageRuns.map(run => [
+      format(new Date(run.started_at), 'yyyy-MM-dd HH:mm:ss'),
+      run.strategy?.name || 'Unknown',
+      run.strategy?.chain_type || 'SOLANA',
+      run.status,
+      run.estimated_profit_lamports !== null ? (run.estimated_profit_lamports / 1_000_000_000).toFixed(9) : '',
+      run.actual_profit_lamports !== null ? (run.actual_profit_lamports / 1_000_000_000).toFixed(9) : '',
+      run.tx_signature || ''
+    ]);
+
+    const csv = [headers, ...rows].map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
+    downloadCSV(csv, `arbitrage-runs-${format(new Date(), 'yyyy-MM-dd')}.csv`);
+    toast.success('Arbitrage runs exported');
+  };
+
+  const exportTopupsCSV = () => {
+    const headers = ['Time', 'Fee Payer', 'Amount (SOL)', 'TX Signature'];
+    const rows = filteredTopups.map(topup => [
+      format(new Date(topup.created_at), 'yyyy-MM-dd HH:mm:ss'),
+      topup.fee_payer_public_key,
+      (topup.amount_lamports / 1_000_000_000).toFixed(9),
+      topup.tx_signature || ''
+    ]);
+
+    const csv = [headers, ...rows].map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
+    downloadCSV(csv, `fee-payer-topups-${format(new Date(), 'yyyy-MM-dd')}.csv`);
+    toast.success('Top-ups exported');
+  };
+
+  const downloadCSV = (content: string, filename: string) => {
+    const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
+
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -230,24 +315,83 @@ export function OpsWalletTransactionHistory() {
             </Button>
           </div>
         </div>
+
+        {/* Filters */}
+        <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t">
+          <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
+            <SelectTrigger className="w-[140px] h-8 text-xs">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Statuses</SelectItem>
+              <SelectItem value="EXECUTED">Executed</SelectItem>
+              <SelectItem value="SIMULATED">Simulated</SelectItem>
+              <SelectItem value="FAILED">Failed</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" className="h-8 text-xs gap-1">
+                <CalendarIcon className="h-3 w-3" />
+                {dateRange?.from ? (
+                  dateRange.to ? (
+                    <>
+                      {format(dateRange.from, 'MMM d')} - {format(dateRange.to, 'MMM d')}
+                    </>
+                  ) : (
+                    format(dateRange.from, 'MMM d, yyyy')
+                  )
+                ) : (
+                  'Date Range'
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <Calendar
+                initialFocus
+                mode="range"
+                defaultMonth={dateRange?.from}
+                selected={dateRange}
+                onSelect={setDateRange}
+                numberOfMonths={2}
+              />
+            </PopoverContent>
+          </Popover>
+
+          {hasActiveFilters && (
+            <Button variant="ghost" size="sm" className="h-8 text-xs gap-1" onClick={clearFilters}>
+              <X className="h-3 w-3" />
+              Clear
+            </Button>
+          )}
+
+          <div className="ml-auto" />
+        </div>
       </CardHeader>
       <CardContent>
         <Tabs defaultValue="arbitrage" className="w-full">
           <TabsList className="grid w-full grid-cols-2 mb-4">
             <TabsTrigger value="arbitrage" className="text-xs">
               <ArrowUpRight className="h-3 w-3 mr-1" />
-              Arbitrage Runs ({arbitrageRuns.length})
+              Arbitrage Runs ({filteredArbitrageRuns.length})
             </TabsTrigger>
             <TabsTrigger value="topups" className="text-xs">
               <Zap className="h-3 w-3 mr-1" />
-              Fee Payer Top-ups ({topups.length})
+              Fee Payer Top-ups ({filteredTopups.length})
             </TabsTrigger>
           </TabsList>
 
           <TabsContent value="arbitrage" className="mt-0">
-            {arbitrageRuns.length === 0 ? (
+            <div className="flex justify-end mb-2">
+              <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={exportArbitrageCSV} disabled={filteredArbitrageRuns.length === 0}>
+                <Download className="h-3 w-3" />
+                Export CSV
+              </Button>
+            </div>
+            {filteredArbitrageRuns.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
-                No arbitrage runs yet
+                {arbitrageRuns.length === 0 ? 'No arbitrage runs yet' : 'No runs match filters'}
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -262,7 +406,7 @@ export function OpsWalletTransactionHistory() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {arbitrageRuns.map(run => (
+                    {filteredArbitrageRuns.slice(0, 20).map(run => (
                       <TableRow key={run.id}>
                         <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                           {format(new Date(run.started_at), 'MMM d, HH:mm')}
@@ -313,9 +457,15 @@ export function OpsWalletTransactionHistory() {
           </TabsContent>
 
           <TabsContent value="topups" className="mt-0">
-            {topups.length === 0 ? (
+            <div className="flex justify-end mb-2">
+              <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={exportTopupsCSV} disabled={filteredTopups.length === 0}>
+                <Download className="h-3 w-3" />
+                Export CSV
+              </Button>
+            </div>
+            {filteredTopups.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
-                No top-ups yet
+                {topups.length === 0 ? 'No top-ups yet' : 'No top-ups match filters'}
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -329,7 +479,7 @@ export function OpsWalletTransactionHistory() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {topups.map(topup => (
+                    {filteredTopups.slice(0, 20).map(topup => (
                       <TableRow key={topup.id}>
                         <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                           {format(new Date(topup.created_at), 'MMM d, HH:mm')}
