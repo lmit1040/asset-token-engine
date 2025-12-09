@@ -10,14 +10,15 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Plus, Play, Zap, RefreshCw, AlertTriangle, Edit2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { Link } from 'react-router-dom';
 
-// Supported DEXs by Jupiter Aggregator
-const SUPPORTED_DEXS = [
+// Supported Solana DEXs by Jupiter Aggregator
+const SUPPORTED_SOLANA_DEXS = [
   'Raydium',
   'Raydium CLMM',
   'Raydium CP',
@@ -55,6 +56,29 @@ const SUPPORTED_DEXS = [
   'Jupiter',
 ];
 
+// Supported EVM DEXs
+const SUPPORTED_EVM_DEXS = [
+  'Uniswap V2',
+  'Uniswap V3',
+  'SushiSwap',
+  'Aave V3',
+  'QuickSwap',
+  'PancakeSwap',
+  '1inch',
+  'Curve',
+  'Balancer',
+];
+
+// EVM Networks
+const EVM_NETWORKS = [
+  { value: 'ETHEREUM', label: 'Ethereum' },
+  { value: 'POLYGON', label: 'Polygon' },
+  { value: 'ARBITRUM', label: 'Arbitrum' },
+  { value: 'BSC', label: 'BNB Chain' },
+];
+
+type ChainType = 'SOLANA' | 'EVM';
+
 interface ArbitrageStrategy {
   id: string;
   name: string;
@@ -66,6 +90,8 @@ interface ArbitrageStrategy {
   is_enabled: boolean;
   created_at: string;
   updated_at: string;
+  chain_type: ChainType;
+  evm_network: string | null;
 }
 
 const emptyStrategy = {
@@ -75,6 +101,8 @@ const emptyStrategy = {
   token_in_mint: '',
   token_out_mint: '',
   min_profit_lamports: 0,
+  chain_type: 'SOLANA' as ChainType,
+  evm_network: null as string | null,
 };
 
 export default function AdminArbitrageStrategiesPage() {
@@ -116,6 +144,8 @@ export default function AdminArbitrageStrategiesPage() {
         token_in_mint: strategy.token_in_mint,
         token_out_mint: strategy.token_out_mint,
         min_profit_lamports: strategy.min_profit_lamports,
+        chain_type: strategy.chain_type || 'SOLANA',
+        evm_network: strategy.evm_network,
       });
     } else {
       setEditingStrategy(null);
@@ -130,12 +160,22 @@ export default function AdminArbitrageStrategiesPage() {
       return;
     }
 
+    if (formData.chain_type === 'EVM' && !formData.evm_network) {
+      toast.error('Please select an EVM network');
+      return;
+    }
+
     setIsSubmitting(true);
+
+    const dataToSave = {
+      ...formData,
+      evm_network: formData.chain_type === 'EVM' ? formData.evm_network : null,
+    };
 
     if (editingStrategy) {
       const { error } = await supabase
         .from('arbitrage_strategies')
-        .update(formData)
+        .update(dataToSave)
         .eq('id', editingStrategy.id);
 
       if (error) {
@@ -149,7 +189,7 @@ export default function AdminArbitrageStrategiesPage() {
     } else {
       const { error } = await supabase
         .from('arbitrage_strategies')
-        .insert({ ...formData, is_enabled: true });
+        .insert({ ...dataToSave, is_enabled: true });
 
       if (error) {
         toast.error('Failed to create strategy');
@@ -179,17 +219,18 @@ export default function AdminArbitrageStrategiesPage() {
     }
   };
 
-  const runSimulationScan = async () => {
+  const runSimulationScan = async (chainType: ChainType) => {
     setIsScanning(true);
     try {
-      const { data, error } = await supabase.functions.invoke('scan-arbitrage');
+      const functionName = chainType === 'EVM' ? 'scan-evm-arbitrage' : 'scan-arbitrage';
+      const { data, error } = await supabase.functions.invoke(functionName);
       if (error) throw error;
       
-      toast.success(`Scan complete: ${data.profitable_count} profitable opportunities found`);
+      toast.success(`${chainType} scan complete: ${data.profitable_count} profitable opportunities found`);
       console.log('Scan results:', data);
     } catch (error) {
       console.error('Scan error:', error);
-      toast.error('Failed to run simulation scan');
+      toast.error(`Failed to run ${chainType} simulation scan`);
     }
     setIsScanning(false);
   };
@@ -210,6 +251,11 @@ export default function AdminArbitrageStrategiesPage() {
   };
 
   const formatLamportsToSol = (lamports: number) => (lamports / 1_000_000_000).toFixed(6);
+
+  const getDexList = () => formData.chain_type === 'EVM' ? SUPPORTED_EVM_DEXS : SUPPORTED_SOLANA_DEXS;
+
+  const solanaStrategies = strategies.filter(s => s.chain_type === 'SOLANA' || !s.chain_type);
+  const evmStrategies = strategies.filter(s => s.chain_type === 'EVM');
 
   return (
     <DashboardLayout title="Arbitrage Strategies" subtitle="Manage internal arbitrage strategies (INTERNAL ONLY)">
@@ -252,15 +298,25 @@ export default function AdminArbitrageStrategiesPage() {
         </div>
 
         {/* Actions */}
-        <div className="flex justify-between items-center">
-          <Button
-            onClick={runSimulationScan}
-            disabled={isScanning}
-            variant="outline"
-          >
-            <RefreshCw className={`h-4 w-4 mr-2 ${isScanning ? 'animate-spin' : ''}`} />
-            Run Simulation Scan
-          </Button>
+        <div className="flex justify-between items-center gap-2">
+          <div className="flex gap-2">
+            <Button
+              onClick={() => runSimulationScan('SOLANA')}
+              disabled={isScanning}
+              variant="outline"
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${isScanning ? 'animate-spin' : ''}`} />
+              Scan Solana
+            </Button>
+            <Button
+              onClick={() => runSimulationScan('EVM')}
+              disabled={isScanning}
+              variant="outline"
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${isScanning ? 'animate-spin' : ''}`} />
+              Scan EVM
+            </Button>
+          </div>
 
           <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
             <DialogTrigger asChild>
@@ -269,7 +325,7 @@ export default function AdminArbitrageStrategiesPage() {
                 Add Strategy
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-lg">
+            <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>{editingStrategy ? 'Edit Strategy' : 'Add New Strategy'}</DialogTitle>
                 <DialogDescription>
@@ -277,10 +333,55 @@ export default function AdminArbitrageStrategiesPage() {
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
+                {/* Chain Type Selection */}
+                <div className="space-y-2">
+                  <Label>Chain Type</Label>
+                  <Select
+                    value={formData.chain_type}
+                    onValueChange={(value: ChainType) => setFormData({ 
+                      ...formData, 
+                      chain_type: value,
+                      dex_a: '',
+                      dex_b: '',
+                      evm_network: value === 'EVM' ? 'ETHEREUM' : null,
+                    })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select chain" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="SOLANA">Solana</SelectItem>
+                      <SelectItem value="EVM">EVM (Ethereum/Polygon)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* EVM Network (only for EVM) */}
+                {formData.chain_type === 'EVM' && (
+                  <div className="space-y-2">
+                    <Label>Network</Label>
+                    <Select
+                      value={formData.evm_network || ''}
+                      onValueChange={(value) => setFormData({ ...formData, evm_network: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select network" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {EVM_NETWORKS.map((net) => (
+                          <SelectItem key={net.value} value={net.value}>
+                            {net.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
                 <div className="space-y-2">
                   <Label>Name</Label>
                   <Input
-                    placeholder="e.g., SOL/USDC Raydium-Orca"
+                    placeholder={formData.chain_type === 'EVM' ? "e.g., ETH/USDC Uniswap-Sushi" : "e.g., SOL/USDC Raydium-Orca"}
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   />
@@ -296,7 +397,7 @@ export default function AdminArbitrageStrategiesPage() {
                         <SelectValue placeholder="Select DEX A" />
                       </SelectTrigger>
                       <SelectContent>
-                        {SUPPORTED_DEXS.map((dex) => (
+                        {getDexList().map((dex) => (
                           <SelectItem key={dex} value={dex}>
                             {dex}
                           </SelectItem>
@@ -314,7 +415,7 @@ export default function AdminArbitrageStrategiesPage() {
                         <SelectValue placeholder="Select DEX B" />
                       </SelectTrigger>
                       <SelectContent>
-                        {SUPPORTED_DEXS.map((dex) => (
+                        {getDexList().map((dex) => (
                           <SelectItem key={dex} value={dex}>
                             {dex}
                           </SelectItem>
@@ -324,25 +425,25 @@ export default function AdminArbitrageStrategiesPage() {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label>Token In Mint</Label>
+                  <Label>Token In Address</Label>
                   <Input
-                    placeholder="SPL mint address"
+                    placeholder={formData.chain_type === 'EVM' ? "0x... token address" : "SPL mint address"}
                     value={formData.token_in_mint}
                     onChange={(e) => setFormData({ ...formData, token_in_mint: e.target.value })}
                     className="font-mono text-sm"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Token Out Mint</Label>
+                  <Label>Token Out Address</Label>
                   <Input
-                    placeholder="SPL mint address"
+                    placeholder={formData.chain_type === 'EVM' ? "0x... token address" : "SPL mint address"}
                     value={formData.token_out_mint}
                     onChange={(e) => setFormData({ ...formData, token_out_mint: e.target.value })}
                     className="font-mono text-sm"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Min Profit (lamports)</Label>
+                  <Label>Min Profit ({formData.chain_type === 'EVM' ? 'wei' : 'lamports'})</Label>
                   <Input
                     type="number"
                     placeholder="0"
@@ -350,7 +451,10 @@ export default function AdminArbitrageStrategiesPage() {
                     onChange={(e) => setFormData({ ...formData, min_profit_lamports: parseInt(e.target.value) || 0 })}
                   />
                   <p className="text-xs text-muted-foreground">
-                    = {formatLamportsToSol(formData.min_profit_lamports)} SOL
+                    {formData.chain_type === 'EVM' 
+                      ? `= ${(formData.min_profit_lamports / 1e18).toFixed(6)} ETH`
+                      : `= ${formatLamportsToSol(formData.min_profit_lamports)} SOL`
+                    }
                   </p>
                 </div>
               </div>
@@ -364,92 +468,181 @@ export default function AdminArbitrageStrategiesPage() {
           </Dialog>
         </div>
 
-        {/* Strategies Table */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Zap className="h-5 w-5" />
-              Arbitrage Strategies
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <div className="text-center py-8 text-muted-foreground">Loading...</div>
-            ) : strategies.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                No strategies configured. Add one to get started.
-              </div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>DEX A → B</TableHead>
-                    <TableHead>Tokens</TableHead>
-                    <TableHead className="text-right">Min Profit (SOL)</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Created</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {strategies.map((strategy) => (
-                    <TableRow key={strategy.id}>
-                      <TableCell className="font-medium">{strategy.name}</TableCell>
-                      <TableCell>
-                        <span className="text-sm">{strategy.dex_a} → {strategy.dex_b}</span>
-                      </TableCell>
-                      <TableCell>
-                        <code className="text-xs bg-muted px-1 py-0.5 rounded">
-                          {strategy.token_in_mint.slice(0, 6)}...
-                        </code>
-                        {' ↔ '}
-                        <code className="text-xs bg-muted px-1 py-0.5 rounded">
-                          {strategy.token_out_mint.slice(0, 6)}...
-                        </code>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {formatLamportsToSol(strategy.min_profit_lamports)}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={strategy.is_enabled ? 'default' : 'secondary'}>
-                          {strategy.is_enabled ? 'Enabled' : 'Disabled'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {format(new Date(strategy.created_at), 'MMM d, yyyy')}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleOpenModal(strategy)}
-                          >
-                            <Edit2 className="h-4 w-4" />
-                          </Button>
-                          <Switch
-                            checked={strategy.is_enabled}
-                            onCheckedChange={() => handleToggleEnabled(strategy.id, strategy.is_enabled)}
-                          />
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => executeArbitrage(strategy.id)}
-                            disabled={!strategy.is_enabled}
-                          >
-                            <Play className="h-4 w-4 mr-1" />
-                            Execute (Stub)
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
+        {/* Strategies by Chain */}
+        <Tabs defaultValue="solana" className="w-full">
+          <TabsList>
+            <TabsTrigger value="solana">Solana ({solanaStrategies.length})</TabsTrigger>
+            <TabsTrigger value="evm">EVM ({evmStrategies.length})</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="solana">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Zap className="h-5 w-5" />
+                  Solana Strategies
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {isLoading ? (
+                  <div className="text-center py-8 text-muted-foreground">Loading...</div>
+                ) : solanaStrategies.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    No Solana strategies configured. Add one to get started.
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead>DEX A → B</TableHead>
+                        <TableHead>Tokens</TableHead>
+                        <TableHead className="text-right">Min Profit (SOL)</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {solanaStrategies.map((strategy) => (
+                        <TableRow key={strategy.id}>
+                          <TableCell className="font-medium">{strategy.name}</TableCell>
+                          <TableCell>
+                            <span className="text-sm">{strategy.dex_a} → {strategy.dex_b}</span>
+                          </TableCell>
+                          <TableCell>
+                            <code className="text-xs bg-muted px-1 py-0.5 rounded">
+                              {strategy.token_in_mint.slice(0, 6)}...
+                            </code>
+                            {' ↔ '}
+                            <code className="text-xs bg-muted px-1 py-0.5 rounded">
+                              {strategy.token_out_mint.slice(0, 6)}...
+                            </code>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {formatLamportsToSol(strategy.min_profit_lamports)}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={strategy.is_enabled ? 'default' : 'secondary'}>
+                              {strategy.is_enabled ? 'Enabled' : 'Disabled'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleOpenModal(strategy)}
+                              >
+                                <Edit2 className="h-4 w-4" />
+                              </Button>
+                              <Switch
+                                checked={strategy.is_enabled}
+                                onCheckedChange={() => handleToggleEnabled(strategy.id, strategy.is_enabled)}
+                              />
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => executeArbitrage(strategy.id)}
+                                disabled={!strategy.is_enabled}
+                              >
+                                <Play className="h-4 w-4 mr-1" />
+                                Execute (Stub)
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="evm">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Zap className="h-5 w-5" />
+                  EVM Strategies (Ethereum/Polygon/Arbitrum/BSC)
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {isLoading ? (
+                  <div className="text-center py-8 text-muted-foreground">Loading...</div>
+                ) : evmStrategies.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    No EVM strategies configured. Add one to get started.
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Network</TableHead>
+                        <TableHead>DEX A → B</TableHead>
+                        <TableHead>Tokens</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {evmStrategies.map((strategy) => (
+                        <TableRow key={strategy.id}>
+                          <TableCell className="font-medium">{strategy.name}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{strategy.evm_network}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            <span className="text-sm">{strategy.dex_a} → {strategy.dex_b}</span>
+                          </TableCell>
+                          <TableCell>
+                            <code className="text-xs bg-muted px-1 py-0.5 rounded">
+                              {strategy.token_in_mint.slice(0, 8)}...
+                            </code>
+                            {' ↔ '}
+                            <code className="text-xs bg-muted px-1 py-0.5 rounded">
+                              {strategy.token_out_mint.slice(0, 8)}...
+                            </code>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={strategy.is_enabled ? 'default' : 'secondary'}>
+                              {strategy.is_enabled ? 'Enabled' : 'Disabled'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleOpenModal(strategy)}
+                              >
+                                <Edit2 className="h-4 w-4" />
+                              </Button>
+                              <Switch
+                                checked={strategy.is_enabled}
+                                onCheckedChange={() => handleToggleEnabled(strategy.id, strategy.is_enabled)}
+                              />
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => executeArbitrage(strategy.id)}
+                                disabled={!strategy.is_enabled}
+                              >
+                                <Play className="h-4 w-4 mr-1" />
+                                Execute (Stub)
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </div>
     </DashboardLayout>
   );
