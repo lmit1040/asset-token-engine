@@ -21,6 +21,7 @@ import AdminActivityPage from "./pages/AdminActivityPage";
 import AdminDeliverPage from "./pages/AdminDeliverPage";
 import AdminAttestationsPage from "./pages/AdminAttestationsPage";
 import AdminFeePayersPage from "./pages/AdminFeePayersPage";
+import AdminEvmFeePayersPage from "./pages/AdminEvmFeePayersPage";
 import AdminArchivedPage from "./pages/AdminArchivedPage";
 import AdminArbitrageStrategiesPage from "./pages/AdminArbitrageStrategiesPage";
 import AdminArbitrageRunsPage from "./pages/AdminArbitrageRunsPage";
@@ -68,6 +69,7 @@ const App = () => (
               <Route path="/admin/attestations" element={<AdminAttestationsPage />} />
               <Route path="/admin/submissions" element={<AdminSubmissionsPage />} />
               <Route path="/admin/fee-payers" element={<AdminFeePayersPage />} />
+              <Route path="/admin/evm-fee-payers" element={<AdminEvmFeePayersPage />} />
               <Route path="/admin/arbitrage/strategies" element={<AdminArbitrageStrategiesPage />} />
               <Route path="/admin/arbitrage/runs" element={<AdminArbitrageRunsPage />} />
               <Route path="/admin/archived" element={<AdminArchivedPage />} />
