@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Plus, Play, Zap, RefreshCw, AlertTriangle, Edit2, Wallet } from 'lucide-react';
+import { Plus, Play, Zap, RefreshCw, AlertTriangle, Edit2, Wallet, Droplets } from 'lucide-react';
 import { format } from 'date-fns';
 import { Link } from 'react-router-dom';
 
@@ -106,7 +106,7 @@ const emptyStrategy = {
 };
 
 interface OpsWalletInfo {
-  solana: { address: string; balance: string } | null;
+  solana: { address: string; balance: string; balanceNum: number } | null;
   evm: { address: string; balance: string; network: string } | null;
 }
 
@@ -120,6 +120,7 @@ export default function AdminArbitrageStrategiesPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [opsWallets, setOpsWallets] = useState<OpsWalletInfo>({ solana: null, evm: null });
   const [isLoadingWallets, setIsLoadingWallets] = useState(false);
+  const [isRequestingAirdrop, setIsRequestingAirdrop] = useState(false);
 
   const fetchStrategies = async () => {
     setIsLoading(true);
@@ -149,9 +150,10 @@ export default function AdminArbitrageStrategiesPage() {
       });
 
       setOpsWallets({
-        solana: solanaData?.configured ? {
-          address: solanaData.address,
-          balance: `${solanaData.balance_sol?.toFixed(4) || '0'} SOL`,
+        solana: solanaData?.publicKey ? {
+          address: solanaData.publicKey,
+          balance: `${solanaData.balanceSol?.toFixed(4) || '0'} SOL`,
+          balanceNum: solanaData.balanceSol || 0,
         } : null,
         evm: evmData?.configured ? {
           address: evmData.address,
@@ -163,6 +165,26 @@ export default function AdminArbitrageStrategiesPage() {
       console.error('Failed to fetch OPS wallets:', error);
     }
     setIsLoadingWallets(false);
+  };
+
+  const requestDevnetAirdrop = async () => {
+    setIsRequestingAirdrop(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('request-devnet-airdrop');
+      
+      if (error) throw error;
+      
+      if (data?.success) {
+        toast.success(`Airdrop received! New balance: ${data.newBalanceSol?.toFixed(4)} SOL`);
+        fetchOpsWallets();
+      } else {
+        throw new Error(data?.error || 'Airdrop failed');
+      }
+    } catch (error: any) {
+      console.error('Airdrop error:', error);
+      toast.error(error?.message || 'Failed to request airdrop');
+    }
+    setIsRequestingAirdrop(false);
   };
 
   useEffect(() => {
@@ -363,14 +385,28 @@ export default function AdminArbitrageStrategiesPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Solana OPS Wallet */}
               <div className="border rounded-lg p-4 space-y-2">
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="bg-purple-500/10 text-purple-600 border-purple-500/30">
-                    Solana
-                  </Badge>
-                  {opsWallets.solana ? (
-                    <Badge variant="secondary">{opsWallets.solana.balance}</Badge>
-                  ) : (
-                    <Badge variant="destructive">Not configured</Badge>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="bg-purple-500/10 text-purple-600 border-purple-500/30">
+                      Solana
+                    </Badge>
+                    {opsWallets.solana ? (
+                      <Badge variant="secondary">{opsWallets.solana.balance}</Badge>
+                    ) : (
+                      <Badge variant="destructive">Not configured</Badge>
+                    )}
+                  </div>
+                  {opsWallets.solana && opsWallets.solana.balanceNum < 0.5 && (
+                    <Button 
+                      size="sm" 
+                      variant="outline"
+                      onClick={requestDevnetAirdrop}
+                      disabled={isRequestingAirdrop}
+                      className="text-xs h-7"
+                    >
+                      <Droplets className={`h-3 w-3 mr-1 ${isRequestingAirdrop ? 'animate-pulse' : ''}`} />
+                      {isRequestingAirdrop ? 'Requesting...' : 'Request 1 SOL'}
+                    </Button>
                   )}
                 </div>
                 {opsWallets.solana && (
