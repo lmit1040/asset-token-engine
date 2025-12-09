@@ -73,34 +73,45 @@ function getRpcUrl(network: string): string | null {
   return rpcUrls[network] || null;
 }
 
-// Fetch price quote from 0x Swap API (aggregates multiple DEXs)
+// Chain IDs for 0x API v2
+const CHAIN_IDS: Record<string, number> = {
+  ETHEREUM: 1,
+  POLYGON: 137,
+  ARBITRUM: 42161,
+  BSC: 56,
+};
+
+// Fetch price quote from 0x Swap API v2 (aggregates multiple DEXs)
 async function fetch0xQuote(
   network: string,
   tokenIn: string,
   tokenOut: string,
   amountWei: string
 ): Promise<{ toAmount: string; estimatedGas: string; sources: string[] } | null> {
-  const baseUrl = ZEROX_API_URLS[network];
-  if (!baseUrl) {
+  const chainId = CHAIN_IDS[network];
+  if (!chainId) {
     console.error(`[scan-evm-arbitrage] Unsupported 0x network: ${network}`);
     return null;
   }
 
+  // API key is required for 0x API v2
+  const apiKey = Deno.env.get('ZEROX_API_KEY');
+  if (!apiKey) {
+    console.warn('[scan-evm-arbitrage] ZEROX_API_KEY not set, using simulation');
+    return simulateEvmQuote(tokenIn, tokenOut, amountWei);
+  }
+
   try {
-    // 0x Swap API v1 quote endpoint
-    const url = `${baseUrl}/swap/v1/quote?sellToken=${tokenIn}&buyToken=${tokenOut}&sellAmount=${amountWei}`;
+    // 0x Swap API v2 price endpoint (no transaction data, just pricing)
+    const url = `https://api.0x.org/swap/permit2/price?chainId=${chainId}&sellToken=${tokenIn}&buyToken=${tokenOut}&sellAmount=${amountWei}`;
     
     const headers: Record<string, string> = {
       'Accept': 'application/json',
+      '0x-api-key': apiKey,
+      '0x-version': 'v2',
     };
-    
-    // Optional: Add API key for higher rate limits
-    const apiKey = Deno.env.get('ZEROX_API_KEY');
-    if (apiKey) {
-      headers['0x-api-key'] = apiKey;
-    }
 
-    console.log(`[scan-evm-arbitrage] Fetching 0x quote: ${tokenIn} -> ${tokenOut}`);
+    console.log(`[scan-evm-arbitrage] Fetching 0x v2 quote: ${tokenIn} -> ${tokenOut} on chain ${chainId}`);
 
     const response = await fetch(url, { headers });
 
@@ -111,10 +122,12 @@ async function fetch0xQuote(
     }
 
     const data = await response.json();
+    console.log(`[scan-evm-arbitrage] 0x response:`, JSON.stringify(data).slice(0, 500));
+    
     return {
       toAmount: data.buyAmount,
-      estimatedGas: data.estimatedGas || '0',
-      sources: data.sources?.filter((s: any) => s.proportion !== '0').map((s: any) => s.name) || [],
+      estimatedGas: data.gas || data.estimatedGas || '150000',
+      sources: data.route?.fills?.map((f: any) => f.source) || ['0x Aggregator'],
     };
   } catch (error) {
     console.error('[scan-evm-arbitrage] Failed to fetch 0x quote:', error);
