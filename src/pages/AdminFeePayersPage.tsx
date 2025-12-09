@@ -10,8 +10,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Plus, Wallet, RefreshCw, Trash2, AlertTriangle, Zap, Sparkles, Copy, ExternalLink } from 'lucide-react';
+import { Plus, Wallet, RefreshCw, Trash2, AlertTriangle, Zap, Sparkles, Copy, ExternalLink, Landmark } from 'lucide-react';
 import { format } from 'date-fns';
+
+interface OpsWalletInfo {
+  publicKey: string;
+  balanceSol: number;
+}
 
 interface FeePayerKey {
   id: string;
@@ -36,6 +41,8 @@ export default function AdminFeePayersPage() {
   const [newFeePayer, setNewFeePayer] = useState({ label: '', public_key: '' });
   const [generateLabel, setGenerateLabel] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [opsWallet, setOpsWallet] = useState<OpsWalletInfo | null>(null);
+  const [isLoadingOpsWallet, setIsLoadingOpsWallet] = useState(false);
 
   const fetchFeePayers = async () => {
     setIsLoading(true);
@@ -53,8 +60,21 @@ export default function AdminFeePayersPage() {
     setIsLoading(false);
   };
 
+  const fetchOpsWalletInfo = async () => {
+    setIsLoadingOpsWallet(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('get-ops-wallet-info');
+      if (error) throw error;
+      setOpsWallet(data);
+    } catch (error) {
+      console.error('Failed to fetch OPS wallet info:', error);
+    }
+    setIsLoadingOpsWallet(false);
+  };
+
   useEffect(() => {
     fetchFeePayers();
+    fetchOpsWalletInfo();
   }, []);
 
   const handleAddFeePayer = async () => {
@@ -199,6 +219,84 @@ export default function AdminFeePayersPage() {
   return (
     <DashboardLayout title="Fee Payer Management" subtitle="Manage Solana fee payer wallets for transaction costs">
       <div className="space-y-6">
+        {/* OPS Wallet Info Card */}
+        <Card className="border-primary/30 bg-primary/5">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Landmark className="h-5 w-5 text-primary" />
+                <CardTitle className="text-lg">Operations Wallet (OPS_WALLET)</CardTitle>
+              </div>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={fetchOpsWalletInfo}
+                disabled={isLoadingOpsWallet}
+              >
+                <RefreshCw className={`h-3 w-3 mr-1 ${isLoadingOpsWallet ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+            </div>
+            <CardDescription>
+              Internal wallet used to fund fee payers. Fund this wallet with Devnet SOL.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {isLoadingOpsWallet ? (
+              <div className="text-muted-foreground">Loading...</div>
+            ) : opsWallet ? (
+              <div className="flex flex-col sm:flex-row gap-4 sm:items-center">
+                <div className="flex-1">
+                  <div className="text-xs text-muted-foreground mb-1">Public Key</div>
+                  <div className="flex items-center gap-2">
+                    <code className="text-sm bg-muted px-2 py-1 rounded font-mono">
+                      {opsWallet.publicKey}
+                    </code>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6"
+                      onClick={() => {
+                        navigator.clipboard.writeText(opsWallet.publicKey);
+                        toast.success('OPS wallet address copied!');
+                      }}
+                    >
+                      <Copy className="h-3 w-3" />
+                    </Button>
+                    <a
+                      href={`https://solscan.io/account/${opsWallet.publicKey}?cluster=devnet`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground mb-1">Balance</div>
+                  <div className={`text-xl font-bold ${opsWallet.balanceSol < 0.1 ? 'text-destructive' : 'text-green-600'}`}>
+                    {opsWallet.balanceSol.toFixed(4)} SOL
+                  </div>
+                </div>
+                <a
+                  href="https://faucet.solana.com/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="shrink-0"
+                >
+                  <Button variant="outline" size="sm">
+                    <ExternalLink className="h-3 w-3 mr-1" />
+                    Get Devnet SOL
+                  </Button>
+                </a>
+              </div>
+            ) : (
+              <div className="text-destructive">Failed to load OPS wallet info. Check that OPS_WALLET_SECRET_KEY is configured.</div>
+            )}
+          </CardContent>
+        </Card>
+
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card>
