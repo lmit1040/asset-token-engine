@@ -9,7 +9,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Activity, ExternalLink, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Activity, ExternalLink, AlertTriangle, RefreshCw, Zap } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+
+// Auto-refill thresholds (matching edge function values)
+const SOLANA_AUTO_REFILL_THRESHOLD_LAMPORTS = 50_000_000; // 0.05 SOL
+const EVM_AUTO_REFILL_THRESHOLD_WEI = 50_000_000_000_000_000; // 0.05 ETH/MATIC (stored as lamports equivalent)
 import { format } from 'date-fns';
 import { Link } from 'react-router-dom';
 
@@ -136,6 +141,21 @@ export default function AdminArbitrageRunsPage() {
     return 'Solscan';
   };
 
+  // Check if run triggered auto-refill based on profit threshold
+  const didTriggerAutoRefill = (run: ArbitrageRun) => {
+    if (run.status !== 'EXECUTED') return false;
+    const profit = run.actual_profit_lamports ?? run.estimated_profit_lamports ?? 0;
+    const strategy = strategies.find(s => s.id === run.strategy_id);
+    
+    if (strategy?.chain_type === 'EVM') {
+      // For EVM, profit is stored in lamports equivalent (wei / 1e9)
+      // Threshold is 0.05 ETH = 50_000_000_000_000_000 wei = 50_000_000 lamports equivalent
+      return profit >= SOLANA_AUTO_REFILL_THRESHOLD_LAMPORTS;
+    }
+    // Solana threshold
+    return profit >= SOLANA_AUTO_REFILL_THRESHOLD_LAMPORTS;
+  };
+
   return (
     <DashboardLayout title="Arbitrage Runs" subtitle="View simulation and execution history (INTERNAL ONLY)">
       <div className="space-y-6">
@@ -245,6 +265,7 @@ export default function AdminArbitrageRunsPage() {
                   <TableRow>
                     <TableHead>Strategy</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead className="text-center">Auto-Refill</TableHead>
                     <TableHead className="text-right">Est. Profit (SOL)</TableHead>
                     <TableHead className="text-right">Actual Profit (SOL)</TableHead>
                     <TableHead>TX Signature</TableHead>
@@ -267,6 +288,24 @@ export default function AdminArbitrageRunsPage() {
                         <Badge variant={getStatusVariant(run.status)}>
                           {run.status}
                         </Badge>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {didTriggerAutoRefill(run) ? (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger>
+                                <div className="inline-flex items-center gap-1 text-green-600">
+                                  <Zap className="h-4 w-4 fill-current" />
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Auto-refill triggered</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-right font-mono">
                         {formatLamportsToSol(run.estimated_profit_lamports)}
