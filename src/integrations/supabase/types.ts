@@ -240,6 +240,75 @@ export type Database = {
           },
         ]
       }
+      evm_fee_payer_keys: {
+        Row: {
+          balance_native: number | null
+          created_at: string
+          id: string
+          is_active: boolean
+          is_generated: boolean
+          label: string
+          last_used_at: string | null
+          network: string
+          public_key: string
+          secret_key_encrypted: string | null
+          usage_count: number
+        }
+        Insert: {
+          balance_native?: number | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          is_generated?: boolean
+          label: string
+          last_used_at?: string | null
+          network?: string
+          public_key: string
+          secret_key_encrypted?: string | null
+          usage_count?: number
+        }
+        Update: {
+          balance_native?: number | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          is_generated?: boolean
+          label?: string
+          last_used_at?: string | null
+          network?: string
+          public_key?: string
+          secret_key_encrypted?: string | null
+          usage_count?: number
+        }
+        Relationships: []
+      }
+      evm_fee_payer_topups: {
+        Row: {
+          amount_wei: string
+          created_at: string
+          fee_payer_public_key: string
+          id: string
+          network: string
+          tx_hash: string | null
+        }
+        Insert: {
+          amount_wei: string
+          created_at?: string
+          fee_payer_public_key: string
+          id?: string
+          network: string
+          tx_hash?: string | null
+        }
+        Update: {
+          amount_wei?: string
+          created_at?: string
+          fee_payer_public_key?: string
+          id?: string
+          network?: string
+          tx_hash?: string | null
+        }
+        Relationships: []
+      }
       fee_discount_tiers: {
         Row: {
           created_at: string
