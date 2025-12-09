@@ -5,8 +5,9 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { supabase } from '@/integrations/supabase/client';
-import { RefreshCw, ExternalLink, TrendingUp, Zap, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { RefreshCw, ExternalLink, TrendingUp, Zap, ArrowUpRight, Radio } from 'lucide-react';
 import { format } from 'date-fns';
+import { toast } from 'sonner';
 
 interface ArbitrageRun {
   id: string;
@@ -37,6 +38,16 @@ export function OpsWalletTransactionHistory() {
   const [arbitrageRuns, setArbitrageRuns] = useState<ArbitrageRun[]>([]);
   const [topups, setTopups] = useState<FeePayerTopup[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLive, setIsLive] = useState(false);
+
+  const fetchStrategyDetails = async (strategyId: string) => {
+    const { data } = await supabase
+      .from('arbitrage_strategies')
+      .select('id, name, chain_type, evm_network')
+      .eq('id', strategyId)
+      .maybeSingle();
+    return data;
+  };
 
   const fetchHistory = async () => {
     setIsLoading(true);
@@ -94,6 +105,69 @@ export function OpsWalletTransactionHistory() {
 
   useEffect(() => {
     fetchHistory();
+
+    // Set up realtime subscriptions
+    const arbitrageChannel = supabase
+      .channel('arbitrage-runs-realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'arbitrage_runs'
+        },
+        async (payload) => {
+          console.log('[Realtime] Arbitrage run change:', payload);
+          setIsLive(true);
+          
+          if (payload.eventType === 'INSERT') {
+            const newRun = payload.new as ArbitrageRun;
+            const strategy = await fetchStrategyDetails(newRun.strategy_id);
+            setArbitrageRuns(prev => [{
+              ...newRun,
+              strategy: strategy || undefined
+            }, ...prev.slice(0, 9)]);
+            toast.info('New arbitrage run detected');
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedRun = payload.new as ArbitrageRun;
+            setArbitrageRuns(prev => prev.map(run => 
+              run.id === updatedRun.id 
+                ? { ...run, ...updatedRun }
+                : run
+            ));
+          }
+          
+          setTimeout(() => setIsLive(false), 2000);
+        }
+      )
+      .subscribe();
+
+    const topupsChannel = supabase
+      .channel('fee-payer-topups-realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'fee_payer_topups'
+        },
+        (payload) => {
+          console.log('[Realtime] Fee payer topup:', payload);
+          setIsLive(true);
+          
+          const newTopup = payload.new as FeePayerTopup;
+          setTopups(prev => [newTopup, ...prev.slice(0, 9)]);
+          toast.info('New fee payer top-up detected');
+          
+          setTimeout(() => setIsLive(false), 2000);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(arbitrageChannel);
+      supabase.removeChannel(topupsChannel);
+    };
   }, []);
 
   const formatLamports = (lamports: number | null) => {
@@ -137,12 +211,24 @@ export function OpsWalletTransactionHistory() {
             <CardTitle className="text-lg flex items-center gap-2">
               <TrendingUp className="h-5 w-5 text-primary" />
               OPS Wallet Activity
+              {isLive && (
+                <span className="flex items-center gap-1 text-xs font-normal text-green-600">
+                  <Radio className="h-3 w-3 animate-pulse" />
+                  Live
+                </span>
+              )}
             </CardTitle>
             <CardDescription>Recent arbitrage executions and fee payer top-ups</CardDescription>
           </div>
-          <Button variant="ghost" size="sm" onClick={fetchHistory} disabled={isLoading}>
-            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-          </Button>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="text-xs font-normal">
+              <span className={`w-2 h-2 rounded-full mr-1.5 ${isLive ? 'bg-green-500 animate-pulse' : 'bg-muted-foreground'}`} />
+              Realtime
+            </Badge>
+            <Button variant="ghost" size="sm" onClick={fetchHistory} disabled={isLoading}>
+              <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent>
