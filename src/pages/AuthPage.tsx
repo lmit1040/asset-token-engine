@@ -7,10 +7,15 @@ import { Label } from '@/components/ui/label';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { z } from 'zod';
+import { FooterLegalText } from '@/components/layout/LegalDisclaimer';
 
 const authSchema = z.object({
   email: z.string().email('Please enter a valid email address'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
+  password: z.string()
+    .min(8, 'Password must be at least 8 characters')
+    .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
+    .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
+    .regex(/[0-9]/, 'Password must contain at least one number'),
   name: z.string().optional(),
 });
 
@@ -208,6 +213,17 @@ export default function AuthPage() {
                   : 'Already have an account? Sign in'}
               </button>
             </div>
+
+            {!isLogin && (
+              <p className="mt-4 text-xs text-muted-foreground text-center">
+                Password must be 8+ characters with uppercase, lowercase, and number.
+              </p>
+            )}
+          </div>
+
+          {/* Legal footer */}
+          <div className="mt-8">
+            <FooterLegalText />
           </div>
         </div>
       </div>
