@@ -50,3 +50,9 @@ verify_jwt = false
 
 [functions.scan-evm-arbitrage]
 verify_jwt = false
+
+[functions.public-reserve-data]
+verify_jwt = false
+
+[functions.verify-reserve-hash]
+verify_jwt = false

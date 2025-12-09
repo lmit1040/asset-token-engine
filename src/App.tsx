@@ -31,6 +31,7 @@ import TransfersPage from "./pages/TransfersPage";
 import SubmitAssetPage from "./pages/SubmitAssetPage";
 import MySubmissionsPage from "./pages/MySubmissionsPage";
 import AdminSubmissionsPage from "./pages/AdminSubmissionsPage";
+import ProofOfReservePage from "./pages/ProofOfReservePage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -45,6 +46,7 @@ const App = () => (
           <WalletProvider>
             <Routes>
               <Route path="/" element={<Index />} />
+              <Route path="/reserves" element={<ProofOfReservePage />} />
               <Route path="/auth" element={<AuthPage />} />
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/assets" element={<AssetsPage />} />
