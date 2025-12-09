@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { supabase } from '@/integrations/supabase/client';
-import { RefreshCw, ExternalLink, TrendingUp, Zap, ArrowUpRight, Radio, Download, CalendarIcon, X } from 'lucide-react';
+import { RefreshCw, ExternalLink, TrendingUp, Zap, ArrowUpRight, Radio, Download, CalendarIcon, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { format, isAfter, isBefore, startOfDay, endOfDay } from 'date-fns';
 import { toast } from 'sonner';
 import { DateRange } from 'react-day-picker';
@@ -47,6 +47,9 @@ export function OpsWalletTransactionHistory() {
   const [isLive, setIsLive] = useState(false);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
+  const [arbitragePage, setArbitragePage] = useState(1);
+  const [topupsPage, setTopupsPage] = useState(1);
+  const PAGE_SIZE = 10;
 
   const fetchStrategyDetails = async (strategyId: string) => {
     const { data } = await supabase
@@ -243,9 +246,34 @@ export function OpsWalletTransactionHistory() {
   const clearFilters = () => {
     setStatusFilter('all');
     setDateRange(undefined);
+    setArbitragePage(1);
+    setTopupsPage(1);
   };
 
   const hasActiveFilters = statusFilter !== 'all' || dateRange?.from;
+
+  // Pagination calculations
+  const arbitrageTotalPages = Math.ceil(filteredArbitrageRuns.length / PAGE_SIZE);
+  const topupsTotalPages = Math.ceil(filteredTopups.length / PAGE_SIZE);
+  
+  const paginatedArbitrageRuns = useMemo(() => {
+    const start = (arbitragePage - 1) * PAGE_SIZE;
+    return filteredArbitrageRuns.slice(start, start + PAGE_SIZE);
+  }, [filteredArbitrageRuns, arbitragePage]);
+
+  const paginatedTopups = useMemo(() => {
+    const start = (topupsPage - 1) * PAGE_SIZE;
+    return filteredTopups.slice(start, start + PAGE_SIZE);
+  }, [filteredTopups, topupsPage]);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setArbitragePage(1);
+  }, [statusFilter, dateRange]);
+
+  useEffect(() => {
+    setTopupsPage(1);
+  }, [dateRange]);
 
   // CSV Export
   const exportArbitrageCSV = () => {
@@ -406,7 +434,7 @@ export function OpsWalletTransactionHistory() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredArbitrageRuns.slice(0, 20).map(run => (
+                    {paginatedArbitrageRuns.map(run => (
                       <TableRow key={run.id}>
                         <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                           {format(new Date(run.started_at), 'MMM d, HH:mm')}
@@ -452,6 +480,33 @@ export function OpsWalletTransactionHistory() {
                     ))}
                   </TableBody>
                 </Table>
+                {arbitrageTotalPages > 1 && (
+                  <div className="flex items-center justify-between mt-3 pt-3 border-t">
+                    <span className="text-xs text-muted-foreground">
+                      Page {arbitragePage} of {arbitrageTotalPages} ({filteredArbitrageRuns.length} total)
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 w-7 p-0"
+                        onClick={() => setArbitragePage(p => Math.max(1, p - 1))}
+                        disabled={arbitragePage === 1}
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 w-7 p-0"
+                        onClick={() => setArbitragePage(p => Math.min(arbitrageTotalPages, p + 1))}
+                        disabled={arbitragePage === arbitrageTotalPages}
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </TabsContent>
@@ -479,7 +534,7 @@ export function OpsWalletTransactionHistory() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredTopups.slice(0, 20).map(topup => (
+                    {paginatedTopups.map(topup => (
                       <TableRow key={topup.id}>
                         <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                           {format(new Date(topup.created_at), 'MMM d, HH:mm')}
@@ -509,6 +564,33 @@ export function OpsWalletTransactionHistory() {
                     ))}
                   </TableBody>
                 </Table>
+                {topupsTotalPages > 1 && (
+                  <div className="flex items-center justify-between mt-3 pt-3 border-t">
+                    <span className="text-xs text-muted-foreground">
+                      Page {topupsPage} of {topupsTotalPages} ({filteredTopups.length} total)
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 w-7 p-0"
+                        onClick={() => setTopupsPage(p => Math.max(1, p - 1))}
+                        disabled={topupsPage === 1}
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 w-7 p-0"
+                        onClick={() => setTopupsPage(p => Math.min(topupsTotalPages, p + 1))}
+                        disabled={topupsPage === topupsTotalPages}
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </TabsContent>
