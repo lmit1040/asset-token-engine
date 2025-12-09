@@ -12,6 +12,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Plus, Wallet, RefreshCw, Trash2, AlertTriangle, Zap, Sparkles, Copy, ExternalLink, Landmark } from 'lucide-react';
 import { format } from 'date-fns';
+import { OpsWalletTransactionHistory } from '@/components/wallet/OpsWalletTransactionHistory';
 
 interface OpsWalletInfo {
   publicKey: string;
@@ -668,6 +669,9 @@ export default function AdminFeePayersPage() {
             )}
           </CardContent>
         </Card>
+
+        {/* OPS Wallet Transaction History */}
+        <OpsWalletTransactionHistory />
       </div>
     </DashboardLayout>
   );
