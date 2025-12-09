@@ -24,14 +24,19 @@ serve(async (req) => {
   try {
     console.log('[execute-arbitrage] Starting arbitrage execution (STUB)...');
 
-    // Get authorization header
+    // Get authorization header and extract JWT token
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
+      console.error('[execute-arbitrage] No authorization header present');
       return new Response(JSON.stringify({ error: 'No authorization header' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+
+    // Extract JWT token from "Bearer <token>" format
+    const jwt = authHeader.replace('Bearer ', '');
+    console.log('[execute-arbitrage] JWT token received, length:', jwt.length);
 
     // Parse request body
     const { strategy_id } = await req.json();
@@ -42,15 +47,13 @@ serve(async (req) => {
       });
     }
 
-    // Create Supabase client with user's auth
+    // Create Supabase client with service role for admin operations
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Verify user is admin
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    // Verify user from JWT token
+    const { data: { user }, error: authError } = await supabase.auth.getUser(jwt);
     if (authError || !user) {
       console.error('[execute-arbitrage] Auth error:', authError);
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
@@ -58,6 +61,7 @@ serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+    console.log('[execute-arbitrage] User verified:', user.id, user.email);
 
     // Check admin role
     const { data: roleData, error: roleError } = await supabase
