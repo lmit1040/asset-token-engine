@@ -19,7 +19,8 @@ import {
   FolderOpen,
   ClipboardList,
   Archive,
-  Zap
+  Zap,
+  ShieldCheck
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
@@ -144,6 +145,13 @@ export function Sidebar() {
             </p>
           </div>
         </div>
+        <RouterNavLink
+          to="/reserves"
+          className="sidebar-link w-full mb-2 text-muted-foreground hover:text-foreground"
+        >
+          <ShieldCheck className="h-5 w-5" />
+          Verify Reserves
+        </RouterNavLink>
         <button
           onClick={signOut}
           className="sidebar-link w-full text-destructive hover:bg-destructive/10 hover:text-destructive"
