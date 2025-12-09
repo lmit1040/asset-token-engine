@@ -29,7 +29,18 @@ interface ArbitrageRun {
 interface ArbitrageStrategy {
   id: string;
   name: string;
+  chain_type: string;
+  evm_network: string | null;
 }
+
+// Explorer URLs per network
+const EXPLORER_URLS: Record<string, { url: string; name: string }> = {
+  SOLANA: { url: 'https://solscan.io/tx/', name: 'Solscan' },
+  POLYGON: { url: 'https://polygonscan.com/tx/', name: 'Polygonscan' },
+  ETHEREUM: { url: 'https://etherscan.io/tx/', name: 'Etherscan' },
+  ARBITRUM: { url: 'https://arbiscan.io/tx/', name: 'Arbiscan' },
+  BSC: { url: 'https://bscscan.com/tx/', name: 'BscScan' },
+};
 
 export default function AdminArbitrageRunsPage() {
   const [runs, setRuns] = useState<ArbitrageRun[]>([]);
@@ -46,7 +57,7 @@ export default function AdminArbitrageRunsPage() {
     // Fetch strategies for filter dropdown and name mapping
     const { data: stratData } = await supabase
       .from('arbitrage_strategies')
-      .select('id, name');
+      .select('id, name, chain_type, evm_network');
     
     if (stratData) {
       setStrategies(stratData);
@@ -99,8 +110,31 @@ export default function AdminArbitrageRunsPage() {
     }
   };
 
-  const getSolscanUrl = (signature: string) => 
-    `https://solscan.io/tx/${signature}?cluster=devnet`;
+  const getExplorerUrl = (signature: string, strategyId: string) => {
+    const strategy = strategies.find(s => s.id === strategyId);
+    if (!strategy) return `https://solscan.io/tx/${signature}?cluster=devnet`;
+    
+    if (strategy.chain_type === 'EVM') {
+      const network = strategy.evm_network || 'POLYGON';
+      const explorer = EXPLORER_URLS[network] || EXPLORER_URLS.POLYGON;
+      return `${explorer.url}${signature}`;
+    }
+    
+    // Solana Devnet
+    return `https://solscan.io/tx/${signature}?cluster=devnet`;
+  };
+
+  const getExplorerName = (strategyId: string) => {
+    const strategy = strategies.find(s => s.id === strategyId);
+    if (!strategy) return 'Solscan';
+    
+    if (strategy.chain_type === 'EVM') {
+      const network = strategy.evm_network || 'POLYGON';
+      return EXPLORER_URLS[network]?.name || 'Explorer';
+    }
+    
+    return 'Solscan';
+  };
 
   return (
     <DashboardLayout title="Arbitrage Runs" subtitle="View simulation and execution history (INTERNAL ONLY)">
@@ -242,16 +276,21 @@ export default function AdminArbitrageRunsPage() {
                       </TableCell>
                       <TableCell>
                         {run.tx_signature ? (
-                          <a 
-                            href={getSolscanUrl(run.tx_signature)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-primary hover:underline flex items-center gap-1"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {run.tx_signature.slice(0, 8)}...
-                            <ExternalLink className="h-3 w-3" />
-                          </a>
+                          <div className="flex flex-col gap-1">
+                            {run.tx_signature.split(',').map((sig, idx) => (
+                              <a 
+                                key={idx}
+                                href={getExplorerUrl(sig.trim(), run.strategy_id)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-primary hover:underline flex items-center gap-1"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {sig.trim().slice(0, 8)}...
+                                <ExternalLink className="h-3 w-3" />
+                              </a>
+                            ))}
+                          </div>
                         ) : (
                           <span className="text-muted-foreground">-</span>
                         )}
@@ -318,15 +357,22 @@ export default function AdminArbitrageRunsPage() {
                 </div>
                 {selectedRun.tx_signature && (
                   <div>
-                    <p className="text-sm text-muted-foreground">Transaction</p>
-                    <a 
-                      href={getSolscanUrl(selectedRun.tx_signature)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-primary hover:underline break-all"
-                    >
-                      {selectedRun.tx_signature}
-                    </a>
+                    <p className="text-sm text-muted-foreground">
+                      Transaction ({getExplorerName(selectedRun.strategy_id)})
+                    </p>
+                    <div className="space-y-1">
+                      {selectedRun.tx_signature.split(',').map((sig, idx) => (
+                        <a 
+                          key={idx}
+                          href={getExplorerUrl(sig.trim(), selectedRun.strategy_id)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary hover:underline break-all block"
+                        >
+                          {sig.trim()}
+                        </a>
+                      ))}
+                    </div>
                   </div>
                 )}
                 {selectedRun.error_message && (
