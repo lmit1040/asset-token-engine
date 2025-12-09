@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Plus, Wallet, RefreshCw, Trash2, AlertTriangle, Copy, ExternalLink, Landmark } from 'lucide-react';
+import { Plus, Wallet, RefreshCw, Trash2, AlertTriangle, Copy, ExternalLink, Landmark, Wand2 } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface EvmOpsWalletInfo {
@@ -60,6 +60,8 @@ export default function AdminEvmFeePayersPage() {
   const [newFeePayer, setNewFeePayer] = useState({ label: '', public_key: '', network: 'POLYGON' });
   const [opsWallet, setOpsWallet] = useState<EvmOpsWalletInfo | null>(null);
   const [isLoadingOpsWallet, setIsLoadingOpsWallet] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generateLabel, setGenerateLabel] = useState('');
   const [isRefreshingBalances, setIsRefreshingBalances] = useState(false);
 
   const fetchFeePayers = async () => {
@@ -319,9 +321,33 @@ export default function AdminEvmFeePayersPage() {
 
         {/* Actions */}
         <div className="flex gap-2 flex-wrap">
-          <Button onClick={() => setIsAddModalOpen(true)}>
+          <Button 
+            variant="default"
+            onClick={async () => {
+              const label = generateLabel.trim() || `Generated ${networkInfo.name} Wallet`;
+              setIsGenerating(true);
+              try {
+                const { data, error } = await supabase.functions.invoke('generate-evm-fee-payer', {
+                  body: { label, network: selectedNetwork }
+                });
+                if (error) throw error;
+                toast.success(`Generated new ${networkInfo.name} fee payer: ${data.fee_payer.public_key.slice(0, 10)}...`);
+                setGenerateLabel('');
+                fetchFeePayers();
+              } catch (error) {
+                console.error('Failed to generate fee payer:', error);
+                toast.error('Failed to generate fee payer');
+              }
+              setIsGenerating(false);
+            }}
+            disabled={isGenerating}
+          >
+            <Wand2 className={`h-4 w-4 mr-2 ${isGenerating ? 'animate-spin' : ''}`} />
+            {isGenerating ? 'Generating...' : 'Generate Fee Payer'}
+          </Button>
+          <Button variant="outline" onClick={() => setIsAddModalOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />
-            Add Fee Payer
+            Add External
           </Button>
           <Button variant="outline" onClick={fetchFeePayers} disabled={isLoading}>
             <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
@@ -349,6 +375,17 @@ export default function AdminEvmFeePayersPage() {
             <Wallet className={`h-4 w-4 mr-2 ${isRefreshingBalances ? 'animate-pulse' : ''}`} />
             {isRefreshingBalances ? 'Refreshing...' : 'Refresh Balances'}
           </Button>
+        </div>
+
+        {/* Optional Generate Label Input */}
+        <div className="flex items-center gap-2">
+          <Label className="text-sm text-muted-foreground">Custom Label (optional):</Label>
+          <Input 
+            placeholder={`Generated ${networkInfo.name} Wallet`}
+            value={generateLabel}
+            onChange={(e) => setGenerateLabel(e.target.value)}
+            className="w-64"
+          />
         </div>
 
         <Tabs defaultValue="fee-payers">

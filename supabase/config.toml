@@ -1,5 +1,8 @@
 project_id = "hqohcfwahmkxtpfbhcku"
 
+[functions.generate-evm-fee-payer]
+verify_jwt = false
+
 [functions.send-token-notification]
 verify_jwt = false
 
