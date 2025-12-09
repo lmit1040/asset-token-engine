@@ -51,9 +51,15 @@ serve(async (req) => {
       });
     }
 
-    // Parse optional network parameter
-    const url = new URL(req.url);
-    const network = url.searchParams.get('network') || 'POLYGON';
+    // Parse network from body or query params
+    let network = 'POLYGON';
+    try {
+      const body = await req.json();
+      if (body?.network) network = body.network;
+    } catch {
+      const url = new URL(req.url);
+      network = url.searchParams.get('network') || 'POLYGON';
+    }
 
     console.log(`[get-evm-ops-wallet-info] Fetching wallet info for ${network}`);
 
