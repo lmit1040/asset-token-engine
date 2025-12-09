@@ -169,7 +169,7 @@ export default function AdminArbitrageRunsPage() {
         </Alert>
 
         {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <Card>
             <CardHeader className="pb-2">
               <CardDescription>Total Runs</CardDescription>
@@ -198,6 +198,24 @@ export default function AdminArbitrageRunsPage() {
               <CardTitle className="text-2xl text-destructive">
                 {runs.filter(r => r.status === 'FAILED').length}
               </CardTitle>
+            </CardHeader>
+          </Card>
+          <Card className="border-green-500/50 bg-green-500/5">
+            <CardHeader className="pb-2">
+              <CardDescription className="flex items-center gap-1">
+                <Zap className="h-3 w-3 text-green-600" />
+                Auto-Refills Triggered
+              </CardDescription>
+              <CardTitle className="text-2xl text-green-600">
+                {runs.filter(r => didTriggerAutoRefill(r)).length}
+              </CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">
+                ~{formatLamportsToSol(
+                  runs
+                    .filter(r => didTriggerAutoRefill(r))
+                    .reduce((sum, r) => sum + (r.actual_profit_lamports ?? r.estimated_profit_lamports ?? 0), 0)
+                )} recycled
+              </p>
             </CardHeader>
           </Card>
         </div>
