@@ -38,15 +38,18 @@ serve(async (req) => {
       });
     }
 
-    // Create Supabase client with user's auth
+    // Create Supabase client with service role for admin verification
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    
+    // First verify user with auth header
+    const supabaseAuth = createClient(supabaseUrl, supabaseServiceKey, {
       global: { headers: { Authorization: authHeader } },
     });
 
-    // Verify user is admin
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    // Extract token and get user
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: authError } = await supabaseAuth.auth.getUser(token);
     if (authError || !user) {
       console.error('[top-up-fee-payers] Auth error:', authError);
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
@@ -55,15 +58,19 @@ serve(async (req) => {
       });
     }
 
+    // Use service role client for database operations
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
     // Check admin role
     const { data: roleData, error: roleError } = await supabase
       .from('user_roles')
       .select('role')
       .eq('user_id', user.id)
+      .eq('role', 'admin')
       .maybeSingle();
 
-    if (roleError || roleData?.role !== 'admin') {
-      console.error('[top-up-fee-payers] User is not admin:', user.id);
+    if (roleError || !roleData) {
+      console.error('[top-up-fee-payers] User is not admin:', user.id, roleError);
       return new Response(JSON.stringify({ error: 'Admin access required' }), {
         status: 403,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
