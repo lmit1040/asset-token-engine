@@ -196,18 +196,19 @@ serve(async (req) => {
 
     console.log('[scan-arbitrage] Admin verified, fetching enabled strategies...');
 
-    // Fetch enabled strategies
+    // Fetch enabled SOLANA strategies only
     const { data: strategies, error: stratError } = await supabase
       .from('arbitrage_strategies')
       .select('*')
-      .eq('is_enabled', true);
+      .eq('is_enabled', true)
+      .or('chain_type.eq.SOLANA,chain_type.is.null');
 
     if (stratError) {
       console.error('[scan-arbitrage] Failed to fetch strategies:', stratError);
       throw new Error('Failed to fetch strategies');
     }
 
-    console.log(`[scan-arbitrage] Found ${strategies?.length || 0} enabled strategies`);
+    console.log(`[scan-arbitrage] Found ${strategies?.length || 0} enabled Solana strategies`);
 
     const results = [];
 
