@@ -1,13 +1,21 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { decode as base64Decode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
-import { Connection, VersionedTransaction } from "https://esm.sh/@solana/web3.js@1.87.6";
+import { 
+  Connection, 
+  TransactionMessage, 
+  VersionedTransaction, 
+  TransactionInstruction,
+  PublicKey,
+  AddressLookupTableAccount,
+} from "https://esm.sh/@solana/web3.js@1.87.6";
 import { getOpsWalletKeypair } from "../_shared/ops-wallet.ts";
 import { 
   getJupiterQuote, 
-  getJupiterSwapTransaction, 
+  getJupiterSwapInstructions, 
   JupiterApiError,
-  isValidSolanaAddress 
+  isValidSolanaAddress,
+  SerializedInstruction,
 } from "../_shared/jupiter-client.ts";
 
 const corsHeaders = {
@@ -18,6 +26,40 @@ const corsHeaders = {
 // Default trade amount for arbitrage (in lamports for SOL-based pairs)
 // TODO: Make this configurable per strategy
 const DEFAULT_TRADE_AMOUNT_LAMPORTS = BigInt(100_000_000); // 0.1 SOL
+
+/**
+ * Convert a serialized Jupiter instruction to a TransactionInstruction
+ */
+function deserializeInstruction(instruction: SerializedInstruction): TransactionInstruction {
+  return new TransactionInstruction({
+    programId: new PublicKey(instruction.programId),
+    keys: instruction.accounts.map((acc) => ({
+      pubkey: new PublicKey(acc.pubkey),
+      isSigner: acc.isSigner,
+      isWritable: acc.isWritable,
+    })),
+    data: new Uint8Array(base64Decode(instruction.data)),
+  });
+}
+
+/**
+ * Fetch address lookup tables from the chain
+ */
+async function getAddressLookupTableAccounts(
+  connection: Connection,
+  addresses: string[]
+): Promise<AddressLookupTableAccount[]> {
+  const lookupTableAccounts: AddressLookupTableAccount[] = [];
+  
+  for (const address of addresses) {
+    const result = await connection.getAddressLookupTable(new PublicKey(address));
+    if (result.value) {
+      lookupTableAccounts.push(result.value);
+    }
+  }
+  
+  return lookupTableAccounts;
+}
 
 serve(async (req) => {
   // Handle CORS preflight
@@ -33,7 +75,7 @@ serve(async (req) => {
   }
 
   try {
-    console.log('[execute-arbitrage] Starting real arbitrage execution...');
+    console.log('[execute-arbitrage] Starting ATOMIC arbitrage execution...');
 
     // Get authorization header and extract JWT token
     const authHeader = req.headers.get('Authorization');
@@ -45,7 +87,6 @@ serve(async (req) => {
       });
     }
 
-    // Extract JWT token from "Bearer <token>" format
     const jwt = authHeader.replace('Bearer ', '');
     console.log('[execute-arbitrage] JWT token received, length:', jwt.length);
 
@@ -141,6 +182,7 @@ serve(async (req) => {
     let actualProfitLamports = 0;
     let errorMessage: string | null = null;
     let status: 'EXECUTED' | 'FAILED' = 'EXECUTED';
+    let estimatedProfitLamports = 0;
 
     try {
       // Step 1: Get quote for first leg (token_in -> token_out)
@@ -176,6 +218,7 @@ serve(async (req) => {
 
       // Calculate estimated profit
       const estimatedProfit = BigInt(quote2.outAmount) - DEFAULT_TRADE_AMOUNT_LAMPORTS;
+      estimatedProfitLamports = Number(estimatedProfit);
       console.log('[execute-arbitrage] Estimated profit (lamports):', estimatedProfit.toString());
 
       // Check if profit meets minimum threshold
@@ -183,86 +226,110 @@ serve(async (req) => {
         throw new Error(`Profit ${estimatedProfit} below minimum threshold ${strategy.min_profit_lamports}`);
       }
 
-      // Step 3: Get swap transaction for first leg
-      console.log('[execute-arbitrage] Getting swap transaction for leg 1...');
-      const swap1 = await getJupiterSwapTransaction(quote1, opsWallet.publicKey.toBase58());
-      if (!swap1) {
-        throw new Error('Failed to get swap transaction for first leg');
+      // Step 3: Get swap instructions for both legs
+      console.log('[execute-arbitrage] Getting swap instructions for leg 1...');
+      const instructions1 = await getJupiterSwapInstructions(quote1, opsWallet.publicKey.toBase58());
+      if (!instructions1) {
+        throw new Error('Failed to get swap instructions for first leg');
       }
 
-      // Step 4: Deserialize, sign, and send first leg transaction
-      console.log('[execute-arbitrage] Sending leg 1 transaction...');
-      const tx1Bytes = base64Decode(swap1.swapTransaction);
-      const tx1 = VersionedTransaction.deserialize(tx1Bytes);
-      tx1.sign([opsWallet]);
-
-      const tx1Signature = await connection.sendRawTransaction(tx1.serialize(), {
-        skipPreflight: false,
-        maxRetries: 3,
-      });
-      console.log('[execute-arbitrage] Leg 1 tx sent:', tx1Signature);
-
-      // Wait for confirmation
-      const tx1Confirmation = await connection.confirmTransaction({
-        signature: tx1Signature,
-        blockhash: tx1.message.recentBlockhash,
-        lastValidBlockHeight: swap1.lastValidBlockHeight,
-      }, 'confirmed');
-
-      if (tx1Confirmation.value.err) {
-        throw new Error(`Leg 1 transaction failed: ${JSON.stringify(tx1Confirmation.value.err)}`);
-      }
-      console.log('[execute-arbitrage] Leg 1 confirmed');
-
-      // Step 5: Get fresh quote for second leg (prices may have changed)
-      console.log('[execute-arbitrage] Getting fresh quote for leg 2...');
-      const freshQuote2 = await getJupiterQuote(
-        strategy.token_out_mint,
-        strategy.token_in_mint,
-        leg2Amount,
-        100
-      );
-
-      if (!freshQuote2) {
-        throw new Error('No route found for second leg after first leg execution');
+      console.log('[execute-arbitrage] Getting swap instructions for leg 2...');
+      const instructions2 = await getJupiterSwapInstructions(quote2, opsWallet.publicKey.toBase58());
+      if (!instructions2) {
+        throw new Error('Failed to get swap instructions for second leg');
       }
 
-      // Step 6: Get swap transaction for second leg
-      console.log('[execute-arbitrage] Getting swap transaction for leg 2...');
-      const swap2 = await getJupiterSwapTransaction(freshQuote2, opsWallet.publicKey.toBase58());
-      if (!swap2) {
-        throw new Error('Failed to get swap transaction for second leg');
-      }
-
-      // Step 7: Deserialize, sign, and send second leg transaction
-      console.log('[execute-arbitrage] Sending leg 2 transaction...');
-      const tx2Bytes = base64Decode(swap2.swapTransaction);
-      const tx2 = VersionedTransaction.deserialize(tx2Bytes);
-      tx2.sign([opsWallet]);
-
-      const tx2Signature = await connection.sendRawTransaction(tx2.serialize(), {
-        skipPreflight: false,
-        maxRetries: 3,
-      });
-      console.log('[execute-arbitrage] Leg 2 tx sent:', tx2Signature);
-
-      // Wait for confirmation
-      const tx2Confirmation = await connection.confirmTransaction({
-        signature: tx2Signature,
-        blockhash: tx2.message.recentBlockhash,
-        lastValidBlockHeight: swap2.lastValidBlockHeight,
-      }, 'confirmed');
-
-      if (tx2Confirmation.value.err) {
-        throw new Error(`Leg 2 transaction failed: ${JSON.stringify(tx2Confirmation.value.err)}`);
-      }
-      console.log('[execute-arbitrage] Leg 2 confirmed');
-
-      // Use second leg signature as the main tx signature for the run record
-      txSignature = tx2Signature;
+      // Step 4: Collect all address lookup tables
+      const allLookupTableAddresses = [
+        ...new Set([
+          ...(instructions1.addressLookupTableAddresses || []),
+          ...(instructions2.addressLookupTableAddresses || []),
+        ])
+      ];
+      console.log('[execute-arbitrage] Fetching', allLookupTableAddresses.length, 'address lookup tables...');
       
-      // Calculate actual profit from the final quote
-      actualProfitLamports = Number(BigInt(freshQuote2.outAmount) - DEFAULT_TRADE_AMOUNT_LAMPORTS);
+      const addressLookupTableAccounts = await getAddressLookupTableAccounts(connection, allLookupTableAddresses);
+      console.log('[execute-arbitrage] Loaded', addressLookupTableAccounts.length, 'lookup tables');
+
+      // Step 5: Build atomic transaction with all instructions from both legs
+      const allInstructions: TransactionInstruction[] = [];
+
+      // Add compute budget instructions from both legs (deduplicate by taking from leg 1)
+      for (const ix of instructions1.computeBudgetInstructions || []) {
+        allInstructions.push(deserializeInstruction(ix));
+      }
+
+      // Add setup instructions from leg 1
+      for (const ix of instructions1.setupInstructions || []) {
+        allInstructions.push(deserializeInstruction(ix));
+      }
+
+      // Add token ledger instruction from leg 1 if present
+      if (instructions1.tokenLedgerInstruction) {
+        allInstructions.push(deserializeInstruction(instructions1.tokenLedgerInstruction));
+      }
+
+      // Add swap instruction for leg 1
+      allInstructions.push(deserializeInstruction(instructions1.swapInstruction));
+
+      // Add setup instructions from leg 2 (may need to create intermediate token accounts)
+      for (const ix of instructions2.setupInstructions || []) {
+        allInstructions.push(deserializeInstruction(ix));
+      }
+
+      // Add token ledger instruction from leg 2 if present
+      if (instructions2.tokenLedgerInstruction) {
+        allInstructions.push(deserializeInstruction(instructions2.tokenLedgerInstruction));
+      }
+
+      // Add swap instruction for leg 2
+      allInstructions.push(deserializeInstruction(instructions2.swapInstruction));
+
+      // Add cleanup instructions from both legs
+      if (instructions1.cleanupInstruction) {
+        allInstructions.push(deserializeInstruction(instructions1.cleanupInstruction));
+      }
+      if (instructions2.cleanupInstruction) {
+        allInstructions.push(deserializeInstruction(instructions2.cleanupInstruction));
+      }
+
+      console.log('[execute-arbitrage] Built atomic transaction with', allInstructions.length, 'instructions');
+
+      // Step 6: Get recent blockhash and build versioned transaction
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+      
+      const messageV0 = new TransactionMessage({
+        payerKey: opsWallet.publicKey,
+        recentBlockhash: blockhash,
+        instructions: allInstructions,
+      }).compileToV0Message(addressLookupTableAccounts);
+
+      const atomicTransaction = new VersionedTransaction(messageV0);
+      atomicTransaction.sign([opsWallet]);
+
+      console.log('[execute-arbitrage] Sending atomic transaction...');
+
+      // Step 7: Send and confirm atomic transaction
+      txSignature = await connection.sendRawTransaction(atomicTransaction.serialize(), {
+        skipPreflight: false,
+        maxRetries: 3,
+      });
+      console.log('[execute-arbitrage] Atomic tx sent:', txSignature);
+
+      const confirmation = await connection.confirmTransaction({
+        signature: txSignature,
+        blockhash,
+        lastValidBlockHeight,
+      }, 'confirmed');
+
+      if (confirmation.value.err) {
+        throw new Error(`Atomic transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+      }
+
+      console.log('[execute-arbitrage] Atomic transaction confirmed!');
+      
+      // Use estimated profit as actual (actual would require balance checks before/after)
+      actualProfitLamports = estimatedProfitLamports;
       console.log('[execute-arbitrage] Actual profit (lamports):', actualProfitLamports);
 
     } catch (execError) {
@@ -285,7 +352,7 @@ serve(async (req) => {
         started_at: startedAt,
         finished_at: finishedAt,
         status,
-        estimated_profit_lamports: Number(DEFAULT_TRADE_AMOUNT_LAMPORTS), // TODO: Store actual estimated from quotes
+        estimated_profit_lamports: estimatedProfitLamports,
         actual_profit_lamports: actualProfitLamports,
         tx_signature: txSignature,
         error_message: errorMessage,
@@ -303,13 +370,15 @@ serve(async (req) => {
     return new Response(JSON.stringify({
       success: status === 'EXECUTED',
       message: status === 'EXECUTED' 
-        ? 'Arbitrage executed successfully' 
+        ? 'Atomic arbitrage executed successfully (both legs in single tx)' 
         : `Arbitrage execution failed: ${errorMessage}`,
       run_id: runData.id,
       strategy_name: strategy.name,
+      estimated_profit_lamports: estimatedProfitLamports,
       actual_profit_lamports: actualProfitLamports,
       tx_signature: txSignature,
       status,
+      atomic: true,
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
