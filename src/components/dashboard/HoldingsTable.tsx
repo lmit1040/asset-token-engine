@@ -74,7 +74,7 @@ export function HoldingsTable({ holdings, isLoading, onChainBalances, isLoadingB
           </tr>
         </thead>
         <tbody>
-          {holdings.map((holding) => (
+          {holdings.filter(h => h.token_definition).map((holding) => (
             <tr key={holding.id} className="hover:bg-muted/30 transition-colors">
               <td className="table-cell">
                 <div>
