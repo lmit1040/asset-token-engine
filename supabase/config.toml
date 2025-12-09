@@ -56,3 +56,12 @@ verify_jwt = false
 
 [functions.verify-reserve-hash]
 verify_jwt = false
+
+[functions.execute-evm-arbitrage]
+verify_jwt = false
+
+[functions.get-evm-ops-wallet-info]
+verify_jwt = false
+
+[functions.refresh-evm-fee-payer-balances]
+verify_jwt = false
