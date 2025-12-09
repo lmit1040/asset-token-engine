@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Shield, CheckCircle2, XCircle, Clock, Search, ExternalLink, Coins, FileCheck } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Shield, CheckCircle2, XCircle, Clock, Search, ExternalLink, Coins, FileCheck, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -136,18 +137,26 @@ export default function ProofOfReservePage() {
       <header className="border-b border-border bg-card/50 backdrop-blur-xl sticky top-0 z-50">
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-lg gold-gradient flex items-center justify-center">
-                <Shield className="h-5 w-5 text-primary-foreground" />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold text-foreground">MetallumX Vault</h1>
-                <p className="text-xs text-muted-foreground">Proof of Reserve Verification</p>
+            <div className="flex items-center gap-4">
+              <Link to="/">
+                <Button variant="ghost" size="sm" className="gap-2">
+                  <ArrowLeft className="h-4 w-4" />
+                  Back to Home
+                </Button>
+              </Link>
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-lg gold-gradient flex items-center justify-center">
+                  <Shield className="h-5 w-5 text-primary-foreground" />
+                </div>
+                <div>
+                  <h1 className="text-xl font-bold text-foreground">MetallumX Vault</h1>
+                  <p className="text-xs text-muted-foreground">Proof of Reserve Verification</p>
+                </div>
               </div>
             </div>
-            <a href="/auth" className="text-sm text-primary hover:text-primary/80 transition-colors">
+            <Link to="/auth" className="text-sm text-primary hover:text-primary/80 transition-colors">
               Sign In →
-            </a>
+            </Link>
           </div>
         </div>
       </header>
