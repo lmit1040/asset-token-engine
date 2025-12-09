@@ -60,6 +60,7 @@ export default function AdminEvmFeePayersPage() {
   const [newFeePayer, setNewFeePayer] = useState({ label: '', public_key: '', network: 'POLYGON' });
   const [opsWallet, setOpsWallet] = useState<EvmOpsWalletInfo | null>(null);
   const [isLoadingOpsWallet, setIsLoadingOpsWallet] = useState(false);
+  const [isRefreshingBalances, setIsRefreshingBalances] = useState(false);
 
   const fetchFeePayers = async () => {
     setIsLoading(true);
@@ -317,14 +318,36 @@ export default function AdminEvmFeePayersPage() {
         </div>
 
         {/* Actions */}
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <Button onClick={() => setIsAddModalOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />
             Add Fee Payer
           </Button>
           <Button variant="outline" onClick={fetchFeePayers} disabled={isLoading}>
             <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
-            Refresh
+            Refresh List
+          </Button>
+          <Button 
+            variant="outline" 
+            onClick={async () => {
+              setIsRefreshingBalances(true);
+              try {
+                const { data, error } = await supabase.functions.invoke('refresh-evm-fee-payer-balances', {
+                  body: { network: selectedNetwork }
+                });
+                if (error) throw error;
+                toast.success(`Refreshed ${data.updated} fee payer balances`);
+                fetchFeePayers();
+              } catch (error) {
+                console.error('Failed to refresh balances:', error);
+                toast.error('Failed to refresh balances');
+              }
+              setIsRefreshingBalances(false);
+            }}
+            disabled={isRefreshingBalances}
+          >
+            <Wallet className={`h-4 w-4 mr-2 ${isRefreshingBalances ? 'animate-pulse' : ''}`} />
+            {isRefreshingBalances ? 'Refreshing...' : 'Refresh Balances'}
           </Button>
         </div>
 

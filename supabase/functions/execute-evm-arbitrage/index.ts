@@ -1,7 +1,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { ethers } from "https://esm.sh/ethers@6.13.2";
 import { getEvmOpsWallet, getEvmOpsBalance } from "../_shared/evm-ops-wallet.ts";
 import { getZeroXQuote, isValidEvmAddress, calculateArbitrageProfit } from "../_shared/zerox-client.ts";
+import { decryptEvmSecretKey, createEvmWalletFromDecrypted } from "../_shared/evm-fee-payer-crypto.ts";
 
 // Declare EdgeRuntime for background tasks
 declare const EdgeRuntime: { waitUntil: (promise: Promise<unknown>) => void };
@@ -11,10 +13,118 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Network RPC URLs
+const NETWORK_RPC_URLS: Record<string, string> = {
+  POLYGON: "https://polygon-rpc.com",
+  ETHEREUM: "https://eth.llamarpc.com",
+  ARBITRUM: "https://arb1.arbitrum.io/rpc",
+  BSC: "https://bsc-dataseed1.binance.org",
+};
+
+const CHAIN_IDS: Record<string, number> = {
+  POLYGON: 137,
+  ETHEREUM: 1,
+  ARBITRUM: 42161,
+  BSC: 56,
+};
+
 // EVM auto-refill thresholds (in native token units - ETH/MATIC/etc)
 const MIN_BALANCE_THRESHOLD = 0.05; // Minimum balance before refill
 const TOP_UP_AMOUNT = 0.1; // Amount to top up (in native token)
 const AUTO_REFILL_PROFIT_THRESHOLD_WEI = 50_000_000_000_000_000n; // 0.05 ETH/MATIC profit triggers auto-refill
+
+interface EvmFeePayer {
+  id: string;
+  public_key: string;
+  secret_key_encrypted: string | null;
+  label: string;
+  balance_native: number | null;
+  is_generated: boolean;
+  usage_count?: number;
+}
+
+/**
+ * Get an EVM fee payer from the database with rotation
+ * Selects the least recently used active fee payer for the network
+ */
+async function getEvmFeePayerWithRotation(
+  supabase: any,
+  network: string
+): Promise<{ wallet: ethers.Wallet; publicKey: string; feePayerId: string } | null> {
+  const normalizedNetwork = network.toUpperCase();
+  
+  console.log(`[execute-evm-arbitrage] Looking for fee payer on ${normalizedNetwork}...`);
+  
+  // Get active fee payers for this network, ordered by last_used_at (oldest first)
+  const { data: feePayers, error } = await supabase
+    .from('evm_fee_payer_keys')
+    .select('id, public_key, secret_key_encrypted, label, balance_native, is_generated, usage_count')
+    .eq('network', normalizedNetwork)
+    .eq('is_active', true)
+    .gte('balance_native', MIN_BALANCE_THRESHOLD)
+    .order('last_used_at', { ascending: true, nullsFirst: true })
+    .limit(1);
+
+  if (error) {
+    console.error(`[execute-evm-arbitrage] Failed to fetch fee payers:`, error);
+    return null;
+  }
+
+  if (!feePayers || feePayers.length === 0) {
+    console.log(`[execute-evm-arbitrage] No active fee payers with sufficient balance on ${normalizedNetwork}`);
+    return null;
+  }
+
+  const feePayer = feePayers[0] as EvmFeePayer;
+  console.log(`[execute-evm-arbitrage] Selected fee payer: ${feePayer.label} (${feePayer.public_key})`);
+
+  // Only generated fee payers have encrypted keys stored
+  if (!feePayer.is_generated || !feePayer.secret_key_encrypted) {
+    console.log(`[execute-evm-arbitrage] Fee payer ${feePayer.label} is not generated or has no encrypted key`);
+    return null;
+  }
+
+  const encryptionKey = Deno.env.get('FEE_PAYER_ENCRYPTION_KEY');
+  if (!encryptionKey) {
+    console.error(`[execute-evm-arbitrage] FEE_PAYER_ENCRYPTION_KEY not configured`);
+    return null;
+  }
+
+  try {
+    // Decrypt the private key
+    const decryptedPrivateKey = decryptEvmSecretKey(feePayer.secret_key_encrypted, encryptionKey);
+    
+    // Create provider and wallet
+    const rpcUrl = NETWORK_RPC_URLS[normalizedNetwork];
+    const chainId = CHAIN_IDS[normalizedNetwork];
+    
+    if (!rpcUrl || !chainId) {
+      console.error(`[execute-evm-arbitrage] Unsupported network: ${normalizedNetwork}`);
+      return null;
+    }
+
+    const provider = new ethers.JsonRpcProvider(rpcUrl, chainId);
+    const wallet = createEvmWalletFromDecrypted(decryptedPrivateKey, provider);
+
+    // Update last_used_at and increment usage_count
+    await supabase
+      .from('evm_fee_payer_keys')
+      .update({ 
+        last_used_at: new Date().toISOString(),
+        usage_count: (feePayer.usage_count || 0) + 1,
+      })
+      .eq('id', feePayer.id);
+
+    return {
+      wallet,
+      publicKey: feePayer.public_key,
+      feePayerId: feePayer.id,
+    };
+  } catch (error) {
+    console.error(`[execute-evm-arbitrage] Failed to decrypt fee payer key:`, error);
+    return null;
+  }
+}
 
 // Auto-refill EVM fee payers from OPS wallet after profitable arbitrage
 async function autoRefillEvmFeePayers(network: string): Promise<void> {
@@ -38,33 +148,73 @@ async function autoRefillEvmFeePayers(network: string): Promise<void> {
       return;
     }
     
-    // Fetch active fee payers from database
+    // Fetch active EVM fee payers that need top-up
     const { data: feePayers, error: fetchError } = await supabase
-      .from('fee_payer_keys')
-      .select('id, public_key, label, balance_sol')
-      .eq('is_active', true);
+      .from('evm_fee_payer_keys')
+      .select('id, public_key, label, balance_native')
+      .eq('network', network.toUpperCase())
+      .eq('is_active', true)
+      .lt('balance_native', MIN_BALANCE_THRESHOLD);
     
     if (fetchError || !feePayers) {
       console.error(`[execute-evm-arbitrage] Failed to fetch fee payers:`, fetchError);
       return;
     }
-    
-    // Note: fee_payer_keys is Solana-focused, but we can still log the intent
-    // For EVM, we'd typically have a separate EVM fee payer table in production
-    // For now, this demonstrates the pattern - logging successful profit recycling
-    
-    console.log(`[execute-evm-arbitrage] Auto-refill check complete. OPS balance: ${opsBalance}`);
+
+    if (feePayers.length === 0) {
+      console.log(`[execute-evm-arbitrage] No fee payers need top-up on ${network}`);
+      return;
+    }
+
+    console.log(`[execute-evm-arbitrage] Found ${feePayers.length} fee payers needing top-up`);
+
+    // Top up each fee payer
+    for (const fp of feePayers) {
+      try {
+        const topUpWei = ethers.parseEther(TOP_UP_AMOUNT.toString());
+        
+        console.log(`[execute-evm-arbitrage] Topping up ${fp.label} with ${TOP_UP_AMOUNT} native tokens...`);
+        
+        const tx = await opsWallet.wallet.sendTransaction({
+          to: fp.public_key,
+          value: topUpWei,
+        });
+        
+        const receipt = await tx.wait();
+        console.log(`[execute-evm-arbitrage] Top-up tx confirmed: ${tx.hash}`);
+
+        // Update balance in database
+        const newBalance = (fp.balance_native || 0) + TOP_UP_AMOUNT;
+        await supabase
+          .from('evm_fee_payer_keys')
+          .update({ balance_native: newBalance })
+          .eq('id', fp.id);
+
+        // Record the top-up
+        await supabase.from('evm_fee_payer_topups').insert({
+          fee_payer_public_key: fp.public_key,
+          network: network.toUpperCase(),
+          amount_wei: topUpWei.toString(),
+          tx_hash: tx.hash,
+        });
+
+        console.log(`[execute-evm-arbitrage] Recorded top-up for ${fp.label}`);
+      } catch (topUpError) {
+        console.error(`[execute-evm-arbitrage] Failed to top up ${fp.label}:`, topUpError);
+      }
+    }
     
     // Log the auto-refill activity
     await supabase.from('activity_logs').insert({
-      action_type: 'EVM_ARBITRAGE_PROFIT_CHECK',
-      entity_type: 'ops_wallet',
-      entity_name: `${network} OPS Wallet`,
+      action_type: 'EVM_FEE_PAYER_AUTO_REFILL',
+      entity_type: 'evm_fee_payer',
+      entity_name: `${network} Fee Payers`,
       details: {
         network,
         ops_balance: opsBalance,
-        checked_at: new Date().toISOString(),
-        message: 'Profitable arbitrage completed, OPS wallet balance checked',
+        fee_payers_topped_up: feePayers.length,
+        top_up_amount: TOP_UP_AMOUNT,
+        timestamp: new Date().toISOString(),
       },
     });
     
@@ -79,13 +229,6 @@ const ZEROX_SWAP_URLS: Record<string, string> = {
   ETHEREUM: "https://api.0x.org",
   ARBITRUM: "https://arbitrum.api.0x.org",
   BSC: "https://bsc.api.0x.org",
-};
-
-const CHAIN_IDS: Record<string, number> = {
-  POLYGON: 137,
-  ETHEREUM: 1,
-  ARBITRUM: 42161,
-  BSC: 56,
 };
 
 // Get executable swap transaction from 0x
@@ -154,13 +297,11 @@ async function getZeroXSwapTransaction(params: {
 
 // Approve token spending for 0x allowance target
 async function approveTokenIfNeeded(
-  wallet: any,
+  wallet: ethers.Wallet,
   tokenAddress: string,
   spender: string,
   amount: string
 ): Promise<boolean> {
-  const { ethers } = await import("https://esm.sh/ethers@6.13.2");
-  
   const erc20Abi = [
     "function allowance(address owner, address spender) view returns (uint256)",
     "function approve(address spender, uint256 amount) returns (bool)",
@@ -233,7 +374,7 @@ serve(async (req) => {
     }
 
     // Parse request body
-    const { strategy_id } = await req.json();
+    const { strategy_id, use_ops_wallet } = await req.json();
     if (!strategy_id) {
       return new Response(JSON.stringify({ error: 'strategy_id required' }), {
         status: 400,
@@ -268,27 +409,66 @@ serve(async (req) => {
     const startedAt = new Date().toISOString();
     const network = strategy.evm_network || 'POLYGON';
 
-    // Get OPS wallet for the network
-    let opsWallet;
-    try {
-      opsWallet = getEvmOpsWallet(network);
-      console.log(`[execute-evm-arbitrage] OPS wallet: ${opsWallet.address}`);
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : 'Failed to initialize OPS wallet';
-      console.error(`[execute-evm-arbitrage] ${errorMsg}`);
-      
-      await supabase.from('arbitrage_runs').insert({
-        strategy_id: strategy.id,
-        started_at: startedAt,
-        finished_at: new Date().toISOString(),
-        status: 'FAILED',
-        error_message: errorMsg,
-      });
+    // Try to get a fee payer from the rotation pool first, fall back to OPS wallet
+    let executionWallet: ethers.Wallet;
+    let walletAddress: string;
+    let usedFeePayer: { feePayerId: string } | null = null;
 
-      return new Response(JSON.stringify({ error: errorMsg }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    if (!use_ops_wallet) {
+      const feePayer = await getEvmFeePayerWithRotation(supabase, network);
+      if (feePayer) {
+        executionWallet = feePayer.wallet;
+        walletAddress = feePayer.publicKey;
+        usedFeePayer = { feePayerId: feePayer.feePayerId };
+        console.log(`[execute-evm-arbitrage] Using fee payer: ${walletAddress}`);
+      } else {
+        console.log(`[execute-evm-arbitrage] No fee payer available, falling back to OPS wallet`);
+        try {
+          const opsWallet = getEvmOpsWallet(network);
+          executionWallet = opsWallet.wallet;
+          walletAddress = opsWallet.address;
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : 'Failed to initialize wallet';
+          console.error(`[execute-evm-arbitrage] ${errorMsg}`);
+          
+          await supabase.from('arbitrage_runs').insert({
+            strategy_id: strategy.id,
+            started_at: startedAt,
+            finished_at: new Date().toISOString(),
+            status: 'FAILED',
+            error_message: errorMsg,
+          });
+
+          return new Response(JSON.stringify({ error: errorMsg }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+      }
+    } else {
+      // Explicitly use OPS wallet
+      try {
+        const opsWallet = getEvmOpsWallet(network);
+        executionWallet = opsWallet.wallet;
+        walletAddress = opsWallet.address;
+        console.log(`[execute-evm-arbitrage] Using OPS wallet: ${walletAddress}`);
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : 'Failed to initialize OPS wallet';
+        console.error(`[execute-evm-arbitrage] ${errorMsg}`);
+        
+        await supabase.from('arbitrage_runs').insert({
+          strategy_id: strategy.id,
+          started_at: startedAt,
+          finished_at: new Date().toISOString(),
+          status: 'FAILED',
+          error_message: errorMsg,
+        });
+
+        return new Response(JSON.stringify({ error: errorMsg }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
     }
 
     // Use 0.01 ETH equivalent for real execution (smaller for safety)
@@ -301,7 +481,7 @@ serve(async (req) => {
       sellToken: strategy.token_in_mint,
       buyToken: strategy.token_out_mint,
       sellAmount: inputWei,
-      takerAddress: opsWallet.address,
+      takerAddress: walletAddress,
     });
 
     if (!quoteA) {
@@ -327,7 +507,7 @@ serve(async (req) => {
       sellToken: strategy.token_out_mint,
       buyToken: strategy.token_in_mint,
       sellAmount: quoteA.buyAmount,
-      takerAddress: opsWallet.address,
+      takerAddress: walletAddress,
     });
 
     if (!quoteB) {
@@ -379,7 +559,7 @@ serve(async (req) => {
       sellToken: strategy.token_in_mint,
       buyToken: strategy.token_out_mint,
       sellAmount: inputWei,
-      takerAddress: opsWallet.address,
+      takerAddress: walletAddress,
     });
 
     if (!swapTxA) {
@@ -406,7 +586,7 @@ serve(async (req) => {
     
     if (!isNativeToken) {
       const approved = await approveTokenIfNeeded(
-        opsWallet.wallet,
+        executionWallet,
         strategy.token_in_mint,
         PERMIT2_ADDRESS,
         inputWei
@@ -433,7 +613,7 @@ serve(async (req) => {
     console.log(`[execute-evm-arbitrage] Executing leg A swap...`);
     let txHashA: string;
     try {
-      const txA = await opsWallet.wallet.sendTransaction({
+      const txA = await executionWallet.sendTransaction({
         to: swapTxA.to,
         data: swapTxA.data,
         value: swapTxA.value,
@@ -470,7 +650,7 @@ serve(async (req) => {
       sellToken: strategy.token_out_mint,
       buyToken: strategy.token_in_mint,
       sellAmount: quoteA.buyAmount,
-      takerAddress: opsWallet.address,
+      takerAddress: walletAddress,
     });
 
     if (!swapTxB) {
@@ -494,7 +674,7 @@ serve(async (req) => {
     const isLegBNative = strategy.token_out_mint.toLowerCase() === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
     if (!isLegBNative) {
       await approveTokenIfNeeded(
-        opsWallet.wallet,
+        executionWallet,
         strategy.token_out_mint,
         PERMIT2_ADDRESS,
         quoteA.buyAmount
@@ -505,7 +685,7 @@ serve(async (req) => {
     console.log(`[execute-evm-arbitrage] Executing leg B swap...`);
     let txHashB: string;
     try {
-      const txB = await opsWallet.wallet.sendTransaction({
+      const txB = await executionWallet.sendTransaction({
         to: swapTxB.to,
         data: swapTxB.data,
         value: swapTxB.value,
@@ -551,7 +731,7 @@ serve(async (req) => {
         status: 'EXECUTED',
         tx_signature: `${txHashA},${txHashB}`,
         estimated_profit_lamports: Number(estimatedProfit / 1_000_000_000n),
-        actual_profit_lamports: Number(estimatedProfit / 1_000_000_000n), // Would need on-chain verification for exact
+        actual_profit_lamports: Number(estimatedProfit / 1_000_000_000n),
       })
       .select()
       .maybeSingle();
@@ -569,6 +749,8 @@ serve(async (req) => {
       message: 'EVM arbitrage executed successfully',
       strategy_name: strategy.name,
       network,
+      wallet_used: walletAddress,
+      used_fee_payer: !!usedFeePayer,
       leg_a_tx: txHashA,
       leg_b_tx: txHashB,
       estimated_profit_wei: estimatedProfit.toString(),
