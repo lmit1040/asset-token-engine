@@ -99,9 +99,11 @@ export type Database = {
       }
       arbitrage_strategies: {
         Row: {
+          chain_type: string
           created_at: string
           dex_a: string
           dex_b: string
+          evm_network: string | null
           id: string
           is_enabled: boolean
           min_profit_lamports: number
@@ -111,9 +113,11 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          chain_type?: string
           created_at?: string
           dex_a: string
           dex_b: string
+          evm_network?: string | null
           id?: string
           is_enabled?: boolean
           min_profit_lamports?: number
@@ -123,9 +127,11 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          chain_type?: string
           created_at?: string
           dex_a?: string
           dex_b?: string
+          evm_network?: string | null
           id?: string
           is_enabled?: boolean
           min_profit_lamports?: number
