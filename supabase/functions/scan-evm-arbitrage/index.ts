@@ -151,48 +151,12 @@ serve(async (req) => {
   try {
     console.log('[scan-evm-arbitrage] Starting EVM arbitrage simulation scan...');
 
-    // Get authorization header
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: 'No authorization header' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // Create Supabase client with user's auth
+    // Create Supabase client with service role for database access
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Verify user is admin
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-      console.error('[scan-evm-arbitrage] Auth error:', authError);
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // Check admin role
-    const { data: roleData, error: roleError } = await supabase
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', user.id)
-      .maybeSingle();
-
-    if (roleError || roleData?.role !== 'admin') {
-      console.error('[scan-evm-arbitrage] User is not admin:', user.id);
-      return new Response(JSON.stringify({ error: 'Admin access required' }), {
-        status: 403,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    console.log('[scan-evm-arbitrage] Admin verified, fetching EVM strategies...');
+    console.log('[scan-evm-arbitrage] Fetching EVM strategies...');
 
     // Fetch enabled EVM strategies
     const { data: strategies, error: stratError } = await supabase
