@@ -25,6 +25,7 @@ import AdminEvmFeePayersPage from "./pages/AdminEvmFeePayersPage";
 import AdminArchivedPage from "./pages/AdminArchivedPage";
 import AdminArbitrageStrategiesPage from "./pages/AdminArbitrageStrategiesPage";
 import AdminArbitrageRunsPage from "./pages/AdminArbitrageRunsPage";
+import AdminAutomatedArbitragePage from "./pages/AdminAutomatedArbitragePage";
 import MxuBenefitsPage from "./pages/MxuBenefitsPage";
 import GovernancePage from "./pages/GovernancePage";
 import ProposalDetailPage from "./pages/ProposalDetailPage";
@@ -72,6 +73,7 @@ const App = () => (
               <Route path="/admin/evm-fee-payers" element={<AdminEvmFeePayersPage />} />
               <Route path="/admin/arbitrage/strategies" element={<AdminArbitrageStrategiesPage />} />
               <Route path="/admin/arbitrage/runs" element={<AdminArbitrageRunsPage />} />
+              <Route path="/admin/arbitrage/automation" element={<AdminAutomatedArbitragePage />} />
               <Route path="/admin/archived" element={<AdminArchivedPage />} />
               <Route path="/admin/activity" element={<AdminActivityPage />} />
               <Route path="*" element={<NotFound />} />
