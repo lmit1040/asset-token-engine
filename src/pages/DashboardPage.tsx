@@ -6,6 +6,7 @@ import { HoldingsTable } from '@/components/dashboard/HoldingsTable';
 import { PortfolioChart } from '@/components/dashboard/PortfolioChart';
 import { TransactionHistory } from '@/components/dashboard/TransactionHistory';
 import { CryptoTicker } from '@/components/dashboard/CryptoTicker';
+import { NewsSection } from '@/components/dashboard/NewsSection';
 import { LegalDisclaimer } from '@/components/layout/LegalDisclaimer';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
@@ -231,18 +232,24 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Transaction History */}
-        <div className="glass-card p-6">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-              <History className="h-5 w-5 text-primary" />
+        {/* News and Transaction History Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* News Section */}
+          <NewsSection />
+
+          {/* Transaction History */}
+          <div className="glass-card p-6">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                <History className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-foreground">Transaction History</h2>
+                <p className="text-sm text-muted-foreground">Recent token assignments and transfers</p>
+              </div>
             </div>
-            <div>
-              <h2 className="text-lg font-semibold text-foreground">Transaction History</h2>
-              <p className="text-sm text-muted-foreground">Recent token assignments and transfers</p>
-            </div>
+            <TransactionHistory pageSize={10} />
           </div>
-          <TransactionHistory pageSize={10} />
         </div>
 
         {/* Legal Disclaimer */}

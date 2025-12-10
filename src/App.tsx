@@ -33,6 +33,7 @@ import TransfersPage from "./pages/TransfersPage";
 import SubmitAssetPage from "./pages/SubmitAssetPage";
 import MySubmissionsPage from "./pages/MySubmissionsPage";
 import AdminSubmissionsPage from "./pages/AdminSubmissionsPage";
+import AdminNewsPage from "./pages/AdminNewsPage";
 import ProofOfReservePage from "./pages/ProofOfReservePage";
 import NotFound from "./pages/NotFound";
 
@@ -75,6 +76,7 @@ const App = () => (
               <Route path="/admin/arbitrage/runs" element={<AdminArbitrageRunsPage />} />
               <Route path="/admin/arbitrage/automation" element={<AdminAutomatedArbitragePage />} />
               <Route path="/admin/archived" element={<AdminArchivedPage />} />
+              <Route path="/admin/news" element={<AdminNewsPage />} />
               <Route path="/admin/activity" element={<AdminActivityPage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
