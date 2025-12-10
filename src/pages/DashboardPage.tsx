@@ -153,12 +153,20 @@ export default function DashboardPage() {
       title="Dashboard"
       subtitle="Overview of your tokenized assets"
     >
-      {/* Crypto Ticker - isolated container to prevent layout shifts */}
-      <div className="-mx-6 -mt-2 mb-6 relative overflow-hidden" style={{ contain: 'layout style' }}>
+      {/* Crypto Ticker - completely isolated with fixed height */}
+      <div 
+        className="-mx-6 -mt-2 mb-6 overflow-hidden"
+        style={{ 
+          contain: 'strict',
+          height: 'auto',
+          minHeight: '80px',
+          isolation: 'isolate'
+        }}
+      >
         <CryptoTicker />
       </div>
 
-      <div className="space-y-6 animate-fade-in">
+      <div className="space-y-6 animate-fade-in" style={{ contain: 'layout' }}>
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <StatCard
