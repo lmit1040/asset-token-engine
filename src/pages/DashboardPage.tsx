@@ -154,7 +154,7 @@ export default function DashboardPage() {
       subtitle="Overview of your tokenized assets"
     >
       {/* Crypto Ticker */}
-      <div className="-mx-6 -mt-2 mb-6">
+      <div className="-mx-6 -mt-2 mb-6 flex-shrink-0">
         <CryptoTicker />
       </div>
 
