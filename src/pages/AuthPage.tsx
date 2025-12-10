@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Navigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Navigate, useSearchParams } from 'react-router-dom';
 import { Mail, Lock, User, ArrowRight, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -25,17 +25,39 @@ const emailSchema = z.object({
   email: z.string().email('Please enter a valid email address'),
 });
 
-type AuthMode = 'login' | 'signup' | 'forgot-password';
+const passwordSchema = z.object({
+  password: z.string()
+    .min(8, 'Password must be at least 8 characters')
+    .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
+    .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
+    .regex(/[0-9]/, 'Password must contain at least one number'),
+  confirmPassword: z.string(),
+}).refine((data) => data.password === data.confirmPassword, {
+  message: "Passwords don't match",
+  path: ["confirmPassword"],
+});
+
+type AuthMode = 'login' | 'signup' | 'forgot-password' | 'reset-password';
 
 export default function AuthPage() {
+  const [searchParams] = useSearchParams();
   const [mode, setMode] = useState<AuthMode>('login');
   const [isLoading, setIsLoading] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
   const { signIn, signUp, user } = useAuth();
 
-  if (user) {
+  // Check if user came from password reset link
+  useEffect(() => {
+    const modeParam = searchParams.get('mode');
+    if (modeParam === 'reset') {
+      setMode('reset-password');
+    }
+  }, [searchParams]);
+
+  if (user && mode !== 'reset-password') {
     return <Navigate to="/dashboard" replace />;
   }
 
@@ -44,7 +66,20 @@ export default function AuthPage() {
     setIsLoading(true);
 
     try {
-      if (mode === 'forgot-password') {
+      if (mode === 'reset-password') {
+        const validated = passwordSchema.parse({ password, confirmPassword });
+        const { error } = await supabase.auth.updateUser({
+          password: validated.password,
+        });
+        if (error) {
+          toast.error(error.message || 'Failed to reset password');
+        } else {
+          toast.success('Password updated successfully!');
+          setMode('login');
+          setPassword('');
+          setConfirmPassword('');
+        }
+      } else if (mode === 'forgot-password') {
         const validated = emailSchema.parse({ email });
         const { error } = await supabase.auth.resetPasswordForEmail(validated.email, {
           redirectTo: `${window.location.origin}/auth?mode=reset`,
@@ -87,6 +122,7 @@ export default function AuthPage() {
 
   const getTitle = () => {
     switch (mode) {
+      case 'reset-password': return 'Set New Password';
       case 'forgot-password': return 'Reset Password';
       case 'signup': return 'Create Account';
       default: return 'Welcome Back';
@@ -95,6 +131,7 @@ export default function AuthPage() {
 
   const getSubtitle = () => {
     switch (mode) {
+      case 'reset-password': return 'Enter your new password below';
       case 'forgot-password': return 'Enter your email to receive a reset link';
       case 'signup': return 'Start managing your precious assets';
       default: return 'Sign in to access your vault';
@@ -103,6 +140,7 @@ export default function AuthPage() {
 
   const getButtonText = () => {
     switch (mode) {
+      case 'reset-password': return 'Update Password';
       case 'forgot-password': return 'Send Reset Link';
       case 'signup': return 'Create Account';
       default: return 'Sign In';
@@ -158,7 +196,7 @@ export default function AuthPage() {
           </div>
 
           <div className="glass-card p-8">
-            {mode === 'forgot-password' && (
+            {(mode === 'forgot-password' || mode === 'reset-password') && (
               <button
                 type="button"
                 onClick={() => setMode('login')}
@@ -196,26 +234,30 @@ export default function AuthPage() {
                 </div>
               )}
 
-              <div className="space-y-2">
-                <Label htmlFor="email" className="text-sm text-muted-foreground">Email</Label>
-                <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="you@example.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="pl-10 input-dark"
-                    required
-                  />
+              {mode !== 'reset-password' && (
+                <div className="space-y-2">
+                  <Label htmlFor="email" className="text-sm text-muted-foreground">Email</Label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="you@example.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="pl-10 input-dark"
+                      required
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
 
               {mode !== 'forgot-password' && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label htmlFor="password" className="text-sm text-muted-foreground">Password</Label>
+                    <Label htmlFor="password" className="text-sm text-muted-foreground">
+                      {mode === 'reset-password' ? 'New Password' : 'Password'}
+                    </Label>
                     {mode === 'login' && (
                       <button
                         type="button"
@@ -241,6 +283,26 @@ export default function AuthPage() {
                 </div>
               )}
 
+              {mode === 'reset-password' && (
+                <div className="space-y-2">
+                  <Label htmlFor="confirmPassword" className="text-sm text-muted-foreground">
+                    Confirm New Password
+                  </Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="confirmPassword"
+                      type="password"
+                      placeholder="••••••••"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      className="pl-10 input-dark"
+                      required
+                    />
+                  </div>
+                </div>
+              )}
+
               <Button 
                 type="submit" 
                 className="w-full" 
@@ -258,7 +320,7 @@ export default function AuthPage() {
               </Button>
             </form>
 
-            {mode !== 'forgot-password' && (
+            {mode !== 'forgot-password' && mode !== 'reset-password' && (
               <div className="mt-6 text-center">
                 <button
                   type="button"
@@ -272,7 +334,7 @@ export default function AuthPage() {
               </div>
             )}
 
-            {mode === 'signup' && (
+            {(mode === 'signup' || mode === 'reset-password') && (
               <p className="mt-4 text-xs text-muted-foreground text-center">
                 Password must be 8+ characters with uppercase, lowercase, and number.
               </p>
