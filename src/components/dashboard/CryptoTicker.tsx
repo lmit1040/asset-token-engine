@@ -238,8 +238,13 @@ export const CryptoTicker = () => {
   return (
     <TooltipProvider>
       <div 
-        className="w-full bg-gradient-to-r from-card via-card/95 to-card border-y border-border overflow-hidden"
-        style={{ contain: 'content', position: 'relative' }}
+        className="w-full bg-gradient-to-r from-card via-card/95 to-card border-y border-border"
+        style={{ 
+          contain: 'layout paint',
+          isolation: 'isolate',
+          transform: 'translateZ(0)',
+          willChange: 'auto'
+        }}
       >
         {/* Controls Bar */}
         <div className="border-b border-border/50 py-1.5 px-4 bg-primary/5 flex items-center justify-between">
@@ -333,11 +338,13 @@ export const CryptoTicker = () => {
         </div>
         
         {/* Main Ticker */}
-        <div className="relative py-2 overflow-hidden">
+        <div className="relative py-2 overflow-hidden" style={{ contain: 'paint' }}>
           <div 
-            className="flex w-max"
+            className="flex"
             style={{
+              width: 'max-content',
               animation: isPaused ? 'none' : `ticker ${speed}s linear infinite`,
+              willChange: 'transform'
             }}
           >
             {duplicatedItems.map((item, index) => (
