@@ -264,6 +264,50 @@ export type Database = {
           },
         ]
       }
+      daily_risk_limits: {
+        Row: {
+          chain: string
+          created_at: string
+          date: string
+          id: string
+          strategy_id: string
+          total_loss_native: number
+          total_pnl_native: number
+          total_trades: number
+          updated_at: string
+        }
+        Insert: {
+          chain: string
+          created_at?: string
+          date: string
+          id?: string
+          strategy_id: string
+          total_loss_native?: number
+          total_pnl_native?: number
+          total_trades?: number
+          updated_at?: string
+        }
+        Update: {
+          chain?: string
+          created_at?: string
+          date?: string
+          id?: string
+          strategy_id?: string
+          total_loss_native?: number
+          total_pnl_native?: number
+          total_trades?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_risk_limits_strategy_id_fkey"
+            columns: ["strategy_id"]
+            isOneToOne: false
+            referencedRelation: "arbitrage_strategies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       evm_fee_payer_keys: {
         Row: {
           balance_native: number | null
