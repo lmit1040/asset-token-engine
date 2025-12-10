@@ -105,8 +105,16 @@ export type Database = {
           dex_b: string
           evm_network: string | null
           id: string
+          is_auto_enabled: boolean
           is_enabled: boolean
+          is_for_fee_payer_refill: boolean
+          is_for_ops_refill: boolean
+          max_daily_loss_native: number
+          max_trade_value_native: number | null
+          max_trades_per_day: number
+          min_expected_profit_native: number
           min_profit_lamports: number
+          min_profit_to_gas_ratio: number
           name: string
           token_in_mint: string
           token_out_mint: string
@@ -119,8 +127,16 @@ export type Database = {
           dex_b: string
           evm_network?: string | null
           id?: string
+          is_auto_enabled?: boolean
           is_enabled?: boolean
+          is_for_fee_payer_refill?: boolean
+          is_for_ops_refill?: boolean
+          max_daily_loss_native?: number
+          max_trade_value_native?: number | null
+          max_trades_per_day?: number
+          min_expected_profit_native?: number
           min_profit_lamports?: number
+          min_profit_to_gas_ratio?: number
           name: string
           token_in_mint: string
           token_out_mint: string
@@ -133,8 +149,16 @@ export type Database = {
           dex_b?: string
           evm_network?: string | null
           id?: string
+          is_auto_enabled?: boolean
           is_enabled?: boolean
+          is_for_fee_payer_refill?: boolean
+          is_for_ops_refill?: boolean
+          max_daily_loss_native?: number
+          max_trade_value_native?: number | null
+          max_trades_per_day?: number
+          min_expected_profit_native?: number
           min_profit_lamports?: number
+          min_profit_to_gas_ratio?: number
           name?: string
           token_in_mint?: string
           token_out_mint?: string
