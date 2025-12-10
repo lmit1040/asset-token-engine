@@ -827,6 +827,36 @@ export type Database = {
           },
         ]
       }
+      rss_feed_sources: {
+        Row: {
+          category: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          is_active: boolean | null
+          name: string
+          url: string
+        }
+        Insert: {
+          category?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean | null
+          name: string
+          url: string
+        }
+        Update: {
+          category?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          url?: string
+        }
+        Relationships: []
+      }
       staking_pools: {
         Row: {
           apy_percentage: number
