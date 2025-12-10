@@ -103,11 +103,8 @@ export default function AdminTokenProposalsPage() {
 
       if (tokenError) {
         // Handle specific error codes with user-friendly messages
-        if (tokenError.code === '23505') {
-          if (tokenError.message.includes('token_symbol')) {
-            throw new Error(`Token symbol "${proposal.token_symbol}" already exists. Please reject this proposal and ask the user to choose a different symbol.`);
-          }
-          throw new Error('A token definition with these details already exists.');
+        if (tokenError.code === '23505' || tokenError.message?.includes('duplicate') || tokenError.message?.includes('unique')) {
+          throw new Error(`Token symbol "${proposal.token_symbol}" already exists. Please reject this proposal and ask the user to choose a different symbol.`);
         }
         throw tokenError;
       }
