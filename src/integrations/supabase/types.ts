@@ -951,6 +951,7 @@ export type Database = {
           asset_id: string
           created_at: string
           decimals: number
+          deployment_profile: string | null
           id: string
           notes: string | null
           proposed_by: string
@@ -968,6 +969,7 @@ export type Database = {
           asset_id: string
           created_at?: string
           decimals?: number
+          deployment_profile?: string | null
           id?: string
           notes?: string | null
           proposed_by: string
@@ -985,6 +987,7 @@ export type Database = {
           asset_id?: string
           created_at?: string
           decimals?: number
+          deployment_profile?: string | null
           id?: string
           notes?: string | null
           proposed_by?: string
@@ -1014,6 +1017,7 @@ export type Database = {
           contract_address: string | null
           created_at: string
           decimals: number
+          deployment_profile: string | null
           deployment_status: Database["public"]["Enums"]["deployment_status"]
           id: string
           network: Database["public"]["Enums"]["network_type"]
@@ -1033,6 +1037,7 @@ export type Database = {
           contract_address?: string | null
           created_at?: string
           decimals?: number
+          deployment_profile?: string | null
           deployment_status?: Database["public"]["Enums"]["deployment_status"]
           id?: string
           network?: Database["public"]["Enums"]["network_type"]
@@ -1052,6 +1057,7 @@ export type Database = {
           contract_address?: string | null
           created_at?: string
           decimals?: number
+          deployment_profile?: string | null
           deployment_status?: Database["public"]["Enums"]["deployment_status"]
           id?: string
           network?: Database["public"]["Enums"]["network_type"]

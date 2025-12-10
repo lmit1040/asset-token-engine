@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Navigate } from 'react-router-dom';
-import { Vault, Mail, Lock, User, ArrowRight } from 'lucide-react';
+import { Vault, Mail, Lock, User, ArrowRight, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -8,6 +8,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import { FooterLegalText } from '@/components/layout/LegalDisclaimer';
+import { supabase } from '@/integrations/supabase/client';
 
 const authSchema = z.object({
   email: z.string().email('Please enter a valid email address'),
@@ -19,8 +20,14 @@ const authSchema = z.object({
   name: z.string().optional(),
 });
 
+const emailSchema = z.object({
+  email: z.string().email('Please enter a valid email address'),
+});
+
+type AuthMode = 'login' | 'signup' | 'forgot-password';
+
 export default function AuthPage() {
-  const [isLogin, setIsLogin] = useState(true);
+  const [mode, setMode] = useState<AuthMode>('login');
   const [isLoading, setIsLoading] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -36,9 +43,19 @@ export default function AuthPage() {
     setIsLoading(true);
 
     try {
-      const validated = authSchema.parse({ email, password, name: isLogin ? undefined : name });
-      
-      if (isLogin) {
+      if (mode === 'forgot-password') {
+        const validated = emailSchema.parse({ email });
+        const { error } = await supabase.auth.resetPasswordForEmail(validated.email, {
+          redirectTo: `${window.location.origin}/auth?mode=reset`,
+        });
+        if (error) {
+          toast.error(error.message || 'Failed to send reset email');
+        } else {
+          toast.success('Password reset email sent! Check your inbox.');
+          setMode('login');
+        }
+      } else if (mode === 'login') {
+        const validated = authSchema.parse({ email, password });
         const { error } = await signIn(validated.email, validated.password);
         if (error) {
           toast.error(error.message || 'Failed to sign in');
@@ -46,6 +63,7 @@ export default function AuthPage() {
           toast.success('Welcome back!');
         }
       } else {
+        const validated = authSchema.parse({ email, password, name });
         const { error } = await signUp(validated.email, validated.password, validated.name);
         if (error) {
           if (error.message?.includes('already registered')) {
@@ -63,6 +81,30 @@ export default function AuthPage() {
       }
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const getTitle = () => {
+    switch (mode) {
+      case 'forgot-password': return 'Reset Password';
+      case 'signup': return 'Create Account';
+      default: return 'Welcome Back';
+    }
+  };
+
+  const getSubtitle = () => {
+    switch (mode) {
+      case 'forgot-password': return 'Enter your email to receive a reset link';
+      case 'signup': return 'Start managing your precious assets';
+      default: return 'Sign in to access your vault';
+    }
+  };
+
+  const getButtonText = () => {
+    switch (mode) {
+      case 'forgot-password': return 'Send Reset Link';
+      case 'signup': return 'Create Account';
+      default: return 'Sign In';
     }
   };
 
@@ -124,19 +166,28 @@ export default function AuthPage() {
           </div>
 
           <div className="glass-card p-8">
+            {mode === 'forgot-password' && (
+              <button
+                type="button"
+                onClick={() => setMode('login')}
+                className="flex items-center gap-1 text-sm text-muted-foreground hover:text-primary transition-colors mb-4"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Back to sign in
+              </button>
+            )}
+
             <div className="text-center mb-8">
               <h2 className="text-2xl font-bold text-foreground">
-                {isLogin ? 'Welcome Back' : 'Create Account'}
+                {getTitle()}
               </h2>
               <p className="text-muted-foreground mt-2">
-                {isLogin 
-                  ? 'Sign in to access your vault' 
-                  : 'Start managing your precious assets'}
+                {getSubtitle()}
               </p>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-5">
-              {!isLogin && (
+              {mode === 'signup' && (
                 <div className="space-y-2">
                   <Label htmlFor="name" className="text-sm text-muted-foreground">Full Name</Label>
                   <div className="relative">
@@ -169,21 +220,34 @@ export default function AuthPage() {
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="password" className="text-sm text-muted-foreground">Password</Label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="password"
-                    type="password"
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="pl-10 input-dark"
-                    required
-                  />
+              {mode !== 'forgot-password' && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="password" className="text-sm text-muted-foreground">Password</Label>
+                    {mode === 'login' && (
+                      <button
+                        type="button"
+                        onClick={() => setMode('forgot-password')}
+                        className="text-xs text-primary hover:text-primary/80 transition-colors"
+                      >
+                        Forgot password?
+                      </button>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="password"
+                      type="password"
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="pl-10 input-dark"
+                      required
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
 
               <Button 
                 type="submit" 
@@ -195,26 +259,28 @@ export default function AuthPage() {
                   <div className="h-5 w-5 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
                 ) : (
                   <>
-                    {isLogin ? 'Sign In' : 'Create Account'}
+                    {getButtonText()}
                     <ArrowRight className="h-4 w-4" />
                   </>
                 )}
               </Button>
             </form>
 
-            <div className="mt-6 text-center">
-              <button
-                type="button"
-                onClick={() => setIsLogin(!isLogin)}
-                className="text-sm text-muted-foreground hover:text-primary transition-colors"
-              >
-                {isLogin 
-                  ? "Don't have an account? Sign up" 
-                  : 'Already have an account? Sign in'}
-              </button>
-            </div>
+            {mode !== 'forgot-password' && (
+              <div className="mt-6 text-center">
+                <button
+                  type="button"
+                  onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
+                  className="text-sm text-muted-foreground hover:text-primary transition-colors"
+                >
+                  {mode === 'login' 
+                    ? "Don't have an account? Sign up" 
+                    : 'Already have an account? Sign in'}
+                </button>
+              </div>
+            )}
 
-            {!isLogin && (
+            {mode === 'signup' && (
               <p className="mt-4 text-xs text-muted-foreground text-center">
                 Password must be 8+ characters with uppercase, lowercase, and number.
               </p>
