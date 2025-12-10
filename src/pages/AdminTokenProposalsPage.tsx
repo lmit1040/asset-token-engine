@@ -101,7 +101,16 @@ export default function AdminTokenProposalsPage() {
           notes: proposal.notes,
         });
 
-      if (tokenError) throw tokenError;
+      if (tokenError) {
+        // Handle specific error codes with user-friendly messages
+        if (tokenError.code === '23505') {
+          if (tokenError.message.includes('token_symbol')) {
+            throw new Error(`Token symbol "${proposal.token_symbol}" already exists. Please reject this proposal and ask the user to choose a different symbol.`);
+          }
+          throw new Error('A token definition with these details already exists.');
+        }
+        throw tokenError;
+      }
 
       // Update proposal status
       const { error: updateError } = await supabase
