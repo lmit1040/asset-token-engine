@@ -68,3 +68,6 @@ verify_jwt = false
 
 [functions.refresh-evm-fee-payer-balances]
 verify_jwt = false
+
+[functions.top-up-evm-fee-payers]
+verify_jwt = false
