@@ -34,6 +34,7 @@ import SubmitAssetPage from "./pages/SubmitAssetPage";
 import MySubmissionsPage from "./pages/MySubmissionsPage";
 import AdminSubmissionsPage from "./pages/AdminSubmissionsPage";
 import AdminNewsPage from "./pages/AdminNewsPage";
+import AdminTokenProposalsPage from "./pages/AdminTokenProposalsPage";
 import ProofOfReservePage from "./pages/ProofOfReservePage";
 import NotFound from "./pages/NotFound";
 
@@ -70,6 +71,7 @@ const App = () => (
               <Route path="/admin/deliver" element={<AdminDeliverPage />} />
               <Route path="/admin/attestations" element={<AdminAttestationsPage />} />
               <Route path="/admin/submissions" element={<AdminSubmissionsPage />} />
+              <Route path="/admin/token-proposals" element={<AdminTokenProposalsPage />} />
               <Route path="/admin/fee-payers" element={<AdminFeePayersPage />} />
               <Route path="/admin/evm-fee-payers" element={<AdminEvmFeePayersPage />} />
               <Route path="/admin/arbitrage/strategies" element={<AdminArbitrageStrategiesPage />} />
