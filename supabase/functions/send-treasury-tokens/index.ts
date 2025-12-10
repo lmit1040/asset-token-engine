@@ -96,15 +96,55 @@ serve(async (req) => {
       Deno.env.get("SOLANA_DEVNET_RPC_URL") || "https://api.devnet.solana.com";
     const connection = new Connection(rpcUrl, "confirmed");
 
-    // Get fee payer keypair from database (automatic rotation)
-    console.log("Fetching fee payer from database...");
+    // Parse addresses
+    const mintPubkey = new PublicKey(token.contract_address);
+    const treasuryPubkey = new PublicKey(token.treasury_account);
+
+    // Find which fee payer owns the treasury account by matching ATAs
+    console.log("Finding fee payer that owns treasury account...");
+    const { data: feePayerKeys, error: feePayerError } = await supabase
+      .from("fee_payer_keys")
+      .select("id, public_key, label")
+      .eq("is_active", true);
+
+    if (feePayerError || !feePayerKeys || feePayerKeys.length === 0) {
+      throw new Error("No active fee payers found");
+    }
+
+    let matchingFeePayerId: string | null = null;
+    let matchingFeePayerLabel: string | null = null;
+
+    // Check each fee payer to find the one whose ATA matches the treasury
+    for (const fp of feePayerKeys) {
+      const fpPubkey = new PublicKey(fp.public_key);
+      const derivedAta = await getAssociatedTokenAddress(
+        mintPubkey,
+        fpPubkey,
+        false,
+        TOKEN_PROGRAM_ID,
+        ASSOCIATED_TOKEN_PROGRAM_ID
+      );
+      
+      if (derivedAta.equals(treasuryPubkey)) {
+        matchingFeePayerId = fp.id;
+        matchingFeePayerLabel = fp.label;
+        console.log("Found matching fee payer:", fp.public_key, "(label:", fp.label, ")");
+        break;
+      }
+    }
+
+    if (!matchingFeePayerId) {
+      throw new Error("Could not find fee payer that owns the treasury account. The treasury may have been created by a deactivated fee payer.");
+    }
+
+    // Get the specific fee payer keypair
     const feePayerResponse = await fetch(`${supabaseUrl}/functions/v1/get-fee-payer-keypair`, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${supabaseServiceKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ prefer_least_used: true }),
+      body: JSON.stringify({ fee_payer_id: matchingFeePayerId }),
     });
 
     if (!feePayerResponse.ok) {
@@ -115,11 +155,7 @@ serve(async (req) => {
 
     const feePayerData = await feePayerResponse.json();
     const feePayer = Keypair.fromSecretKey(new Uint8Array(feePayerData.secret_key_array));
-    console.log("Using fee payer:", feePayerData.public_key, "(label:", feePayerData.label, ")");
-
-    // Parse addresses
-    const mintPubkey = new PublicKey(token.contract_address);
-    const treasuryPubkey = new PublicKey(token.treasury_account);
+    console.log("Using treasury owner fee payer:", feePayerData.public_key, "(label:", matchingFeePayerLabel, ")");
 
     // Calculate raw amount based on decimals
     const decimals = token.decimals || 0;
