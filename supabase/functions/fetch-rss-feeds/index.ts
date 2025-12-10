@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { DOMParser, Element } from "https://deno.land/x/deno_dom@v0.1.38/deno-dom-wasm.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -15,12 +16,11 @@ interface RSSItem {
   imageUrl?: string;
 }
 
-// Default crypto/finance RSS feeds
-const DEFAULT_FEEDS = [
-  { url: 'https://cointelegraph.com/rss', source: 'CoinTelegraph' },
-  { url: 'https://decrypt.co/feed', source: 'Decrypt' },
-  { url: 'https://www.coindesk.com/arc/outboundfeeds/rss/', source: 'CoinDesk' },
-];
+interface FeedSource {
+  url: string;
+  name: string;
+  category: string;
+}
 
 function getElementText(parent: Element, tagName: string): string {
   const el = parent.getElementsByTagName(tagName)[0];
@@ -114,6 +114,31 @@ async function fetchFeed(feedUrl: string, source: string): Promise<RSSItem[]> {
   }
 }
 
+async function getActiveFeeds(): Promise<FeedSource[]> {
+  try {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    
+    const { data, error } = await supabase
+      .from('rss_feed_sources')
+      .select('url, name, category')
+      .eq('is_active', true);
+    
+    if (error) {
+      console.error('Error fetching feed sources from DB:', error);
+      return [];
+    }
+    
+    console.log(`Found ${data?.length || 0} active feed sources in database`);
+    return data || [];
+  } catch (e) {
+    console.error('Error connecting to database:', e);
+    return [];
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -121,10 +146,19 @@ serve(async (req) => {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const customFeeds = body.feeds as { url: string; source: string }[] | undefined;
     const limit = body.limit || 20;
 
-    const feedsToFetch = customFeeds && customFeeds.length > 0 ? customFeeds : DEFAULT_FEEDS;
+    // Get feeds from database
+    const dbFeeds = await getActiveFeeds();
+    
+    // Use database feeds if available, otherwise use defaults
+    const feedsToFetch = dbFeeds.length > 0 
+      ? dbFeeds.map(f => ({ url: f.url, source: f.name }))
+      : [
+          { url: 'https://cointelegraph.com/rss', source: 'CoinTelegraph' },
+          { url: 'https://decrypt.co/feed', source: 'Decrypt' },
+          { url: 'https://www.coindesk.com/arc/outboundfeeds/rss/', source: 'CoinDesk' },
+        ];
 
     console.log(`Fetching ${feedsToFetch.length} RSS feeds`);
 
