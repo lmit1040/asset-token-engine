@@ -1163,6 +1163,59 @@ export type Database = {
         }
         Relationships: []
       }
+      wallet_refill_requests: {
+        Row: {
+          chain: string
+          created_at: string
+          error_message: string | null
+          fulfilled_at: string | null
+          fulfilled_by_run_id: string | null
+          id: string
+          reason: string
+          required_amount_native: number
+          status: string
+          updated_at: string
+          wallet_address: string
+          wallet_type: string
+        }
+        Insert: {
+          chain: string
+          created_at?: string
+          error_message?: string | null
+          fulfilled_at?: string | null
+          fulfilled_by_run_id?: string | null
+          id?: string
+          reason: string
+          required_amount_native?: number
+          status?: string
+          updated_at?: string
+          wallet_address: string
+          wallet_type: string
+        }
+        Update: {
+          chain?: string
+          created_at?: string
+          error_message?: string | null
+          fulfilled_at?: string | null
+          fulfilled_by_run_id?: string | null
+          id?: string
+          reason?: string
+          required_amount_native?: number
+          status?: string
+          updated_at?: string
+          wallet_address?: string
+          wallet_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wallet_refill_requests_fulfilled_by_run_id_fkey"
+            columns: ["fulfilled_by_run_id"]
+            isOneToOne: false
+            referencedRelation: "arbitrage_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
