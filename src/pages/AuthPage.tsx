@@ -118,7 +118,7 @@ export default function AuthPage() {
         
         <div className="relative z-10 flex flex-col justify-center px-16">
           <div className="flex items-center gap-4 mb-8">
-            <img src={MetallumXLogo} alt="MetallumX" className="h-16 w-auto" />
+            <img src={MetallumXLogo} alt="MetallumX" className="h-28 w-auto" />
           </div>
           
           <h2 className="text-4xl font-bold text-foreground mb-6 leading-tight">
@@ -154,7 +154,7 @@ export default function AuthPage() {
       <div className="flex-1 flex items-center justify-center p-8">
         <div className="w-full max-w-md">
           <div className="lg:hidden flex items-center gap-3 mb-8 justify-center">
-            <img src={MetallumXLogo} alt="MetallumX" className="h-12 w-auto" />
+            <img src={MetallumXLogo} alt="MetallumX" className="h-20 w-auto" />
           </div>
 
           <div className="glass-card p-8">

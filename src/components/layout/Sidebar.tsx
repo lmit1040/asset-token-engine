@@ -71,8 +71,8 @@ export function Sidebar() {
   return (
     <div className="flex h-full w-64 flex-col bg-sidebar border-r border-sidebar-border">
       {/* Logo */}
-      <div className="flex h-16 items-center gap-3 px-6 border-b border-sidebar-border">
-        <img src="/assets/MetallumXLogo.png" alt="MetallumX" className="h-10 w-auto" />
+      <div className="flex h-20 items-center gap-3 px-6 border-b border-sidebar-border">
+        <img src="/assets/MetallumXLogo.png" alt="MetallumX" className="h-16 w-auto" />
       </div>
 
       {/* Navigation */}
