@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Edit, Trash2, Pin, PinOff, Eye, EyeOff, Newspaper, Rss, Power, PowerOff } from 'lucide-react';
+import { Plus, Edit, Trash2, Pin, PinOff, Eye, EyeOff, Newspaper, Rss, Power, PowerOff, FlaskConical, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -125,6 +125,8 @@ export default function AdminNewsPage() {
     is_active: true,
   });
   const [isFeedSaving, setIsFeedSaving] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string; articleCount?: number } | null>(null);
 
   const fetchArticles = async () => {
     setIsLoading(true);
@@ -330,6 +332,61 @@ export default function AdminNewsPage() {
       is_active: true,
     });
     setEditingFeed(null);
+    setTestResult(null);
+  };
+
+  const testFeedUrl = async () => {
+    if (!feedFormData.url.trim()) {
+      toast({
+        title: 'Validation Error',
+        description: 'Please enter a URL to test',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      new URL(feedFormData.url.trim());
+    } catch {
+      setTestResult({ success: false, message: 'Invalid URL format' });
+      return;
+    }
+
+    setIsTesting(true);
+    setTestResult(null);
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('fetch-rss-feeds', {
+        body: { testUrl: feedFormData.url.trim() },
+      });
+
+      if (error) throw error;
+
+      if (data?.articles && data.articles.length > 0) {
+        setTestResult({
+          success: true,
+          message: `Found ${data.articles.length} article${data.articles.length !== 1 ? 's' : ''}`,
+          articleCount: data.articles.length,
+        });
+        toast({
+          title: 'Feed Valid',
+          description: `Successfully fetched ${data.articles.length} articles from this feed`,
+        });
+      } else {
+        setTestResult({
+          success: false,
+          message: 'No articles found in feed',
+        });
+      }
+    } catch (err) {
+      console.error('Error testing feed:', err);
+      setTestResult({
+        success: false,
+        message: 'Failed to fetch feed. Check the URL and try again.',
+      });
+    } finally {
+      setIsTesting(false);
+    }
   };
 
   const openCreateFeedDialog = () => {
@@ -843,12 +900,42 @@ export default function AdminNewsPage() {
 
               <div className="space-y-2">
                 <Label htmlFor="feed_url">RSS URL *</Label>
-                <Input
-                  id="feed_url"
-                  value={feedFormData.url}
-                  onChange={(e) => setFeedFormData({ ...feedFormData, url: e.target.value })}
-                  placeholder="https://example.com/rss"
-                />
+                <div className="flex gap-2">
+                  <Input
+                    id="feed_url"
+                    value={feedFormData.url}
+                    onChange={(e) => {
+                      setFeedFormData({ ...feedFormData, url: e.target.value });
+                      setTestResult(null);
+                    }}
+                    placeholder="https://example.com/rss"
+                    className="flex-1"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={testFeedUrl}
+                    disabled={isTesting || !feedFormData.url.trim()}
+                    title="Test Feed"
+                  >
+                    {isTesting ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <FlaskConical className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+                {testResult && (
+                  <div className={`flex items-center gap-2 text-sm ${testResult.success ? 'text-green-600' : 'text-destructive'}`}>
+                    {testResult.success ? (
+                      <CheckCircle className="h-4 w-4" />
+                    ) : (
+                      <XCircle className="h-4 w-4" />
+                    )}
+                    {testResult.message}
+                  </div>
+                )}
               </div>
 
               <div className="space-y-2">

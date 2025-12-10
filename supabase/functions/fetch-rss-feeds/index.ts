@@ -147,6 +147,24 @@ serve(async (req) => {
   try {
     const body = await req.json().catch(() => ({}));
     const limit = body.limit || 20;
+    const testUrl = body.testUrl;
+
+    // If testUrl is provided, only test that single URL
+    if (testUrl) {
+      console.log(`Testing single RSS feed URL: ${testUrl}`);
+      const articles = await fetchFeed(testUrl, 'Test Feed');
+      
+      return new Response(
+        JSON.stringify({ 
+          success: articles.length > 0, 
+          articles: articles.slice(0, 5), // Return sample of 5 articles
+          message: articles.length > 0 
+            ? `Successfully fetched ${articles.length} articles` 
+            : 'No articles found or invalid RSS feed',
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     // Get feeds from database
     const dbFeeds = await getActiveFeeds();
