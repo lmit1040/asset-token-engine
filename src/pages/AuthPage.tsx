@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Navigate } from 'react-router-dom';
-import { Vault, Mail, Lock, User, ArrowRight, ArrowLeft } from 'lucide-react';
+import { Mail, Lock, User, ArrowRight, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { z } from 'zod';
 import { FooterLegalText } from '@/components/layout/LegalDisclaimer';
 import { supabase } from '@/integrations/supabase/client';
+import MetallumXLogo from '@/assets/MetallumXLogo.png';
 
 const authSchema = z.object({
   email: z.string().email('Please enter a valid email address'),
@@ -117,13 +118,7 @@ export default function AuthPage() {
         
         <div className="relative z-10 flex flex-col justify-center px-16">
           <div className="flex items-center gap-4 mb-8">
-            <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-gold">
-              <Vault className="h-8 w-8 text-primary-foreground" />
-            </div>
-            <div>
-              <h1 className="text-3xl font-bold gold-text">MetallumX</h1>
-              <p className="text-muted-foreground">Vault</p>
-            </div>
+            <img src={MetallumXLogo} alt="MetallumX" className="h-16 w-auto" />
           </div>
           
           <h2 className="text-4xl font-bold text-foreground mb-6 leading-tight">
@@ -159,10 +154,7 @@ export default function AuthPage() {
       <div className="flex-1 flex items-center justify-center p-8">
         <div className="w-full max-w-md">
           <div className="lg:hidden flex items-center gap-3 mb-8 justify-center">
-            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center">
-              <Vault className="h-6 w-6 text-primary-foreground" />
-            </div>
-            <span className="text-xl font-bold gold-text">MetallumX Vault</span>
+            <img src={MetallumXLogo} alt="MetallumX" className="h-12 w-auto" />
           </div>
 
           <div className="glass-card p-8">

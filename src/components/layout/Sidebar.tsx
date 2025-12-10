@@ -1,7 +1,6 @@
 import { NavLink as RouterNavLink, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard, 
-  Vault, 
   Coins, 
   User, 
   Users, 
@@ -24,14 +23,15 @@ import {
   ShieldCheck,
   Bot,
   Newspaper,
-  FileText
+  FileText,
+  Package
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { name: 'Assets', href: '/assets', icon: Vault },
+  { name: 'Assets', href: '/assets', icon: Package },
   { name: 'Tokens', href: '/tokens', icon: Coins },
   { name: 'Transfers', href: '/transfers', icon: ArrowRightLeft },
   { name: 'Submit Asset', href: '/submit-asset', icon: FileUp },
@@ -72,10 +72,7 @@ export function Sidebar() {
     <div className="flex h-full w-64 flex-col bg-sidebar border-r border-sidebar-border">
       {/* Logo */}
       <div className="flex h-16 items-center gap-3 px-6 border-b border-sidebar-border">
-        <div className="h-8 w-8 rounded-lg gold-gradient flex items-center justify-center">
-          <Vault className="h-5 w-5 text-primary-foreground" />
-        </div>
-        <span className="text-lg font-bold gold-text">MetallumX</span>
+        <img src="/assets/MetallumXLogo.png" alt="MetallumX" className="h-10 w-auto" />
       </div>
 
       {/* Navigation */}
