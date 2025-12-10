@@ -1,5 +1,4 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { DOMParser, Element } from "https://deno.land/x/deno_dom@v0.1.38/deno-dom-wasm.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -22,43 +21,76 @@ interface FeedSource {
   category: string;
 }
 
-function getElementText(parent: Element, tagName: string): string {
-  const el = parent.getElementsByTagName(tagName)[0];
-  return el?.textContent?.replace(/<!\[CDATA\[|\]\]>/g, '').trim() || '';
+// Regex-based XML parsing (works reliably in Deno Edge Runtime)
+function extractTagContent(xml: string, tagName: string): string {
+  // Handle CDATA sections
+  const cdataPattern = new RegExp(`<${tagName}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]></${tagName}>`, 'i');
+  const cdataMatch = xml.match(cdataPattern);
+  if (cdataMatch) {
+    return cdataMatch[1].trim();
+  }
+  
+  // Handle regular content
+  const pattern = new RegExp(`<${tagName}[^>]*>([\\s\\S]*?)</${tagName}>`, 'i');
+  const match = xml.match(pattern);
+  return match ? match[1].trim() : '';
 }
 
-function parseRSSItem(item: Element, source: string): RSSItem | null {
-  try {
-    const title = getElementText(item, 'title');
-    const link = getElementText(item, 'link');
-    const description = getElementText(item, 'description');
-    const pubDate = getElementText(item, 'pubDate');
-    
-    // Try to extract image from description HTML
-    let imageUrl: string | undefined;
-    if (description) {
-      const imgMatch = description.match(/<img[^>]+src=["']([^"']+)["']/i);
-      if (imgMatch) {
-        imageUrl = imgMatch[1];
-      }
-    }
+function extractItems(xml: string): string[] {
+  const items: string[] = [];
+  const itemPattern = /<item[^>]*>([\s\S]*?)<\/item>/gi;
+  let match;
+  while ((match = itemPattern.exec(xml)) !== null) {
+    items.push(match[1]);
+  }
+  return items;
+}
 
-    // Try enclosure
-    const enclosure = item.getElementsByTagName('enclosure')[0];
-    if (!imageUrl && enclosure) {
-      const encUrl = enclosure.getAttribute('url');
-      const encType = enclosure.getAttribute('type');
-      if (encUrl && encType?.startsWith('image')) {
-        imageUrl = encUrl;
-      }
-    }
+function extractImageUrl(itemXml: string): string | undefined {
+  // Try media:content
+  const mediaMatch = itemXml.match(/<media:content[^>]+url=["']([^"']+)["']/i);
+  if (mediaMatch) return mediaMatch[1];
+  
+  // Try enclosure
+  const enclosureMatch = itemXml.match(/<enclosure[^>]+url=["']([^"']+)["'][^>]*type=["']image/i);
+  if (enclosureMatch) return enclosureMatch[1];
+  
+  // Try image in description
+  const description = extractTagContent(itemXml, 'description');
+  const imgMatch = description.match(/<img[^>]+src=["']([^"']+)["']/i);
+  if (imgMatch) return imgMatch[1];
+  
+  // Try media:thumbnail
+  const thumbMatch = itemXml.match(/<media:thumbnail[^>]+url=["']([^"']+)["']/i);
+  if (thumbMatch) return thumbMatch[1];
+  
+  return undefined;
+}
+
+function parseRSSItem(itemXml: string, source: string): RSSItem | null {
+  try {
+    const title = extractTagContent(itemXml, 'title');
+    const link = extractTagContent(itemXml, 'link');
+    const description = extractTagContent(itemXml, 'description');
+    const pubDate = extractTagContent(itemXml, 'pubDate');
+    const imageUrl = extractImageUrl(itemXml);
 
     if (!title || !link) return null;
+
+    // Strip HTML tags from description
+    const cleanDescription = description
+      .replace(/<[^>]*>/g, '')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .slice(0, 200);
 
     return {
       title,
       link,
-      description: description.replace(/<[^>]*>/g, '').slice(0, 200),
+      description: cleanDescription,
       pubDate,
       source,
       imageUrl,
@@ -76,7 +108,7 @@ async function fetchFeed(feedUrl: string, source: string): Promise<RSSItem[]> {
     const response = await fetch(feedUrl, {
       headers: {
         'User-Agent': 'MetallumX RSS Reader/1.0',
-        'Accept': 'application/rss+xml, application/xml, text/xml',
+        'Accept': 'application/rss+xml, application/xml, text/xml, */*',
       },
     });
 
@@ -86,21 +118,11 @@ async function fetchFeed(feedUrl: string, source: string): Promise<RSSItem[]> {
     }
 
     const text = await response.text();
-    
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(text, 'text/xml');
-    
-    if (!doc) {
-      console.error(`Failed to parse XML from ${feedUrl}`);
-      return [];
-    }
-
-    const items = doc.getElementsByTagName('item');
+    const items = extractItems(text);
     const parsedItems: RSSItem[] = [];
     
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      const parsed = parseRSSItem(item as Element, source);
+    for (const itemXml of items) {
+      const parsed = parseRSSItem(itemXml, source);
       if (parsed) {
         parsedItems.push(parsed);
       }
@@ -157,7 +179,7 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({ 
           success: articles.length > 0, 
-          articles: articles.slice(0, 5), // Return sample of 5 articles
+          articles: articles.slice(0, 5),
           message: articles.length > 0 
             ? `Successfully fetched ${articles.length} articles` 
             : 'No articles found or invalid RSS feed',

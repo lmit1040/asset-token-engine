@@ -237,7 +237,10 @@ export const CryptoTicker = () => {
 
   return (
     <TooltipProvider>
-      <div className="w-full bg-gradient-to-r from-card via-card/95 to-card border-y border-border overflow-hidden flex-shrink-0">
+      <div 
+        className="w-full bg-gradient-to-r from-card via-card/95 to-card border-y border-border overflow-hidden"
+        style={{ contain: 'content', position: 'relative' }}
+      >
         {/* Controls Bar */}
         <div className="border-b border-border/50 py-1.5 px-4 bg-primary/5 flex items-center justify-between">
           <div className="flex items-center gap-6 overflow-x-auto scrollbar-hide flex-1">
