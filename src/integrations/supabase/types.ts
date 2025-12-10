@@ -195,6 +195,7 @@ export type Database = {
           owner_entity: Database["public"]["Enums"]["owner_entity"]
           quantity: number
           storage_location: string | null
+          submitted_by: string | null
           unit: string
           updated_at: string
         }
@@ -211,6 +212,7 @@ export type Database = {
           owner_entity: Database["public"]["Enums"]["owner_entity"]
           quantity?: number
           storage_location?: string | null
+          submitted_by?: string | null
           unit: string
           updated_at?: string
         }
@@ -227,6 +229,7 @@ export type Database = {
           owner_entity?: Database["public"]["Enums"]["owner_entity"]
           quantity?: number
           storage_location?: string | null
+          submitted_by?: string | null
           unit?: string
           updated_at?: string
         }
@@ -939,6 +942,68 @@ export type Database = {
           updated_by?: string | null
         }
         Relationships: []
+      }
+      token_definition_proposals: {
+        Row: {
+          admin_notes: string | null
+          approved_at: string | null
+          approved_by: string | null
+          asset_id: string
+          created_at: string
+          decimals: number
+          id: string
+          notes: string | null
+          proposed_by: string
+          status: string
+          token_model: Database["public"]["Enums"]["token_model"]
+          token_name: string
+          token_symbol: string
+          total_supply: number
+          updated_at: string
+        }
+        Insert: {
+          admin_notes?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
+          asset_id: string
+          created_at?: string
+          decimals?: number
+          id?: string
+          notes?: string | null
+          proposed_by: string
+          status?: string
+          token_model?: Database["public"]["Enums"]["token_model"]
+          token_name: string
+          token_symbol: string
+          total_supply?: number
+          updated_at?: string
+        }
+        Update: {
+          admin_notes?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
+          asset_id?: string
+          created_at?: string
+          decimals?: number
+          id?: string
+          notes?: string | null
+          proposed_by?: string
+          status?: string
+          token_model?: Database["public"]["Enums"]["token_model"]
+          token_name?: string
+          token_symbol?: string
+          total_supply?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "token_definition_proposals_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       token_definitions: {
         Row: {

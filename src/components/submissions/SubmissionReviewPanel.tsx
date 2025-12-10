@@ -143,7 +143,7 @@ export function SubmissionReviewPanel({
     try {
       const { data: { user } } = await supabase.auth.getUser();
       
-      // Create the asset from submission data
+      // Create the asset from submission data, setting submitted_by to track original submitter
       const { data: newAsset, error: assetError } = await supabase
         .from('assets')
         .insert({
@@ -156,6 +156,7 @@ export function SubmissionReviewPanel({
           owner_entity: conversionData.ownerEntity,
           acquisition_date: conversionData.acquisitionDate,
           created_by: user?.id,
+          submitted_by: submission.user_id, // Track original submitter for proof upload permissions
         })
         .select()
         .single();
