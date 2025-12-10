@@ -60,7 +60,8 @@ export function SendTokensModal({ onClose, onSuccess }: SendTokensModalProps) {
         const { data: tokens } = await supabase
           .from('token_definitions')
           .select('id, token_name, token_symbol')
-          .in('id', tokenIds);
+          .in('id', tokenIds)
+          .is('archived_at', null);
 
         const tokenMap = new Map(tokens?.map(t => [t.id, t]) || []);
         
