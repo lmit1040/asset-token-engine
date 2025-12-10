@@ -5,6 +5,7 @@ import { StatCard } from '@/components/dashboard/StatCard';
 import { HoldingsTable } from '@/components/dashboard/HoldingsTable';
 import { PortfolioChart } from '@/components/dashboard/PortfolioChart';
 import { TransactionHistory } from '@/components/dashboard/TransactionHistory';
+import { CryptoTicker } from '@/components/dashboard/CryptoTicker';
 import { LegalDisclaimer } from '@/components/layout/LegalDisclaimer';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
@@ -151,6 +152,11 @@ export default function DashboardPage() {
       title="Dashboard" 
       subtitle="Overview of your tokenized assets"
     >
+      {/* Crypto Ticker */}
+      <div className="-mx-6 -mt-2 mb-6">
+        <CryptoTicker />
+      </div>
+
       <div className="space-y-6 animate-fade-in">
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
