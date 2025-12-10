@@ -102,8 +102,15 @@ export default function AdminTokenProposalsPage() {
         });
 
       if (tokenError) {
-        // Handle specific error codes with user-friendly messages
-        if (tokenError.code === '23505' || tokenError.message?.includes('duplicate') || tokenError.message?.includes('unique')) {
+        // Handle duplicate key constraint error (code 23505 or message contains constraint info)
+        const errorMessage = tokenError.message?.toLowerCase() || '';
+        const isDuplicateError = 
+          tokenError.code === '23505' || 
+          errorMessage.includes('duplicate') || 
+          errorMessage.includes('unique') ||
+          errorMessage.includes('token_symbol');
+        
+        if (isDuplicateError) {
           throw new Error(`Token symbol "${proposal.token_symbol}" already exists. Please reject this proposal and ask the user to choose a different symbol.`);
         }
         throw tokenError;
