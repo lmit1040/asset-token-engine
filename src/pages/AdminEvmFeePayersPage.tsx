@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Plus, Wallet, RefreshCw, Trash2, AlertTriangle, Copy, ExternalLink, Landmark, Wand2 } from 'lucide-react';
+import { Plus, Wallet, RefreshCw, Trash2, AlertTriangle, Copy, ExternalLink, Landmark, Wand2, Fuel } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface EvmOpsWalletInfo {
@@ -63,6 +63,7 @@ export default function AdminEvmFeePayersPage() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generateLabel, setGenerateLabel] = useState('');
   const [isRefreshingBalances, setIsRefreshingBalances] = useState(false);
+  const [isToppingUp, setIsToppingUp] = useState(false);
 
   const fetchFeePayers = async () => {
     setIsLoading(true);
@@ -374,6 +375,30 @@ export default function AdminEvmFeePayersPage() {
           >
             <Wallet className={`h-4 w-4 mr-2 ${isRefreshingBalances ? 'animate-pulse' : ''}`} />
             {isRefreshingBalances ? 'Refreshing...' : 'Refresh Balances'}
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={async () => {
+              setIsToppingUp(true);
+              try {
+                const { data, error } = await supabase.functions.invoke('top-up-evm-fee-payers', {
+                  body: { network: selectedNetwork }
+                });
+                if (error) throw error;
+                const toppedUpCount = data.results?.[selectedNetwork]?.filter((r: { topped_up: boolean }) => r.topped_up).length || 0;
+                toast.success(`Topped up ${toppedUpCount} fee payers on ${networkInfo.name}`);
+                fetchFeePayers();
+                fetchTopups();
+              } catch (error) {
+                console.error('Failed to top up fee payers:', error);
+                toast.error('Failed to run top-up check');
+              }
+              setIsToppingUp(false);
+            }}
+            disabled={isToppingUp || !opsWallet}
+          >
+            <Fuel className={`h-4 w-4 mr-2 ${isToppingUp ? 'animate-pulse' : ''}`} />
+            {isToppingUp ? 'Topping Up...' : 'Run Top-Up Check'}
           </Button>
         </div>
 
