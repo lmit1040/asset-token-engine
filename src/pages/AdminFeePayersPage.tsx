@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Plus, Wallet, RefreshCw, Trash2, AlertTriangle, Zap, Sparkles, Copy, ExternalLink, Landmark } from 'lucide-react';
+import { Plus, Wallet, RefreshCw, Trash2, AlertTriangle, Zap, Sparkles, Copy, ExternalLink, Landmark, Activity, TrendingDown, CheckCircle2, Fuel } from 'lucide-react';
 import { format } from 'date-fns';
 import { OpsWalletTransactionHistory } from '@/components/wallet/OpsWalletTransactionHistory';
 
@@ -413,6 +413,108 @@ export default function AdminFeePayersPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Health Monitoring Dashboard */}
+        {(() => {
+          const LOW_BALANCE_THRESHOLD = 0.05;
+          const CRITICAL_THRESHOLD = 0.01;
+          const lowBalancePayors = feePayers.filter(fp => fp.is_active && (fp.balance_sol || 0) < LOW_BALANCE_THRESHOLD);
+          const criticalPayors = feePayers.filter(fp => fp.is_active && (fp.balance_sol || 0) < CRITICAL_THRESHOLD);
+          const healthyPayors = feePayers.filter(fp => fp.is_active && (fp.balance_sol || 0) >= LOW_BALANCE_THRESHOLD);
+          const healthScore = feePayers.length > 0 
+            ? Math.round((healthyPayors.length / Math.max(1, feePayers.filter(fp => fp.is_active).length)) * 100) 
+            : 100;
+          const healthStatus = healthScore >= 80 ? 'healthy' : healthScore >= 50 ? 'warning' : 'critical';
+          
+          return (
+            <Card className={`border-2 ${
+              healthStatus === 'critical' ? 'border-destructive bg-destructive/5' :
+              healthStatus === 'warning' ? 'border-amber-500 bg-amber-500/5' :
+              'border-green-500 bg-green-500/5'
+            }`}>
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Activity className={`h-5 w-5 ${
+                      healthStatus === 'critical' ? 'text-destructive' :
+                      healthStatus === 'warning' ? 'text-amber-500' :
+                      'text-green-500'
+                    }`} />
+                    <CardTitle className="text-lg">Fee Payer Health (Solana)</CardTitle>
+                  </div>
+                  <Badge variant={healthStatus === 'critical' ? 'destructive' : healthStatus === 'warning' ? 'secondary' : 'default'} className={
+                    healthStatus === 'healthy' ? 'bg-green-500 hover:bg-green-600' : ''
+                  }>
+                    {healthScore}% Healthy
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                  <div className="flex items-center gap-3 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
+                    <CheckCircle2 className="h-8 w-8 text-green-500" />
+                    <div>
+                      <div className="text-2xl font-bold text-green-600">{healthyPayors.length}</div>
+                      <div className="text-xs text-muted-foreground">Healthy (≥{LOW_BALANCE_THRESHOLD} SOL)</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                    <TrendingDown className="h-8 w-8 text-amber-500" />
+                    <div>
+                      <div className="text-2xl font-bold text-amber-600">{lowBalancePayors.length - criticalPayors.length}</div>
+                      <div className="text-xs text-muted-foreground">Low Balance (&lt;{LOW_BALANCE_THRESHOLD} SOL)</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 p-3 rounded-lg bg-destructive/10 border border-destructive/20">
+                    <AlertTriangle className="h-8 w-8 text-destructive" />
+                    <div>
+                      <div className="text-2xl font-bold text-destructive">{criticalPayors.length}</div>
+                      <div className="text-xs text-muted-foreground">Critical (&lt;{CRITICAL_THRESHOLD} SOL)</div>
+                    </div>
+                  </div>
+                </div>
+                
+                {lowBalancePayors.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-sm font-medium text-muted-foreground">Wallets Needing Attention:</div>
+                    <div className="flex flex-wrap gap-2">
+                      {lowBalancePayors.map(fp => (
+                        <Badge 
+                          key={fp.id} 
+                          variant="outline" 
+                          className={`${
+                            (fp.balance_sol || 0) < CRITICAL_THRESHOLD 
+                              ? 'border-destructive text-destructive' 
+                              : 'border-amber-500 text-amber-600'
+                          }`}
+                        >
+                          {fp.label}: {(fp.balance_sol || 0).toFixed(4)} SOL
+                        </Badge>
+                      ))}
+                    </div>
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      className="mt-2"
+                      onClick={runTopUp}
+                      disabled={isToppingUp}
+                    >
+                      <Fuel className="h-3 w-3 mr-1" />
+                      {isToppingUp ? 'Topping Up...' : 'Top Up Low Balances'}
+                    </Button>
+                  </div>
+                )}
+                
+                {lowBalancePayors.length === 0 && (
+                  <div className="flex items-center gap-2 text-green-600 text-sm">
+                    <CheckCircle2 className="h-4 w-4" />
+                    All active fee payers have sufficient balance.
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          );
+        })()}
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
