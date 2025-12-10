@@ -1,16 +1,19 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Edit, Archive, Upload, FileText, Shield, Plus } from 'lucide-react';
+import { ArrowLeft, Edit, Archive, Upload, FileText, Shield, Plus, Coins, AlertCircle } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
-import { Asset, TokenDefinition, ProofOfReserveFile, ASSET_TYPE_LABELS, ASSET_TYPE_COLORS, OWNER_ENTITY_LABELS } from '@/types/database';
+import { Asset, TokenDefinition, ProofOfReserveFile, ASSET_TYPE_LABELS, ASSET_TYPE_COLORS, OWNER_ENTITY_LABELS, TokenModel } from '@/types/database';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { ProofUploadModal } from '@/components/assets/ProofUploadModal';
 import { TokenDefinitionModal } from '@/components/assets/TokenDefinitionModal';
+import { ProposeTokenDefinitionModal } from '@/components/assets/ProposeTokenDefinitionModal';
 import { TokenDetailCard } from '@/components/assets/TokenDetailCard';
+import { TokenProposalCard } from '@/components/assets/TokenProposalCard';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,31 +26,60 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
+interface TokenProposal {
+  id: string;
+  asset_id: string;
+  proposed_by: string;
+  token_name: string;
+  token_symbol: string;
+  token_model: TokenModel;
+  decimals: number;
+  total_supply: number;
+  notes: string | null;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  admin_notes: string | null;
+  created_at: string;
+}
+
+// Extended asset type that includes submitted_by
+interface AssetWithSubmitter extends Asset {
+  submitted_by?: string | null;
+}
+
 export default function AssetDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { isAdmin, user } = useAuth();
-  const [asset, setAsset] = useState<Asset | null>(null);
+  const [asset, setAsset] = useState<AssetWithSubmitter | null>(null);
   const [proofFiles, setProofFiles] = useState<ProofOfReserveFile[]>([]);
   const [tokenDefinitions, setTokenDefinitions] = useState<TokenDefinition[]>([]);
+  const [tokenProposals, setTokenProposals] = useState<TokenProposal[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showProofModal, setShowProofModal] = useState(false);
   const [showTokenModal, setShowTokenModal] = useState(false);
+  const [showProposeTokenModal, setShowProposeTokenModal] = useState(false);
+
+  // Check if current user is the original submitter
+  const isOriginalSubmitter = user && asset?.submitted_by === user.id;
+  const canUploadProofs = isAdmin || isOriginalSubmitter;
+  const canProposeTokens = isOriginalSubmitter && !isAdmin;
 
   const fetchData = useCallback(async () => {
     if (!id) return;
 
     setIsLoading(true);
     try {
-      const [assetRes, proofsRes, tokensRes] = await Promise.all([
+      const [assetRes, proofsRes, tokensRes, proposalsRes] = await Promise.all([
         supabase.from('assets').select('*').eq('id', id).maybeSingle(),
         supabase.from('proof_of_reserve_files').select('*').eq('asset_id', id).order('uploaded_at', { ascending: false }),
         supabase.from('token_definitions').select('*').eq('asset_id', id).order('created_at', { ascending: false }),
+        supabase.from('token_definition_proposals').select('*').eq('asset_id', id).order('created_at', { ascending: false }),
       ]);
 
-      if (assetRes.data) setAsset(assetRes.data as Asset);
+      if (assetRes.data) setAsset(assetRes.data as AssetWithSubmitter);
       if (proofsRes.data) setProofFiles(proofsRes.data as ProofOfReserveFile[]);
       if (tokensRes.data) setTokenDefinitions(tokensRes.data as TokenDefinition[]);
+      if (proposalsRes.data) setTokenProposals(proposalsRes.data as TokenProposal[]);
     } catch (error) {
       console.error('Error fetching asset:', error);
     } finally {
@@ -215,6 +247,16 @@ export default function AssetDetailPage() {
           </div>
         </div>
 
+        {/* Submitter info banner */}
+        {isOriginalSubmitter && !isAdmin && (
+          <Alert className="border-primary/30 bg-primary/5">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              You submitted this asset. You can upload additional proof files and propose token definitions for admin review.
+            </AlertDescription>
+          </Alert>
+        )}
+
         {/* Proof of Reserve Files */}
         <div className="glass-card p-6">
           <div className="flex items-center justify-between mb-4">
@@ -222,7 +264,7 @@ export default function AssetDetailPage() {
               <h2 className="text-lg font-semibold text-foreground">Proof of Reserve Files</h2>
               <p className="text-sm text-muted-foreground">Uploaded documents with SHA-256 verification</p>
             </div>
-            {isAdmin && (
+            {canUploadProofs && (
               <Button onClick={() => setShowProofModal(true)}>
                 <Upload className="h-4 w-4" />
                 Upload Proof
@@ -284,12 +326,20 @@ export default function AssetDetailPage() {
               <h2 className="text-lg font-semibold text-foreground">Token Definitions</h2>
               <p className="text-sm text-muted-foreground">Tokenization models for this asset</p>
             </div>
-            {isAdmin && (
-              <Button onClick={() => setShowTokenModal(true)}>
-                <Plus className="h-4 w-4" />
-                Create Token
-              </Button>
-            )}
+            <div className="flex gap-2">
+              {canProposeTokens && (
+                <Button variant="outline" onClick={() => setShowProposeTokenModal(true)}>
+                  <Coins className="h-4 w-4" />
+                  Propose Token
+                </Button>
+              )}
+              {isAdmin && (
+                <Button onClick={() => setShowTokenModal(true)}>
+                  <Plus className="h-4 w-4" />
+                  Create Token
+                </Button>
+              )}
+            </div>
           </div>
 
           {tokenDefinitions.length === 0 ? (
@@ -309,6 +359,38 @@ export default function AssetDetailPage() {
             </div>
           )}
         </div>
+
+        {/* Token Proposals Section */}
+        {(tokenProposals.length > 0 || canProposeTokens) && (
+          <div className="glass-card p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-semibold text-foreground">Token Proposals</h2>
+                <p className="text-sm text-muted-foreground">
+                  {isAdmin ? 'Review and approve token definition proposals' : 'Your proposed token definitions awaiting admin approval'}
+                </p>
+              </div>
+            </div>
+
+            {tokenProposals.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                No token proposals yet.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {tokenProposals.map((proposal) => (
+                  <TokenProposalCard
+                    key={proposal.id}
+                    proposal={proposal}
+                    isAdmin={isAdmin}
+                    isOwner={user?.id === proposal.proposed_by}
+                    onUpdate={fetchData}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Modals */}
@@ -329,6 +411,17 @@ export default function AssetDetailPage() {
           onClose={() => setShowTokenModal(false)}
           onSuccess={() => {
             setShowTokenModal(false);
+            fetchData();
+          }}
+        />
+      )}
+
+      {showProposeTokenModal && (
+        <ProposeTokenDefinitionModal
+          asset={asset}
+          onClose={() => setShowProposeTokenModal(false)}
+          onSuccess={() => {
+            setShowProposeTokenModal(false);
             fetchData();
           }}
         />
