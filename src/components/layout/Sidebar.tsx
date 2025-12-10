@@ -22,7 +22,8 @@ import {
   Archive,
   Zap,
   ShieldCheck,
-  Bot
+  Bot,
+  Newspaper
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
@@ -50,6 +51,7 @@ const adminNavigation = [
   { name: 'Fee Payers (EVM)', href: '/admin/evm-fee-payers', icon: Globe },
   { name: 'Arbitrage', href: '/admin/arbitrage/strategies', icon: Zap },
   { name: 'Auto Arbitrage', href: '/admin/arbitrage/automation', icon: Bot },
+  { name: 'News', href: '/admin/news', icon: Newspaper },
   { name: 'Archived', href: '/admin/archived', icon: Archive },
   { name: 'Activity', href: '/admin/activity', icon: Activity },
 ];
