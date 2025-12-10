@@ -149,12 +149,12 @@ export default function DashboardPage() {
   };
 
   return (
-    <DashboardLayout 
-      title="Dashboard" 
+    <DashboardLayout
+      title="Dashboard"
       subtitle="Overview of your tokenized assets"
     >
-      {/* Crypto Ticker */}
-      <div className="-mx-6 -mt-2 mb-6 flex-shrink-0">
+      {/* Crypto Ticker - isolated container to prevent layout shifts */}
+      <div className="-mx-6 -mt-2 mb-6 relative overflow-hidden" style={{ contain: 'layout style' }}>
         <CryptoTicker />
       </div>
 
