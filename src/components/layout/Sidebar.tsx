@@ -21,7 +21,8 @@ import {
   ClipboardList,
   Archive,
   Zap,
-  ShieldCheck
+  ShieldCheck,
+  Bot
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
@@ -48,6 +49,7 @@ const adminNavigation = [
   { name: 'Fee Payers (SOL)', href: '/admin/fee-payers', icon: Wallet },
   { name: 'Fee Payers (EVM)', href: '/admin/evm-fee-payers', icon: Globe },
   { name: 'Arbitrage', href: '/admin/arbitrage/strategies', icon: Zap },
+  { name: 'Auto Arbitrage', href: '/admin/arbitrage/automation', icon: Bot },
   { name: 'Archived', href: '/admin/archived', icon: Archive },
   { name: 'Activity', href: '/admin/activity', icon: Activity },
 ];
