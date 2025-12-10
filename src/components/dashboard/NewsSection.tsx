@@ -42,16 +42,23 @@ export const NewsSection = () => {
     setRssError(null);
     
     try {
+      console.log('Fetching RSS feeds...');
       const { data, error } = await supabase.functions.invoke('fetch-rss-feeds', {
         body: { limit: 15 }
       });
 
+      console.log('RSS response:', { data, error });
+
       if (error) throw error;
 
-      if (data?.success) {
-        setRssItems(data.items || []);
+      if (data?.success && data?.items) {
+        setRssItems(data.items);
+        console.log(`Loaded ${data.items.length} RSS items`);
+      } else if (data?.items) {
+        setRssItems(data.items);
       } else {
-        throw new Error(data?.error || 'Failed to fetch RSS feeds');
+        console.warn('RSS response missing items:', data);
+        setRssError('No news articles available');
       }
     } catch (err) {
       console.error('Error fetching RSS feeds:', err);
