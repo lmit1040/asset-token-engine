@@ -811,6 +811,45 @@ export type Database = {
           },
         ]
       }
+      system_settings: {
+        Row: {
+          auto_arbitrage_enabled: boolean
+          auto_flash_loans_enabled: boolean
+          id: string
+          max_global_daily_loss_native: number
+          max_global_trades_per_day: number
+          safe_mode_enabled: boolean
+          safe_mode_reason: string | null
+          safe_mode_triggered_at: string | null
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          auto_arbitrage_enabled?: boolean
+          auto_flash_loans_enabled?: boolean
+          id?: string
+          max_global_daily_loss_native?: number
+          max_global_trades_per_day?: number
+          safe_mode_enabled?: boolean
+          safe_mode_reason?: string | null
+          safe_mode_triggered_at?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          auto_arbitrage_enabled?: boolean
+          auto_flash_loans_enabled?: boolean
+          id?: string
+          max_global_daily_loss_native?: number
+          max_global_trades_per_day?: number
+          safe_mode_enabled?: boolean
+          safe_mode_reason?: string | null
+          safe_mode_triggered_at?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
       token_definitions: {
         Row: {
           archived_at: string | null
@@ -1129,6 +1168,27 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_system_settings: {
+        Args: never
+        Returns: {
+          auto_arbitrage_enabled: boolean
+          auto_flash_loans_enabled: boolean
+          id: string
+          max_global_daily_loss_native: number
+          max_global_trades_per_day: number
+          safe_mode_enabled: boolean
+          safe_mode_reason: string | null
+          safe_mode_triggered_at: string | null
+          updated_at: string
+          updated_by: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "system_settings"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
