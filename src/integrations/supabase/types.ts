@@ -1097,6 +1097,33 @@ export type Database = {
           },
         ]
       }
+      wallet_balance_snapshots: {
+        Row: {
+          balance_native: number
+          captured_at: string
+          chain: string
+          id: string
+          wallet_address: string
+          wallet_type: string
+        }
+        Insert: {
+          balance_native: number
+          captured_at?: string
+          chain: string
+          id?: string
+          wallet_address: string
+          wallet_type: string
+        }
+        Update: {
+          balance_native?: number
+          captured_at?: string
+          chain?: string
+          id?: string
+          wallet_address?: string
+          wallet_type?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
