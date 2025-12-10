@@ -23,7 +23,8 @@ import {
   Zap,
   ShieldCheck,
   Bot,
-  Newspaper
+  Newspaper,
+  FileText
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
@@ -43,6 +44,7 @@ const navigation = [
 const adminNavigation = [
   { name: 'Users', href: '/admin/users', icon: Users },
   { name: 'Review Submissions', href: '/admin/submissions', icon: ClipboardList },
+  { name: 'Token Proposals', href: '/admin/token-proposals', icon: FileText },
   { name: 'Assign Tokens', href: '/admin/assign', icon: Shield },
   { name: 'Transfer Tokens', href: '/admin/transfer', icon: RefreshCw },
   { name: 'On-Chain Delivery', href: '/admin/deliver', icon: Send },
