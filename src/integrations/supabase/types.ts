@@ -50,11 +50,16 @@ export type Database = {
       arbitrage_runs: {
         Row: {
           actual_profit_lamports: number | null
+          approved_for_auto_execution: boolean
+          auto_executed: boolean
           created_at: string
           error_message: string | null
+          estimated_gas_cost_native: number | null
           estimated_profit_lamports: number | null
           finished_at: string | null
           id: string
+          purpose: string | null
+          run_type: string | null
           started_at: string
           status: Database["public"]["Enums"]["arbitrage_run_status"]
           strategy_id: string
@@ -63,11 +68,16 @@ export type Database = {
         }
         Insert: {
           actual_profit_lamports?: number | null
+          approved_for_auto_execution?: boolean
+          auto_executed?: boolean
           created_at?: string
           error_message?: string | null
+          estimated_gas_cost_native?: number | null
           estimated_profit_lamports?: number | null
           finished_at?: string | null
           id?: string
+          purpose?: string | null
+          run_type?: string | null
           started_at?: string
           status: Database["public"]["Enums"]["arbitrage_run_status"]
           strategy_id: string
@@ -76,11 +86,16 @@ export type Database = {
         }
         Update: {
           actual_profit_lamports?: number | null
+          approved_for_auto_execution?: boolean
+          auto_executed?: boolean
           created_at?: string
           error_message?: string | null
+          estimated_gas_cost_native?: number | null
           estimated_profit_lamports?: number | null
           finished_at?: string | null
           id?: string
+          purpose?: string | null
+          run_type?: string | null
           started_at?: string
           status?: Database["public"]["Enums"]["arbitrage_run_status"]
           strategy_id?: string
