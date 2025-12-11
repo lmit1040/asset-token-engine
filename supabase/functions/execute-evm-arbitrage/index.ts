@@ -235,13 +235,8 @@ async function autoRefillEvmFeePayers(network: string): Promise<void> {
   }
 }
 
-// 0x API endpoints per network for swap execution
-const ZEROX_SWAP_URLS: Record<string, string> = {
-  POLYGON: "https://polygon.api.0x.org",
-  ETHEREUM: "https://api.0x.org",
-  ARBITRUM: "https://arbitrum.api.0x.org",
-  BSC: "https://bsc.api.0x.org",
-};
+// 0x API v2 base URL (same for all chains)
+const ZEROX_API_BASE_URL = "https://api.0x.org";
 
 // Get executable swap transaction from 0x API v2
 async function getZeroXSwapTransaction(params: {
@@ -254,11 +249,10 @@ async function getZeroXSwapTransaction(params: {
   const { network, sellToken, buyToken, sellAmount, takerAddress } = params;
   const normalizedNetwork = network.toUpperCase();
   
-  const baseUrl = ZEROX_SWAP_URLS[normalizedNetwork];
   const chainId = CHAIN_IDS[normalizedNetwork];
   const apiKey = Deno.env.get("ZEROX_API_KEY");
 
-  if (!baseUrl || !chainId) {
+  if (!chainId) {
     console.error(`[execute-evm-arbitrage] Unsupported network: ${normalizedNetwork}`);
     return null;
   }
@@ -269,7 +263,8 @@ async function getZeroXSwapTransaction(params: {
   }
 
   // Use v2 allowance-holder/quote endpoint which returns executable transaction data
-  const url = new URL(`${baseUrl}/swap/allowance-holder/quote`);
+  // 0x API v2 uses single base URL with chainId parameter
+  const url = new URL(`${ZEROX_API_BASE_URL}/swap/allowance-holder/quote`);
   url.searchParams.set("sellToken", sellToken);
   url.searchParams.set("buyToken", buyToken);
   url.searchParams.set("sellAmount", sellAmount);
