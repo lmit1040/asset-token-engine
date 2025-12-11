@@ -139,75 +139,116 @@ const handler = async (req: Request): Promise<Response> => {
     // Find which fee payer owns the treasury account by matching ATAs
     // Check ALL fee payers (including deactivated ones) since treasury may have been created by one that's now inactive
     console.log('Finding fee payer that owns treasury account...');
+    console.log('Treasury account to match:', treasuryTokenAccount.toBase58());
+    
     const { data: feePayerKeys, error: feePayerError } = await supabase
       .from('fee_payer_keys')
       .select('id, public_key, label, is_active');
 
-    if (feePayerError || !feePayerKeys || feePayerKeys.length === 0) {
-      console.error('No fee payers found:', feePayerError);
-      return new Response(
-        JSON.stringify({ error: 'No fee payers found in the system' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    if (feePayerError) {
+      console.error('Error fetching fee payers:', feePayerError);
     }
 
     let matchingFeePayerId: string | null = null;
     let matchingFeePayerLabel: string | null = null;
-    let matchingFeePayerActive: boolean | null = null;
+    let useLegacyFeePayer = false;
+    let legacyFeePayerKeypair: Keypair | null = null;
 
-    // Check each fee payer to find the one whose ATA matches the treasury
-    for (const fp of feePayerKeys) {
-      const fpPubkey = new PublicKey(fp.public_key);
-      const derivedAta = await getAssociatedTokenAddress(
-        mintAddress,
-        fpPubkey,
-        false,
-        TOKEN_PROGRAM_ID,
-        ASSOCIATED_TOKEN_PROGRAM_ID
-      );
-      
-      if (derivedAta.equals(treasuryTokenAccount)) {
-        matchingFeePayerId = fp.id;
-        matchingFeePayerLabel = fp.label;
-        matchingFeePayerActive = fp.is_active;
-        console.log('Found matching fee payer:', fp.public_key, '(label:', fp.label, ', active:', fp.is_active, ')');
-        break;
+    // First check database fee payers
+    if (feePayerKeys && feePayerKeys.length > 0) {
+      for (const fp of feePayerKeys) {
+        const fpPubkey = new PublicKey(fp.public_key);
+        const derivedAta = await getAssociatedTokenAddress(
+          mintAddress,
+          fpPubkey,
+          false,
+          TOKEN_PROGRAM_ID,
+          ASSOCIATED_TOKEN_PROGRAM_ID
+        );
+        
+        console.log('Checking fee payer:', fp.public_key, '-> ATA:', derivedAta.toBase58());
+        
+        if (derivedAta.equals(treasuryTokenAccount)) {
+          matchingFeePayerId = fp.id;
+          matchingFeePayerLabel = fp.label;
+          console.log('Found matching fee payer:', fp.public_key, '(label:', fp.label, ', active:', fp.is_active, ')');
+          break;
+        }
       }
     }
 
+    // If not found in database, check legacy fee payer from environment variable
     if (!matchingFeePayerId) {
+      console.log('No match in database fee payers, checking legacy fee payer...');
+      const legacyFeePayerSecret = Deno.env.get('SOLANA_FEE_PAYER_SECRET_KEY');
+      
+      if (legacyFeePayerSecret) {
+        try {
+          const secretKeyArray = JSON.parse(legacyFeePayerSecret);
+          legacyFeePayerKeypair = Keypair.fromSecretKey(new Uint8Array(secretKeyArray));
+          const legacyPubkey = legacyFeePayerKeypair.publicKey;
+          
+          const legacyDerivedAta = await getAssociatedTokenAddress(
+            mintAddress,
+            legacyPubkey,
+            false,
+            TOKEN_PROGRAM_ID,
+            ASSOCIATED_TOKEN_PROGRAM_ID
+          );
+          
+          console.log('Legacy fee payer:', legacyPubkey.toBase58(), '-> ATA:', legacyDerivedAta.toBase58());
+          
+          if (legacyDerivedAta.equals(treasuryTokenAccount)) {
+            useLegacyFeePayer = true;
+            console.log('Found match with legacy fee payer!');
+          }
+        } catch (parseError) {
+          console.error('Failed to parse legacy fee payer secret:', parseError);
+        }
+      }
+    }
+
+    if (!matchingFeePayerId && !useLegacyFeePayer) {
       console.error('Could not find fee payer that owns treasury account');
       console.error('Treasury account:', treasuryTokenAccount.toBase58());
-      console.error('Checked', feePayerKeys.length, 'fee payers');
+      console.error('Checked', feePayerKeys?.length || 0, 'database fee payers and legacy fee payer');
       return new Response(
-        JSON.stringify({ error: 'Could not find fee payer that owns the treasury account. The treasury may have been created with a different wallet.' }),
+        JSON.stringify({ error: 'Could not find fee payer that owns the treasury account. The treasury may have been created with a different wallet that is no longer available.' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Get the specific fee payer keypair that owns the treasury
-    console.log('Fetching treasury owner fee payer keypair...');
-    const feePayerResponse = await fetch(`${supabaseUrl}/functions/v1/get-fee-payer-keypair`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${supabaseServiceKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ fee_payer_id: matchingFeePayerId }),
-    });
+    let feePayerKeypair: Keypair;
 
-    if (!feePayerResponse.ok) {
-      const errorData = await feePayerResponse.json();
-      console.error('Failed to get fee payer:', errorData);
-      return new Response(
-        JSON.stringify({ error: errorData.error || 'Failed to get fee payer keypair' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    if (useLegacyFeePayer && legacyFeePayerKeypair) {
+      // Use legacy fee payer
+      feePayerKeypair = legacyFeePayerKeypair;
+      console.log('Using legacy fee payer:', feePayerKeypair.publicKey.toBase58());
+    } else {
+      // Get the specific fee payer keypair from database
+      console.log('Fetching treasury owner fee payer keypair from database...');
+      const feePayerResponse = await fetch(`${supabaseUrl}/functions/v1/get-fee-payer-keypair`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${supabaseServiceKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ fee_payer_id: matchingFeePayerId }),
+      });
+
+      if (!feePayerResponse.ok) {
+        const errorData = await feePayerResponse.json();
+        console.error('Failed to get fee payer:', errorData);
+        return new Response(
+          JSON.stringify({ error: errorData.error || 'Failed to get fee payer keypair' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const feePayerData = await feePayerResponse.json();
+      feePayerKeypair = Keypair.fromSecretKey(new Uint8Array(feePayerData.secret_key_array));
+      console.log('Using database fee payer:', feePayerData.public_key, '(label:', matchingFeePayerLabel, ')');
     }
-
-    const feePayerData = await feePayerResponse.json();
-    const feePayerKeypair = Keypair.fromSecretKey(new Uint8Array(feePayerData.secret_key_array));
-    console.log('Using treasury owner fee payer:', feePayerData.public_key, '(label:', matchingFeePayerLabel, ')');
 
     const recipientWallet = new PublicKey(user.solana_wallet_address);
 
