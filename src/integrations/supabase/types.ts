@@ -57,6 +57,9 @@ export type Database = {
           estimated_gas_cost_native: number | null
           estimated_profit_lamports: number | null
           finished_at: string | null
+          flash_loan_amount: string | null
+          flash_loan_fee: string | null
+          flash_loan_provider: string | null
           id: string
           purpose: string | null
           run_type: string | null
@@ -65,6 +68,7 @@ export type Database = {
           strategy_id: string
           tx_signature: string | null
           updated_at: string
+          used_flash_loan: boolean | null
         }
         Insert: {
           actual_profit_lamports?: number | null
@@ -75,6 +79,9 @@ export type Database = {
           estimated_gas_cost_native?: number | null
           estimated_profit_lamports?: number | null
           finished_at?: string | null
+          flash_loan_amount?: string | null
+          flash_loan_fee?: string | null
+          flash_loan_provider?: string | null
           id?: string
           purpose?: string | null
           run_type?: string | null
@@ -83,6 +90,7 @@ export type Database = {
           strategy_id: string
           tx_signature?: string | null
           updated_at?: string
+          used_flash_loan?: boolean | null
         }
         Update: {
           actual_profit_lamports?: number | null
@@ -93,6 +101,9 @@ export type Database = {
           estimated_gas_cost_native?: number | null
           estimated_profit_lamports?: number | null
           finished_at?: string | null
+          flash_loan_amount?: string | null
+          flash_loan_fee?: string | null
+          flash_loan_provider?: string | null
           id?: string
           purpose?: string | null
           run_type?: string | null
@@ -101,6 +112,7 @@ export type Database = {
           strategy_id?: string
           tx_signature?: string | null
           updated_at?: string
+          used_flash_loan?: boolean | null
         }
         Relationships: [
           {
@@ -119,6 +131,10 @@ export type Database = {
           dex_a: string
           dex_b: string
           evm_network: string | null
+          flash_loan_amount_native: number | null
+          flash_loan_fee_bps: number | null
+          flash_loan_provider: string | null
+          flash_loan_token: string | null
           id: string
           is_auto_enabled: boolean
           is_enabled: boolean
@@ -134,6 +150,7 @@ export type Database = {
           token_in_mint: string
           token_out_mint: string
           updated_at: string
+          use_flash_loan: boolean | null
         }
         Insert: {
           chain_type?: string
@@ -141,6 +158,10 @@ export type Database = {
           dex_a: string
           dex_b: string
           evm_network?: string | null
+          flash_loan_amount_native?: number | null
+          flash_loan_fee_bps?: number | null
+          flash_loan_provider?: string | null
+          flash_loan_token?: string | null
           id?: string
           is_auto_enabled?: boolean
           is_enabled?: boolean
@@ -156,6 +177,7 @@ export type Database = {
           token_in_mint: string
           token_out_mint: string
           updated_at?: string
+          use_flash_loan?: boolean | null
         }
         Update: {
           chain_type?: string
@@ -163,6 +185,10 @@ export type Database = {
           dex_a?: string
           dex_b?: string
           evm_network?: string | null
+          flash_loan_amount_native?: number | null
+          flash_loan_fee_bps?: number | null
+          flash_loan_provider?: string | null
+          flash_loan_token?: string | null
           id?: string
           is_auto_enabled?: boolean
           is_enabled?: boolean
@@ -178,6 +204,7 @@ export type Database = {
           token_in_mint?: string
           token_out_mint?: string
           updated_at?: string
+          use_flash_loan?: boolean | null
         }
         Relationships: []
       }
@@ -490,6 +517,51 @@ export type Database = {
           fee_payer_public_key?: string
           id?: string
           tx_signature?: string | null
+        }
+        Relationships: []
+      }
+      flash_loan_providers: {
+        Row: {
+          chain: string
+          contract_address: string
+          created_at: string | null
+          display_name: string
+          fee_bps: number
+          id: string
+          is_active: boolean | null
+          max_loan_amount_native: number | null
+          name: string
+          pool_address: string | null
+          supported_tokens: string[] | null
+          updated_at: string | null
+        }
+        Insert: {
+          chain: string
+          contract_address: string
+          created_at?: string | null
+          display_name: string
+          fee_bps?: number
+          id?: string
+          is_active?: boolean | null
+          max_loan_amount_native?: number | null
+          name: string
+          pool_address?: string | null
+          supported_tokens?: string[] | null
+          updated_at?: string | null
+        }
+        Update: {
+          chain?: string
+          contract_address?: string
+          created_at?: string | null
+          display_name?: string
+          fee_bps?: number
+          id?: string
+          is_active?: boolean | null
+          max_loan_amount_native?: number | null
+          name?: string
+          pool_address?: string | null
+          supported_tokens?: string[] | null
+          updated_at?: string | null
         }
         Relationships: []
       }
@@ -908,7 +980,10 @@ export type Database = {
         Row: {
           auto_arbitrage_enabled: boolean
           auto_flash_loans_enabled: boolean
+          flash_loan_cooldown_seconds: number | null
+          flash_loan_profit_threshold_bps: number | null
           id: string
+          max_flash_loan_amount_native: number | null
           max_global_daily_loss_native: number
           max_global_trades_per_day: number
           safe_mode_enabled: boolean
@@ -920,7 +995,10 @@ export type Database = {
         Insert: {
           auto_arbitrage_enabled?: boolean
           auto_flash_loans_enabled?: boolean
+          flash_loan_cooldown_seconds?: number | null
+          flash_loan_profit_threshold_bps?: number | null
           id?: string
+          max_flash_loan_amount_native?: number | null
           max_global_daily_loss_native?: number
           max_global_trades_per_day?: number
           safe_mode_enabled?: boolean
@@ -932,7 +1010,10 @@ export type Database = {
         Update: {
           auto_arbitrage_enabled?: boolean
           auto_flash_loans_enabled?: boolean
+          flash_loan_cooldown_seconds?: number | null
+          flash_loan_profit_threshold_bps?: number | null
           id?: string
+          max_flash_loan_amount_native?: number | null
           max_global_daily_loss_native?: number
           max_global_trades_per_day?: number
           safe_mode_enabled?: boolean
@@ -1387,7 +1468,10 @@ export type Database = {
         Returns: {
           auto_arbitrage_enabled: boolean
           auto_flash_loans_enabled: boolean
+          flash_loan_cooldown_seconds: number | null
+          flash_loan_profit_threshold_bps: number | null
           id: string
+          max_flash_loan_amount_native: number | null
           max_global_daily_loss_native: number
           max_global_trades_per_day: number
           safe_mode_enabled: boolean
