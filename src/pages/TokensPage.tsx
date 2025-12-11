@@ -1,9 +1,9 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { Coins, ExternalLink, Globe, CheckCircle, XCircle, Search, ArrowUpDown, ArrowUp, ArrowDown, RefreshCw, Wallet } from 'lucide-react';
+import { Coins, ExternalLink, Globe, CheckCircle, XCircle, Search, ArrowUpDown, ArrowUp, ArrowDown, RefreshCw, Wallet, TrendingUp } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { supabase } from '@/integrations/supabase/client';
-import { TokenDefinition, Asset, UserTokenHolding, TOKEN_MODEL_LABELS, ASSET_TYPE_LABELS, BLOCKCHAIN_CHAIN_LABELS, BlockchainChain, NETWORK_TYPE_LABELS, NetworkType, DEPLOYMENT_STATUS_LABELS, DeploymentStatus } from '@/types/database';
+import { TokenDefinition, Asset, UserTokenHolding, TOKEN_MODEL_LABELS, ASSET_TYPE_LABELS, BLOCKCHAIN_CHAIN_LABELS, BlockchainChain, NETWORK_TYPE_LABELS, NetworkType, DEPLOYMENT_STATUS_LABELS, DeploymentStatus, ASSET_PRICES } from '@/types/database';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
@@ -31,6 +31,7 @@ interface HoldingWithDetails extends UserTokenHolding {
 }
 
 type SortField = 'token_name' | 'token_symbol' | 'total_supply' | 'created_at';
+type HoldingsSortField = 'token_name' | 'balance' | 'asset_type';
 type SortDirection = 'asc' | 'desc';
 
 const PAGE_SIZE = 10;
@@ -58,9 +59,13 @@ export default function TokensPage() {
   const [holdingsSearchQuery, setHoldingsSearchQuery] = useState('');
   const [holdingsChainFilter, setHoldingsChainFilter] = useState<string>('all');
   
-  // Sorting
+  // All Tokens Sorting
   const [sortField, setSortField] = useState<SortField>('created_at');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  
+  // Holdings Sorting
+  const [holdingsSortField, setHoldingsSortField] = useState<HoldingsSortField>('balance');
+  const [holdingsSortDirection, setHoldingsSortDirection] = useState<SortDirection>('desc');
   
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -185,8 +190,8 @@ export default function TokensPage() {
     return result;
   }, [tokens, searchQuery, chainFilter, statusFilter, modelFilter, sortField, sortDirection]);
 
-  // Filter holdings
-  const filteredHoldings = useMemo(() => {
+  // Filter and sort holdings
+  const filteredAndSortedHoldings = useMemo(() => {
     let result = [...holdings];
     
     // Apply search filter
@@ -204,8 +209,50 @@ export default function TokensPage() {
       result = result.filter(holding => holding.token_definition?.chain === holdingsChainFilter);
     }
     
+    // Apply sorting
+    result.sort((a, b) => {
+      let comparison = 0;
+      switch (holdingsSortField) {
+        case 'token_name':
+          comparison = (a.token_definition?.token_name || '').localeCompare(b.token_definition?.token_name || '');
+          break;
+        case 'balance':
+          comparison = Number(a.balance) - Number(b.balance);
+          break;
+        case 'asset_type':
+          comparison = (a.token_definition?.asset?.asset_type || '').localeCompare(b.token_definition?.asset?.asset_type || '');
+          break;
+      }
+      return holdingsSortDirection === 'asc' ? comparison : -comparison;
+    });
+    
     return result;
-  }, [holdings, holdingsSearchQuery, holdingsChainFilter]);
+  }, [holdings, holdingsSearchQuery, holdingsChainFilter, holdingsSortField, holdingsSortDirection]);
+
+  // Portfolio summary calculation
+  const portfolioSummary = useMemo(() => {
+    const totalTokens = holdings.length;
+    const totalBalance = holdings.reduce((sum, h) => sum + Number(h.balance), 0);
+    
+    // Calculate estimated value using ASSET_PRICES
+    let estimatedValue = 0;
+    holdings.forEach(h => {
+      const assetType = h.token_definition?.asset?.asset_type;
+      const price = assetType ? (ASSET_PRICES[assetType] || 0) : 0;
+      estimatedValue += Number(h.balance) * price;
+    });
+    
+    // Count by asset type
+    const byAssetType: Record<string, number> = {};
+    holdings.forEach(h => {
+      const assetType = h.token_definition?.asset?.asset_type;
+      if (assetType) {
+        byAssetType[assetType] = (byAssetType[assetType] || 0) + Number(h.balance);
+      }
+    });
+    
+    return { totalTokens, totalBalance, estimatedValue, byAssetType };
+  }, [holdings]);
 
   // Pagination for all tokens
   const totalPages = Math.ceil(filteredAndSortedTokens.length / PAGE_SIZE);
@@ -215,8 +262,8 @@ export default function TokensPage() {
   );
 
   // Pagination for holdings
-  const holdingsTotalPages = Math.ceil(filteredHoldings.length / PAGE_SIZE);
-  const paginatedHoldings = filteredHoldings.slice(
+  const holdingsTotalPages = Math.ceil(filteredAndSortedHoldings.length / PAGE_SIZE);
+  const paginatedHoldings = filteredAndSortedHoldings.slice(
     (holdingsCurrentPage - 1) * PAGE_SIZE,
     holdingsCurrentPage * PAGE_SIZE
   );
@@ -226,10 +273,10 @@ export default function TokensPage() {
     setCurrentPage(1);
   }, [searchQuery, chainFilter, statusFilter, modelFilter]);
 
-  // Reset holdings page when filters change
+  // Reset holdings page when filters/sort change
   useEffect(() => {
     setHoldingsCurrentPage(1);
-  }, [holdingsSearchQuery, holdingsChainFilter]);
+  }, [holdingsSearchQuery, holdingsChainFilter, holdingsSortField, holdingsSortDirection]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -240,9 +287,25 @@ export default function TokensPage() {
     }
   };
 
+  const handleHoldingsSort = (field: HoldingsSortField) => {
+    if (holdingsSortField === field) {
+      setHoldingsSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setHoldingsSortField(field);
+      setHoldingsSortDirection('desc');
+    }
+  };
+
   const SortIcon = ({ field }: { field: SortField }) => {
     if (sortField !== field) return <ArrowUpDown className="h-4 w-4 text-muted-foreground" />;
     return sortDirection === 'asc' 
+      ? <ArrowUp className="h-4 w-4 text-primary" />
+      : <ArrowDown className="h-4 w-4 text-primary" />;
+  };
+
+  const HoldingsSortIcon = ({ field }: { field: HoldingsSortField }) => {
+    if (holdingsSortField !== field) return <ArrowUpDown className="h-4 w-4 text-muted-foreground" />;
+    return holdingsSortDirection === 'asc' 
       ? <ArrowUp className="h-4 w-4 text-primary" />
       : <ArrowDown className="h-4 w-4 text-primary" />;
   };
@@ -466,7 +529,46 @@ export default function TokensPage() {
 
           {/* My Holdings Tab */}
           <TabsContent value="my-holdings" className="space-y-4 mt-4">
-            {/* Holdings Filters */}
+            {/* Portfolio Summary */}
+            {holdings.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="glass-card p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-primary/10">
+                      <Wallet className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Total Holdings</p>
+                      <p className="text-2xl font-bold text-foreground">{portfolioSummary.totalTokens}</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="glass-card p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-primary/10">
+                      <Coins className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Total Token Balance</p>
+                      <p className="text-2xl font-bold text-foreground">{portfolioSummary.totalBalance.toLocaleString()}</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="glass-card p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-primary/10">
+                      <TrendingUp className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Estimated Value</p>
+                      <p className="text-2xl font-bold text-foreground">${portfolioSummary.estimatedValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Holdings Filters & Sort */}
             <div className="glass-card p-4">
               <div className="flex flex-col md:flex-row gap-4">
                 <div className="relative flex-1">
@@ -489,6 +591,24 @@ export default function TokensPage() {
                     ))}
                   </SelectContent>
                 </Select>
+                <Select value={holdingsSortField} onValueChange={(v) => setHoldingsSortField(v as HoldingsSortField)}>
+                  <SelectTrigger className="w-full md:w-[140px]">
+                    <SelectValue placeholder="Sort by" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="balance">Balance</SelectItem>
+                    <SelectItem value="token_name">Token Name</SelectItem>
+                    <SelectItem value="asset_type">Asset Type</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => setHoldingsSortDirection(prev => prev === 'asc' ? 'desc' : 'asc')}
+                  className="shrink-0"
+                >
+                  {holdingsSortDirection === 'asc' ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />}
+                </Button>
                 {solanaAddress && holdings.some(h => h.token_definition?.chain === 'SOLANA') && (
                   <Button
                     variant="outline"
@@ -498,7 +618,7 @@ export default function TokensPage() {
                     className="gap-2"
                   >
                     <RefreshCw className={`h-4 w-4 ${isLoadingBalances ? 'animate-spin' : ''}`} />
-                    Refresh Balances
+                    Refresh
                   </Button>
                 )}
               </div>
@@ -517,7 +637,7 @@ export default function TokensPage() {
             {holdingsTotalPages > 1 && (
               <div className="flex items-center justify-between">
                 <p className="text-sm text-muted-foreground">
-                  Showing {((holdingsCurrentPage - 1) * PAGE_SIZE) + 1}-{Math.min(holdingsCurrentPage * PAGE_SIZE, filteredHoldings.length)} of {filteredHoldings.length} holdings
+                  Showing {((holdingsCurrentPage - 1) * PAGE_SIZE) + 1}-{Math.min(holdingsCurrentPage * PAGE_SIZE, filteredAndSortedHoldings.length)} of {filteredAndSortedHoldings.length} holdings
                 </p>
                 <Pagination>
                   <PaginationContent>
