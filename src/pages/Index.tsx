@@ -29,7 +29,7 @@ const Index = () => {
       <header className="border-b border-border px-6 py-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <img src={MetallumXLogo} alt="MetallumX" className="h-10" />
+            <img src={MetallumXLogo} alt="MetallumX" className="h-40" />
             <span className="text-xl font-bold gold-text">MetallumX Vault</span>
           </div>
           <div className="flex items-center gap-3">
