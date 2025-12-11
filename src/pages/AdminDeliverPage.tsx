@@ -359,7 +359,7 @@ export default function AdminDeliverPage() {
                             {Number(holding.balance).toLocaleString()}
                           </span>
                         </div>
-                        {holding.token_definition.deployment_status === 'DEPLOYED' && (
+                        {holding.token_definition.deployment_status === 'DEPLOYED' && holding.token_definition.chain === 'SOLANA' && (
                           <div className="flex items-center gap-1">
                             <Coins className="h-3 w-3 text-muted-foreground" />
                             <span className="text-muted-foreground">Treasury:</span>
@@ -367,12 +367,19 @@ export default function AdminDeliverPage() {
                               <span className="text-xs text-muted-foreground">loading...</span>
                             ) : treasuryBalances[holding.token_definition.id]?.error ? (
                               <span className="text-xs text-destructive">error</span>
+                            ) : (treasuryBalances[holding.token_definition.id]?.balance || 0) === 0 ? (
+                              <Badge variant="destructive" className="text-xs flex items-center gap-1">
+                                <AlertTriangle className="h-3 w-3" />
+                                Empty - Mint Required
+                              </Badge>
+                            ) : (treasuryBalances[holding.token_definition.id]?.balance || 0) < Number(holding.balance) ? (
+                              <Badge variant="outline" className="text-xs text-amber-500 border-amber-500 flex items-center gap-1">
+                                <AlertTriangle className="h-3 w-3" />
+                                {(treasuryBalances[holding.token_definition.id]?.balance || 0).toLocaleString()} (Low)
+                              </Badge>
                             ) : (
-                              <span className={`font-mono ${
-                                (treasuryBalances[holding.token_definition.id]?.balance || 0) < Number(holding.balance)
-                                  ? 'text-amber-500'
-                                  : 'text-emerald-500'
-                              }`}>
+                              <span className="font-mono text-emerald-500 flex items-center gap-1">
+                                <CheckCircle2 className="h-3 w-3" />
                                 {(treasuryBalances[holding.token_definition.id]?.balance || 0).toLocaleString()}
                               </span>
                             )}
