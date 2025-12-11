@@ -4,6 +4,7 @@ import {
   getJupiterQuote,
   calculateArbitrageProfit,
   isValidSolanaAddress,
+  setMockMode,
   JupiterQuoteResponse,
   JupiterApiError,
 } from "../_shared/jupiter-client.ts";
@@ -50,6 +51,7 @@ const SUPPORTED_DEXS = new Set([
   'FluxBeam',
   'Helium Network',
   'Jupiter',
+  'Mock DEX', // For mock mode
 ]);
 
 // Validate DEX name
@@ -89,7 +91,28 @@ serve(async (req) => {
   }
 
   try {
-    console.log('[scan-arbitrage] Starting arbitrage simulation scan with REAL DEX prices...');
+    // Parse request body for options
+    let useMockMode = false;
+    let forceMock = false;
+    try {
+      const body = await req.json();
+      useMockMode = body?.mockMode === true;
+      forceMock = body?.forceMock === true;
+    } catch {
+      // No body or invalid JSON is fine
+    }
+
+    // Enable mock mode if explicitly requested
+    if (forceMock) {
+      setMockMode(true);
+      console.log('[scan-arbitrage] Force mock mode enabled via request');
+    }
+
+    const priceSourceLabel = useMockMode || forceMock 
+      ? 'MOCK PRICES (simulated for testing)'
+      : 'REAL DEX prices (with mock fallback on DNS errors)';
+
+    console.log(`[scan-arbitrage] Starting arbitrage simulation scan with ${priceSourceLabel}...`);
 
     // Get authorization header and extract JWT token
     const authHeader = req.headers.get('Authorization');
@@ -229,6 +252,7 @@ serve(async (req) => {
       let quoteError: string | null = null;
       let outAmountA = BigInt(0);
       let outAmountB = BigInt(0);
+      let isMockData = false;
 
       try {
         // Step 1: Get quote for token_in -> token_out (leg A) using jupiter-client
@@ -242,7 +266,8 @@ serve(async (req) => {
         if (quoteA) {
           outAmountA = BigInt(quoteA.outAmount);
           dexUsedA = getPrimaryDex(quoteA);
-          console.log(`[scan-arbitrage] Leg A: ${inputLamports} -> ${outAmountA} via ${dexUsedA}`);
+          if (quoteA.isMock) isMockData = true;
+          console.log(`[scan-arbitrage] Leg A: ${inputLamports} -> ${outAmountA} via ${dexUsedA}${quoteA.isMock ? ' (MOCK)' : ''}`);
 
           // Step 2: Get quote for token_out -> token_in (leg B - round trip)
           const quoteB = await getJupiterQuote(
@@ -255,7 +280,8 @@ serve(async (req) => {
           if (quoteB) {
             outAmountB = BigInt(quoteB.outAmount);
             dexUsedB = getPrimaryDex(quoteB);
-            console.log(`[scan-arbitrage] Leg B: ${outAmountA} -> ${outAmountB} via ${dexUsedB}`);
+            if (quoteB.isMock) isMockData = true;
+            console.log(`[scan-arbitrage] Leg B: ${outAmountA} -> ${outAmountB} via ${dexUsedB}${quoteB.isMock ? ' (MOCK)' : ''}`);
 
             // Calculate round-trip profit using helper
             estimatedProfitLamports = calculateArbitrageProfit(inputLamports, quoteA, quoteB);
@@ -300,7 +326,7 @@ serve(async (req) => {
       } else {
         console.log(`[scan-arbitrage] Created run ${runData.id} for ${strategy.name}, profit: ${estimatedProfitLamports} lamports`);
       }
-
+      
       results.push({
         strategy_id: strategy.id,
         strategy_name: strategy.name,
@@ -316,22 +342,30 @@ serve(async (req) => {
         estimated_profit_lamports: Number(estimatedProfitLamports),
         estimated_profit_sol: Number(estimatedProfitLamports) / 1_000_000_000,
         meets_min_threshold: Number(estimatedProfitLamports) >= strategy.min_profit_lamports,
-        price_source: 'Jupiter Aggregator (Real DEX Prices)',
+        price_source: isMockData ? 'Mock Prices (simulated)' : 'Jupiter Aggregator (Real DEX Prices)',
+        is_mock: isMockData,
         run_id: runData?.id || null,
         error: quoteError,
       });
     }
 
-    console.log(`[scan-arbitrage] Scan complete. ${results.length} strategies simulated with REAL prices.`);
+    // Reset mock mode after scan
+    setMockMode(false);
+
+    const mockCount = results.filter(r => r.is_mock).length;
+    console.log(`[scan-arbitrage] Scan complete. ${results.length} strategies simulated. ${mockCount} used mock data.`);
 
     return new Response(JSON.stringify({
       success: true,
-      message: 'Arbitrage simulation scan complete using REAL Jupiter DEX prices',
-      price_source: 'Jupiter Aggregator API (v6) - aggregates Raydium, Orca, and other Solana DEXs',
+      message: `Arbitrage simulation scan complete`,
+      price_source: mockCount > 0 
+        ? `Mixed: ${results.length - mockCount} real, ${mockCount} mock (Jupiter API DNS issues)` 
+        : 'Jupiter Aggregator API (v6) - Real DEX prices',
       supported_dexs: getSupportedDexList(),
       simulations: results,
       total_strategies: results.length,
       profitable_count: results.filter(r => r.meets_min_threshold && r.estimated_profit_lamports > 0).length,
+      mock_count: mockCount,
       validation_failed_count: results.filter(r => (r.validation_errors?.length ?? 0) > 0).length,
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

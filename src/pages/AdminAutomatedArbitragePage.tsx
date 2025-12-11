@@ -260,19 +260,22 @@ export default function AdminAutomatedArbitragePage() {
   };
 
   // Run scan for both Solana and EVM
-  const runScan = async (chainType?: 'SOLANA' | 'EVM') => {
+  const runScan = async (chainType?: 'SOLANA' | 'EVM', forceMock?: boolean) => {
     setScanning(true);
     const results: string[] = [];
     
     try {
       if (!chainType || chainType === 'SOLANA') {
-        toast.info('Scanning Solana arbitrage opportunities...');
-        const { data: solanaData, error: solanaError } = await supabase.functions.invoke('scan-arbitrage');
+        toast.info(`Scanning Solana arbitrage opportunities${forceMock ? ' (Mock Mode)' : ''}...`);
+        const { data: solanaData, error: solanaError } = await supabase.functions.invoke('scan-arbitrage', {
+          body: { forceMock: forceMock || false }
+        });
         
         if (solanaError) {
           results.push(`Solana: Error - ${solanaError.message}`);
         } else {
-          results.push(`Solana: ${solanaData?.simulations?.length || 0} opportunities found`);
+          const mockInfo = solanaData?.mock_count > 0 ? ` (${solanaData.mock_count} mock)` : '';
+          results.push(`Solana: ${solanaData?.simulations?.length || 0} opportunities${mockInfo}`);
         }
       }
       
@@ -333,12 +336,12 @@ export default function AdminAutomatedArbitragePage() {
   };
 
   // Run all engines in sequence: Scan -> Decision -> Execute
-  const runAllEngines = async () => {
+  const runAllEngines = async (useMock?: boolean) => {
     setRunningAll(true);
     try {
       // Step 1: Scan
-      toast.info('Step 1/3: Scanning for opportunities...');
-      await supabase.functions.invoke('scan-arbitrage');
+      toast.info(`Step 1/3: Scanning for opportunities${useMock ? ' (Mock Mode)' : ''}...`);
+      await supabase.functions.invoke('scan-arbitrage', { body: { forceMock: useMock || false } });
       await supabase.functions.invoke('scan-evm-arbitrage');
       
       // Step 2: Decision
@@ -450,10 +453,11 @@ export default function AdminAutomatedArbitragePage() {
         {/* Jupiter API Limitation Notice */}
         <Alert>
           <Info className="h-4 w-4" />
-          <AlertTitle>Solana Scanning Limitation</AlertTitle>
+          <AlertTitle>Solana Scanning with Mock Fallback</AlertTitle>
           <AlertDescription>
-            Jupiter API calls may fail from edge functions due to DNS resolution restrictions. 
-            EVM scanning via 0x API is fully functional. Solana scans may show errors but EVM arbitrage works.
+            Jupiter API may fail due to DNS restrictions in edge functions. When this happens, the system 
+            automatically falls back to mock prices for testing. Use "Scan Solana (Mock)" to force mock mode.
+            EVM scanning via 0x API is fully functional with real prices.
           </AlertDescription>
         </Alert>
 
@@ -466,6 +470,9 @@ export default function AdminAutomatedArbitragePage() {
             </Button>
             <Button variant="outline" onClick={() => runScan('SOLANA')} disabled={scanning}>
               Scan Solana
+            </Button>
+            <Button variant="ghost" onClick={() => runScan('SOLANA', true)} disabled={scanning} className="text-muted-foreground">
+              Scan Solana (Mock)
             </Button>
             <Button variant="outline" onClick={() => runScan('EVM')} disabled={scanning}>
               Scan EVM
@@ -493,7 +500,7 @@ export default function AdminAutomatedArbitragePage() {
               <Play className="h-4 w-4 mr-2" />
               Execute
             </Button>
-            <Button onClick={runAllEngines} disabled={runningAll || settings?.safe_mode_enabled}>
+            <Button onClick={() => runAllEngines()} disabled={runningAll || settings?.safe_mode_enabled}>
               {runningAll ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Zap className="h-4 w-4 mr-2" />}
               Run All Engines
             </Button>
