@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Plus, Play, Zap, RefreshCw, AlertTriangle, Edit2, Wallet, Droplets } from 'lucide-react';
+import { Plus, Play, Zap, RefreshCw, AlertTriangle, Edit2, Wallet, Droplets, Sparkles } from 'lucide-react';
 import { format } from 'date-fns';
 import { Link } from 'react-router-dom';
 import { OpsWalletTransactionHistory } from '@/components/wallet/OpsWalletTransactionHistory';
@@ -80,6 +80,14 @@ const EVM_NETWORKS = [
 
 type ChainType = 'SOLANA' | 'EVM';
 
+interface FlashLoanProvider {
+  id: string;
+  name: string;
+  display_name: string;
+  chain: string;
+  is_active: boolean;
+}
+
 interface ArbitrageStrategy {
   id: string;
   name: string;
@@ -93,6 +101,11 @@ interface ArbitrageStrategy {
   updated_at: string;
   chain_type: ChainType;
   evm_network: string | null;
+  use_flash_loan: boolean;
+  flash_loan_provider: string | null;
+  flash_loan_token: string | null;
+  flash_loan_amount_native: number;
+  flash_loan_fee_bps: number;
 }
 
 const emptyStrategy = {
@@ -104,6 +117,11 @@ const emptyStrategy = {
   min_profit_lamports: 0,
   chain_type: 'SOLANA' as ChainType,
   evm_network: null as string | null,
+  use_flash_loan: false,
+  flash_loan_provider: null as string | null,
+  flash_loan_token: null as string | null,
+  flash_loan_amount_native: 0,
+  flash_loan_fee_bps: 9,
 };
 
 interface EvmWalletBalance {
@@ -126,6 +144,7 @@ const EVM_NETWORK_OPTIONS = [
 
 export default function AdminArbitrageStrategiesPage() {
   const [strategies, setStrategies] = useState<ArbitrageStrategy[]>([]);
+  const [flashLoanProviders, setFlashLoanProviders] = useState<FlashLoanProvider[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
@@ -151,6 +170,20 @@ export default function AdminArbitrageStrategiesPage() {
       setStrategies(data as ArbitrageStrategy[]);
     }
     setIsLoading(false);
+  };
+
+  const fetchFlashLoanProviders = async () => {
+    const { data, error } = await supabase
+      .from('flash_loan_providers')
+      .select('id, name, display_name, chain, is_active')
+      .eq('is_active', true)
+      .order('chain', { ascending: true });
+
+    if (error) {
+      console.error('Failed to load flash loan providers:', error);
+    } else {
+      setFlashLoanProviders(data || []);
+    }
   };
 
   const fetchOpsWallets = async () => {
@@ -232,6 +265,7 @@ export default function AdminArbitrageStrategiesPage() {
   useEffect(() => {
     fetchStrategies();
     fetchOpsWallets();
+    fetchFlashLoanProviders();
   }, []);
 
   const handleOpenModal = (strategy?: ArbitrageStrategy) => {
@@ -246,6 +280,11 @@ export default function AdminArbitrageStrategiesPage() {
         min_profit_lamports: strategy.min_profit_lamports,
         chain_type: strategy.chain_type || 'SOLANA',
         evm_network: strategy.evm_network,
+        use_flash_loan: strategy.use_flash_loan || false,
+        flash_loan_provider: strategy.flash_loan_provider,
+        flash_loan_token: strategy.flash_loan_token,
+        flash_loan_amount_native: strategy.flash_loan_amount_native || 0,
+        flash_loan_fee_bps: strategy.flash_loan_fee_bps || 9,
       });
     } else {
       setEditingStrategy(null);
@@ -685,6 +724,99 @@ export default function AdminArbitrageStrategiesPage() {
                     }
                   </p>
                 </div>
+
+                {/* Flash Loan Configuration */}
+                {formData.chain_type === 'EVM' && (
+                  <div className="border-t pt-4 mt-4 space-y-4">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="h-4 w-4 text-amber-500" />
+                      <Label className="text-sm font-medium">Flash Loan Configuration</Label>
+                    </div>
+                    
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <Label>Enable Flash Loan</Label>
+                        <p className="text-xs text-muted-foreground">
+                          Borrow capital for arbitrage with zero upfront cost
+                        </p>
+                      </div>
+                      <Switch
+                        checked={formData.use_flash_loan}
+                        onCheckedChange={(checked) => setFormData({ ...formData, use_flash_loan: checked })}
+                      />
+                    </div>
+
+                    {formData.use_flash_loan && (
+                      <>
+                        <div className="space-y-2">
+                          <Label>Flash Loan Provider</Label>
+                          <Select
+                            value={formData.flash_loan_provider || ''}
+                            onValueChange={(value) => setFormData({ ...formData, flash_loan_provider: value })}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select provider" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {flashLoanProviders
+                                .filter(p => p.chain === formData.evm_network)
+                                .map((provider) => (
+                                  <SelectItem key={provider.id} value={provider.name}>
+                                    {provider.display_name}
+                                  </SelectItem>
+                                ))}
+                              {flashLoanProviders.filter(p => p.chain === formData.evm_network).length === 0 && (
+                                <SelectItem value="" disabled>
+                                  No providers for {formData.evm_network}
+                                </SelectItem>
+                              )}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label>Flash Loan Token (address)</Label>
+                          <Input
+                            placeholder="0x... token to borrow (e.g., USDC)"
+                            value={formData.flash_loan_token || ''}
+                            onChange={(e) => setFormData({ ...formData, flash_loan_token: e.target.value })}
+                            className="font-mono text-sm"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Token to borrow for the flash loan (typically a stablecoin)
+                          </p>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label>Loan Amount (wei)</Label>
+                            <Input
+                              type="number"
+                              placeholder="0"
+                              value={formData.flash_loan_amount_native}
+                              onChange={(e) => setFormData({ ...formData, flash_loan_amount_native: parseInt(e.target.value) || 0 })}
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              = {(formData.flash_loan_amount_native / 1e6).toFixed(2)} USDC
+                            </p>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Fee (bps)</Label>
+                            <Input
+                              type="number"
+                              placeholder="9"
+                              value={formData.flash_loan_fee_bps}
+                              onChange={(e) => setFormData({ ...formData, flash_loan_fee_bps: parseInt(e.target.value) || 9 })}
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              = {(formData.flash_loan_fee_bps / 100).toFixed(2)}%
+                            </p>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setIsModalOpen(false)}>Cancel</Button>
@@ -817,7 +949,17 @@ export default function AdminArbitrageStrategiesPage() {
                     <TableBody>
                       {evmStrategies.map((strategy) => (
                         <TableRow key={strategy.id}>
-                          <TableCell className="font-medium">{strategy.name}</TableCell>
+                          <TableCell className="font-medium">
+                            <div className="flex items-center gap-2">
+                              {strategy.name}
+                              {strategy.use_flash_loan && (
+                                <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/30">
+                                  <Sparkles className="h-3 w-3 mr-1" />
+                                  Flash
+                                </Badge>
+                              )}
+                            </div>
+                          </TableCell>
                           <TableCell>
                             <Badge variant="outline">{strategy.evm_network}</Badge>
                           </TableCell>
