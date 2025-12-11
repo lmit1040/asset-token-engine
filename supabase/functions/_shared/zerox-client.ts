@@ -1,20 +1,9 @@
 // 0x Swap API v2 Client Helper
 // Used for EVM DEX price fetching and swap quotes
+// NOTE: 0x API v2 uses a single base URL with chainId parameter
 
-// 0x API endpoints per network (mainnets and testnets)
-// Note: 0x Swap API primarily works on mainnets. Testnets have limited liquidity.
-const ZEROX_API_URLS: Record<string, string> = {
-  // Mainnets
-  POLYGON: "https://polygon.api.0x.org",
-  ETHEREUM: "https://api.0x.org",
-  ARBITRUM: "https://arbitrum.api.0x.org",
-  BSC: "https://bsc.api.0x.org",
-  // Testnets - same API endpoints but use testnet chain IDs
-  POLYGON_AMOY: "https://polygon.api.0x.org",
-  SEPOLIA: "https://api.0x.org",
-  ARBITRUM_SEPOLIA: "https://arbitrum.api.0x.org",
-  BSC_TESTNET: "https://bsc.api.0x.org",
-};
+// 0x API v2 base URL (same for all chains)
+const ZEROX_API_BASE_URL = "https://api.0x.org";
 
 // Chain IDs for 0x API
 const CHAIN_IDS: Record<string, number> = {
@@ -92,13 +81,12 @@ export async function getZeroXQuote(params: ZeroXQuoteParams): Promise<ZeroXQuot
   const { network, sellToken, buyToken, sellAmount, takerAddress } = params;
   const normalizedNetwork = network.toUpperCase();
 
-  const baseUrl = ZEROX_API_URLS[normalizedNetwork];
-  if (!baseUrl) {
+  const chainId = CHAIN_IDS[normalizedNetwork];
+  if (!chainId) {
     console.error(`[zerox-client] Unsupported network: ${normalizedNetwork}`);
     return null;
   }
 
-  const chainId = CHAIN_IDS[normalizedNetwork];
   const apiKey = Deno.env.get("ZEROX_API_KEY");
 
   if (!apiKey) {
@@ -107,7 +95,8 @@ export async function getZeroXQuote(params: ZeroXQuoteParams): Promise<ZeroXQuot
   }
 
   // Build URL with query params - use v2 allowance-holder/price endpoint
-  const url = new URL(`${baseUrl}/swap/allowance-holder/price`);
+  // 0x API v2 uses single base URL with chainId parameter
+  const url = new URL(`${ZEROX_API_BASE_URL}/swap/allowance-holder/price`);
   url.searchParams.set("sellToken", sellToken);
   url.searchParams.set("buyToken", buyToken);
   url.searchParams.set("sellAmount", sellAmount);
@@ -187,14 +176,14 @@ export function calculateArbitrageProfit(
  * Check if a network is supported by 0x
  */
 export function isSupportedZeroXNetwork(network: string): boolean {
-  return network.toUpperCase() in ZEROX_API_URLS;
+  return network.toUpperCase() in CHAIN_IDS;
 }
 
 /**
  * Get list of supported networks
  */
 export function getSupportedZeroXNetworks(): string[] {
-  return Object.keys(ZEROX_API_URLS);
+  return Object.keys(CHAIN_IDS);
 }
 
 /**
