@@ -49,9 +49,7 @@ const Index = () => {
       {/* Hero */}
       <main className="flex-1 flex items-center justify-center px-6">
         <div className="max-w-2xl text-center">
-          <div className="h-20 w-20 rounded-2xl bg-gradient-to-br from-primary to-accent flex items-center justify-center mx-auto mb-8 shadow-gold">
-            <Vault className="h-12 w-12 text-primary-foreground" />
-          </div>
+          <img src={MetallumXLogo} alt="MetallumX" className="h-32 w-auto object-contain mx-auto mb-8" />
           <h1 className="text-4xl font-bold mb-4">Precious Metal Tokenization</h1>
           <p className="text-lg text-muted-foreground mb-8">
             Securely tokenize and verify real-world precious metal assets on the blockchain.
