@@ -255,6 +255,88 @@ export default function AdminDeliverPage() {
       requireAdmin
     >
       <div className="space-y-6 animate-fade-in">
+        {/* Treasury Summary */}
+        <div className="glass-card p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold text-foreground flex items-center gap-2">
+              <Coins className="h-4 w-4" />
+              Treasury Status
+            </h3>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRefreshBalances}
+              disabled={isRefreshingBalances}
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshingBalances ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {(() => {
+              // Get unique deployed Solana tokens
+              const uniqueTokens = new Map<string, { symbol: string; name: string; balance: number | undefined; isLoading: boolean; error?: string; totalUserBalance: number }>();
+              holdings.forEach(h => {
+                const token = h.token_definition;
+                if (token.chain === 'SOLANA' && token.deployment_status === 'DEPLOYED' && token.treasury_account) {
+                  const existing = uniqueTokens.get(token.id);
+                  const treasuryData = treasuryBalances[token.id];
+                  uniqueTokens.set(token.id, {
+                    symbol: token.token_symbol,
+                    name: token.token_name,
+                    balance: treasuryData?.balance,
+                    isLoading: treasuryData?.isLoading ?? true,
+                    error: treasuryData?.error,
+                    totalUserBalance: (existing?.totalUserBalance || 0) + Number(h.balance),
+                  });
+                }
+              });
+
+              if (uniqueTokens.size === 0) {
+                return <span className="text-sm text-muted-foreground">No deployed Solana tokens</span>;
+              }
+
+              return Array.from(uniqueTokens.entries()).map(([tokenId, data]) => {
+                const balance = data.balance ?? 0;
+                const isEmpty = balance === 0;
+                const isLow = !isEmpty && balance < data.totalUserBalance;
+                
+                return (
+                  <div
+                    key={tokenId}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${
+                      data.isLoading ? 'border-border bg-muted/30' :
+                      data.error ? 'border-destructive/50 bg-destructive/10' :
+                      isEmpty ? 'border-destructive bg-destructive/10' :
+                      isLow ? 'border-amber-500/50 bg-amber-500/10' :
+                      'border-emerald-500/50 bg-emerald-500/10'
+                    }`}
+                  >
+                    <span className="font-mono font-medium text-sm">{data.symbol}</span>
+                    {data.isLoading ? (
+                      <span className="text-xs text-muted-foreground">...</span>
+                    ) : data.error ? (
+                      <AlertTriangle className="h-3 w-3 text-destructive" />
+                    ) : isEmpty ? (
+                      <Badge variant="destructive" className="text-xs">Empty</Badge>
+                    ) : isLow ? (
+                      <span className="text-xs text-amber-500 flex items-center gap-1">
+                        <AlertTriangle className="h-3 w-3" />
+                        {balance.toLocaleString()}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-emerald-500 flex items-center gap-1">
+                        <CheckCircle2 className="h-3 w-3" />
+                        {balance.toLocaleString()}
+                      </span>
+                    )}
+                  </div>
+                );
+              });
+            })()}
+          </div>
+        </div>
+
         {/* Filters */}
         <div className="glass-card p-4">
           <div className="flex flex-col md:flex-row gap-4">
@@ -291,15 +373,6 @@ export default function AdminDeliverPage() {
                   <SelectItem value="pending">Pending Setup</SelectItem>
                 </SelectContent>
               </Select>
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={handleRefreshBalances}
-                disabled={isRefreshingBalances}
-                title="Refresh treasury balances"
-              >
-                <RefreshCw className={`h-4 w-4 ${isRefreshingBalances ? 'animate-spin' : ''}`} />
-              </Button>
             </div>
           </div>
         </div>
