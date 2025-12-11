@@ -9,6 +9,16 @@ import { toast } from '@/hooks/use-toast';
 import { TransferRequestWithDetails } from '@/types/transfers';
 import { SendTokensModal } from '@/components/transfers/SendTokensModal';
 import { TransferRequestCard } from '@/components/transfers/TransferRequestCard';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 export default function TransfersPage() {
   const { user } = useAuth();
@@ -16,6 +26,11 @@ export default function TransfersPage() {
   const [outgoingRequests, setOutgoingRequests] = useState<TransferRequestWithDetails[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showSendModal, setShowSendModal] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    type: 'approve' | 'reject' | 'cancel';
+    request: TransferRequestWithDetails | null;
+  }>({ open: false, type: 'approve', request: null });
 
   const fetchRequests = useCallback(async () => {
     if (!user) return;
@@ -156,6 +171,54 @@ export default function TransfersPage() {
   const pendingIncoming = incomingRequests.filter(r => r.status === 'PENDING');
   const pendingOutgoing = outgoingRequests.filter(r => r.status === 'PENDING');
 
+  const openConfirmDialog = (type: 'approve' | 'reject' | 'cancel', request: TransferRequestWithDetails) => {
+    setConfirmDialog({ open: true, type, request });
+  };
+
+  const handleConfirm = async () => {
+    if (!confirmDialog.request) return;
+    
+    const { type, request } = confirmDialog;
+    setConfirmDialog({ open: false, type: 'approve', request: null });
+
+    if (type === 'approve') {
+      await handleApprove(request.id);
+    } else if (type === 'reject') {
+      await handleReject(request.id);
+    } else if (type === 'cancel') {
+      await handleCancel(request.id);
+    }
+  };
+
+  const getDialogContent = () => {
+    const { type, request } = confirmDialog;
+    if (!request) return { title: '', description: '' };
+
+    const amount = request.amount;
+    const symbol = request.token_symbol || 'tokens';
+    const sender = request.from_user_name || request.from_user_email || 'Unknown';
+
+    switch (type) {
+      case 'approve':
+        return {
+          title: 'Accept Transfer',
+          description: `Are you sure you want to accept ${amount} ${symbol} from ${sender}? This action cannot be undone.`,
+        };
+      case 'reject':
+        return {
+          title: 'Decline Transfer',
+          description: `Are you sure you want to decline ${amount} ${symbol} from ${sender}? The sender will be notified.`,
+        };
+      case 'cancel':
+        return {
+          title: 'Cancel Transfer',
+          description: `Are you sure you want to cancel this transfer of ${amount} ${symbol}? This action cannot be undone.`,
+        };
+    }
+  };
+
+  const dialogContent = getDialogContent();
+
   return (
     <DashboardLayout
       title="Token Transfers"
@@ -208,8 +271,8 @@ export default function TransfersPage() {
                     key={request.id}
                     request={request}
                     type="incoming"
-                    onApprove={() => handleApprove(request.id)}
-                    onReject={() => handleReject(request.id)}
+                    onApprove={() => openConfirmDialog('approve', request)}
+                    onReject={() => openConfirmDialog('reject', request)}
                   />
                 ))}
               </div>
@@ -234,7 +297,7 @@ export default function TransfersPage() {
                     key={request.id}
                     request={request}
                     type="outgoing"
-                    onCancel={() => handleCancel(request.id)}
+                    onCancel={() => openConfirmDialog('cancel', request)}
                   />
                 ))}
               </div>
@@ -252,6 +315,21 @@ export default function TransfersPage() {
           }}
         />
       )}
+
+      <AlertDialog open={confirmDialog.open} onOpenChange={(open) => !open && setConfirmDialog({ open: false, type: 'approve', request: null })}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{dialogContent.title}</AlertDialogTitle>
+            <AlertDialogDescription>{dialogContent.description}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirm}>
+              {confirmDialog.type === 'approve' ? 'Accept' : confirmDialog.type === 'reject' ? 'Decline' : 'Confirm'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </DashboardLayout>
   );
 }
