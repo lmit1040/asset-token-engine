@@ -95,65 +95,17 @@ export default function TransfersPage() {
 
   const handleApprove = async (requestId: string) => {
     try {
-      // Get the request details
-      const { data: request, error: fetchError } = await supabase
-        .from('transfer_requests')
-        .select('*')
-        .eq('id', requestId)
-        .single();
+      const { data, error } = await supabase.functions.invoke('approve-transfer', {
+        body: { requestId },
+      });
 
-      if (fetchError || !request) throw fetchError || new Error('Request not found');
-
-      // Check sender has enough balance
-      const { data: senderHolding } = await supabase
-        .from('user_token_holdings')
-        .select('id, balance')
-        .eq('user_id', request.from_user_id)
-        .eq('token_definition_id', request.token_definition_id)
-        .single();
-
-      if (!senderHolding || senderHolding.balance < request.amount) {
-        throw new Error('Sender has insufficient balance');
-      }
-
-      // Deduct from sender
-      await supabase
-        .from('user_token_holdings')
-        .update({ balance: senderHolding.balance - request.amount })
-        .eq('id', senderHolding.id);
-
-      // Add to recipient (upsert)
-      const { data: recipientHolding } = await supabase
-        .from('user_token_holdings')
-        .select('id, balance')
-        .eq('user_id', request.to_user_id)
-        .eq('token_definition_id', request.token_definition_id)
-        .single();
-
-      if (recipientHolding) {
-        await supabase
-          .from('user_token_holdings')
-          .update({ balance: recipientHolding.balance + request.amount })
-          .eq('id', recipientHolding.id);
-      } else {
-        await supabase
-          .from('user_token_holdings')
-          .insert({
-            user_id: request.to_user_id,
-            token_definition_id: request.token_definition_id,
-            balance: request.amount,
-          });
-      }
-
-      // Update request status
-      await supabase
-        .from('transfer_requests')
-        .update({ status: 'APPROVED', resolved_at: new Date().toISOString() })
-        .eq('id', requestId);
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
 
       toast({ title: 'Success', description: 'Transfer approved and completed' });
       fetchRequests();
     } catch (error: any) {
+      console.error('Approve error:', error);
       toast({
         title: 'Error',
         description: error.message || 'Failed to approve transfer',
