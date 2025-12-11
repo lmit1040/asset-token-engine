@@ -101,27 +101,30 @@ export async function getZeroXQuote(params: ZeroXQuoteParams): Promise<ZeroXQuot
   const chainId = CHAIN_IDS[normalizedNetwork];
   const apiKey = Deno.env.get("ZEROX_API_KEY");
 
-  // Build URL with query params - use v1/quote for simpler price discovery
-  const url = new URL(`${baseUrl}/swap/v1/quote`);
+  if (!apiKey) {
+    console.error(`[zerox-client] ZEROX_API_KEY is required for 0x API v2`);
+    return null;
+  }
+
+  // Build URL with query params - use v2 allowance-holder/price endpoint
+  const url = new URL(`${baseUrl}/swap/allowance-holder/price`);
   url.searchParams.set("sellToken", sellToken);
   url.searchParams.set("buyToken", buyToken);
   url.searchParams.set("sellAmount", sellAmount);
+  url.searchParams.set("chainId", chainId.toString());
   
   if (takerAddress) {
-    url.searchParams.set("takerAddress", takerAddress);
+    url.searchParams.set("taker", takerAddress);
   }
 
-  console.log(`[zerox-client] Fetching quote: ${sellToken} -> ${buyToken} on ${normalizedNetwork}`);
+  console.log(`[zerox-client] Fetching quote: ${sellToken} -> ${buyToken} on ${normalizedNetwork} (chainId: ${chainId})`);
 
   try {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
+      "0x-api-key": apiKey,
+      "0x-version": "v2",
     };
-
-    // Add API key if available (enables higher rate limits)
-    if (apiKey) {
-      headers["0x-api-key"] = apiKey;
-    }
 
     const response = await fetch(url.toString(), { headers });
 
@@ -153,8 +156,8 @@ export async function getZeroXQuote(params: ZeroXQuoteParams): Promise<ZeroXQuot
       guaranteedPrice: data.guaranteedPrice,
       to: data.to,
       data: data.data,
-      gas: data.gas || "0",
-      gasPrice: data.gasPrice,
+      gas: data.gas || data.transaction?.gas || "0",
+      gasPrice: data.gasPrice || data.transaction?.gasPrice,
       estimatedGas: data.estimatedGas || data.gas || "0",
       sources: data.sources?.map((s: { name: string }) => s.name) || [],
       allowanceTarget: data.allowanceTarget,
