@@ -243,7 +243,7 @@ const ZEROX_SWAP_URLS: Record<string, string> = {
   BSC: "https://bsc.api.0x.org",
 };
 
-// Get executable swap transaction from 0x
+// Get executable swap transaction from 0x API v2
 async function getZeroXSwapTransaction(params: {
   network: string;
   sellToken: string;
@@ -263,21 +263,27 @@ async function getZeroXSwapTransaction(params: {
     return null;
   }
 
-  // Use quote endpoint which returns executable transaction data
-  const url = new URL(`${baseUrl}/swap/permit2/quote`);
+  if (!apiKey) {
+    console.error(`[execute-evm-arbitrage] ZEROX_API_KEY is required for 0x API v2`);
+    return null;
+  }
+
+  // Use v2 allowance-holder/quote endpoint which returns executable transaction data
+  const url = new URL(`${baseUrl}/swap/allowance-holder/quote`);
   url.searchParams.set("sellToken", sellToken);
   url.searchParams.set("buyToken", buyToken);
   url.searchParams.set("sellAmount", sellAmount);
   url.searchParams.set("chainId", chainId.toString());
   url.searchParams.set("taker", takerAddress);
 
-  console.log(`[execute-evm-arbitrage] Fetching swap tx: ${sellToken} -> ${buyToken}`);
+  console.log(`[execute-evm-arbitrage] Fetching swap tx: ${sellToken} -> ${buyToken} (v2 API)`);
 
   try {
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (apiKey) {
-      headers["0x-api-key"] = apiKey;
-    }
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "0x-api-key": apiKey,
+      "0x-version": "v2",
+    };
 
     const response = await fetch(url.toString(), { headers });
 
