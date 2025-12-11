@@ -158,10 +158,17 @@ export default function AdminDeliverPage() {
     toast.success('Treasury balances refreshed');
   };
 
-  // Fetch balances when holdings change
+  // Fetch balances when holdings change and auto-refresh every 30 seconds
   useEffect(() => {
     if (holdings.length > 0) {
       fetchTreasuryBalances(holdings);
+      
+      // Auto-refresh every 30 seconds
+      const interval = setInterval(() => {
+        fetchTreasuryBalances(holdings);
+      }, 30000);
+      
+      return () => clearInterval(interval);
     }
   }, [holdings, fetchTreasuryBalances]);
 
