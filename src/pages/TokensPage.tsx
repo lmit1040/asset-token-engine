@@ -48,11 +48,15 @@ export default function TokensPage() {
   const [holdings, setHoldings] = useState<HoldingWithDetails[]>([]);
   const [isLoadingHoldings, setIsLoadingHoldings] = useState(false);
   
-  // Filters
+  // All Tokens Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [chainFilter, setChainFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [modelFilter, setModelFilter] = useState<string>('all');
+  
+  // My Holdings Filters
+  const [holdingsSearchQuery, setHoldingsSearchQuery] = useState('');
+  const [holdingsChainFilter, setHoldingsChainFilter] = useState<string>('all');
   
   // Sorting
   const [sortField, setSortField] = useState<SortField>('created_at');
@@ -60,6 +64,7 @@ export default function TokensPage() {
   
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
+  const [holdingsCurrentPage, setHoldingsCurrentPage] = useState(1);
 
   // Fetch all tokens
   useEffect(() => {
@@ -180,17 +185,51 @@ export default function TokensPage() {
     return result;
   }, [tokens, searchQuery, chainFilter, statusFilter, modelFilter, sortField, sortDirection]);
 
-  // Pagination
+  // Filter holdings
+  const filteredHoldings = useMemo(() => {
+    let result = [...holdings];
+    
+    // Apply search filter
+    if (holdingsSearchQuery) {
+      const query = holdingsSearchQuery.toLowerCase();
+      result = result.filter(holding => 
+        holding.token_definition?.token_name?.toLowerCase().includes(query) ||
+        holding.token_definition?.token_symbol?.toLowerCase().includes(query) ||
+        holding.token_definition?.asset?.name?.toLowerCase().includes(query)
+      );
+    }
+    
+    // Apply chain filter
+    if (holdingsChainFilter !== 'all') {
+      result = result.filter(holding => holding.token_definition?.chain === holdingsChainFilter);
+    }
+    
+    return result;
+  }, [holdings, holdingsSearchQuery, holdingsChainFilter]);
+
+  // Pagination for all tokens
   const totalPages = Math.ceil(filteredAndSortedTokens.length / PAGE_SIZE);
   const paginatedTokens = filteredAndSortedTokens.slice(
     (currentPage - 1) * PAGE_SIZE,
     currentPage * PAGE_SIZE
   );
 
+  // Pagination for holdings
+  const holdingsTotalPages = Math.ceil(filteredHoldings.length / PAGE_SIZE);
+  const paginatedHoldings = filteredHoldings.slice(
+    (holdingsCurrentPage - 1) * PAGE_SIZE,
+    holdingsCurrentPage * PAGE_SIZE
+  );
+
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
   }, [searchQuery, chainFilter, statusFilter, modelFilter]);
+
+  // Reset holdings page when filters change
+  useEffect(() => {
+    setHoldingsCurrentPage(1);
+  }, [holdingsSearchQuery, holdingsChainFilter]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -427,27 +466,100 @@ export default function TokensPage() {
 
           {/* My Holdings Tab */}
           <TabsContent value="my-holdings" className="space-y-4 mt-4">
-            {solanaAddress && holdings.some(h => h.token_definition?.chain === 'SOLANA') && (
-              <div className="flex justify-end">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleRefreshBalances}
-                  disabled={isLoadingBalances}
-                  className="gap-2"
-                >
-                  <RefreshCw className={`h-4 w-4 ${isLoadingBalances ? 'animate-spin' : ''}`} />
-                  Refresh On-Chain Balances
-                </Button>
+            {/* Holdings Filters */}
+            <div className="glass-card p-4">
+              <div className="flex flex-col md:flex-row gap-4">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search by token name, symbol, or asset..."
+                    value={holdingsSearchQuery}
+                    onChange={(e) => setHoldingsSearchQuery(e.target.value)}
+                    className="pl-9"
+                  />
+                </div>
+                <Select value={holdingsChainFilter} onValueChange={setHoldingsChainFilter}>
+                  <SelectTrigger className="w-full md:w-[160px]">
+                    <SelectValue placeholder="Blockchain" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Chains</SelectItem>
+                    {Object.entries(BLOCKCHAIN_CHAIN_LABELS).map(([key, label]) => (
+                      <SelectItem key={key} value={key}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {solanaAddress && holdings.some(h => h.token_definition?.chain === 'SOLANA') && (
+                  <Button
+                    variant="outline"
+                    size="default"
+                    onClick={handleRefreshBalances}
+                    disabled={isLoadingBalances}
+                    className="gap-2"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${isLoadingBalances ? 'animate-spin' : ''}`} />
+                    Refresh Balances
+                  </Button>
+                )}
+              </div>
+            </div>
+            
+            <div className="glass-card overflow-hidden">
+              <HoldingsTable
+                holdings={paginatedHoldings}
+                isLoading={isLoadingHoldings}
+                onChainBalances={onChainBalances}
+                isLoadingBalances={isLoadingBalances}
+              />
+            </div>
+
+            {/* Holdings Pagination */}
+            {holdingsTotalPages > 1 && (
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-muted-foreground">
+                  Showing {((holdingsCurrentPage - 1) * PAGE_SIZE) + 1}-{Math.min(holdingsCurrentPage * PAGE_SIZE, filteredHoldings.length)} of {filteredHoldings.length} holdings
+                </p>
+                <Pagination>
+                  <PaginationContent>
+                    <PaginationItem>
+                      <PaginationPrevious 
+                        onClick={() => setHoldingsCurrentPage(p => Math.max(1, p - 1))}
+                        className={holdingsCurrentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                      />
+                    </PaginationItem>
+                    {Array.from({ length: Math.min(5, holdingsTotalPages) }, (_, i) => {
+                      let pageNum: number;
+                      if (holdingsTotalPages <= 5) {
+                        pageNum = i + 1;
+                      } else if (holdingsCurrentPage <= 3) {
+                        pageNum = i + 1;
+                      } else if (holdingsCurrentPage >= holdingsTotalPages - 2) {
+                        pageNum = holdingsTotalPages - 4 + i;
+                      } else {
+                        pageNum = holdingsCurrentPage - 2 + i;
+                      }
+                      return (
+                        <PaginationItem key={pageNum}>
+                          <PaginationLink
+                            onClick={() => setHoldingsCurrentPage(pageNum)}
+                            isActive={holdingsCurrentPage === pageNum}
+                            className="cursor-pointer"
+                          >
+                            {pageNum}
+                          </PaginationLink>
+                        </PaginationItem>
+                      );
+                    })}
+                    <PaginationItem>
+                      <PaginationNext 
+                        onClick={() => setHoldingsCurrentPage(p => Math.min(holdingsTotalPages, p + 1))}
+                        className={holdingsCurrentPage === holdingsTotalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                      />
+                    </PaginationItem>
+                  </PaginationContent>
+                </Pagination>
               </div>
             )}
-            
-            <HoldingsTable
-              holdings={holdings}
-              isLoading={isLoadingHoldings}
-              onChainBalances={onChainBalances}
-              isLoadingBalances={isLoadingBalances}
-            />
           </TabsContent>
         </Tabs>
       </div>
