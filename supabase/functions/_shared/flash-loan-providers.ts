@@ -15,6 +15,17 @@ export const BALANCER_VAULT_ABI = [
   "function flashLoan(address recipient, address[] memory tokens, uint256[] memory amounts, bytes memory userData) external",
 ];
 
+// MetallumFlashReceiver ABI (our deployed contract for atomic execution)
+export const METALLUM_FLASH_RECEIVER_ABI = [
+  "function executeArbitrage(address asset, uint256 amount, address router, bytes calldata swapData) external",
+  "function whitelistRouter(address router, bool status) external",
+  "function owner() external view returns (address)",
+  "function whitelistedRouters(address) external view returns (bool)",
+  "function withdrawProfit(address token, uint256 amount) external",
+  "function withdrawAllProfit(address token) external",
+  "function getContractBalance(address token) external view returns (uint256)",
+];
+
 // ERC20 ABI for token interactions
 export const ERC20_ABI = [
   "function balanceOf(address account) external view returns (uint256)",
@@ -79,12 +90,16 @@ export const FLASH_LOAN_FEES_BPS: Record<string, number> = {
 };
 
 export interface FlashLoanProvider {
+  id: string;
   name: string;
   displayName: string;
   chain: string;
   contractAddress: string;
+  receiverContractAddress?: string;
+  poolAddress?: string;
   feeBps: number;
   supportedTokens: string[];
+  isActive: boolean;
 }
 
 export interface FlashLoanParams {
@@ -93,6 +108,7 @@ export interface FlashLoanParams {
   borrowToken: string;
   borrowAmount: string;
   executorAddress: string;
+  receiverContractAddress?: string;
   arbitrageParams: {
     tokenA: string;
     tokenB: string;
@@ -108,6 +124,7 @@ export interface FlashLoanResult {
   feePaid: string;
   profit: string;
   error?: string;
+  isAtomic?: boolean;
 }
 
 /**
@@ -160,4 +177,17 @@ export function getSupportedProviders(network: string): string[] {
   }
   
   return providers;
+}
+
+/**
+ * Encode swap data for the receiver contract
+ * The receiver contract expects: router address + encoded swap call
+ */
+export function encodeReceiverParams(
+  router: string,
+  swapData: string,
+): string {
+  // Simple concatenation for the receiver contract
+  // The contract will decode (address router, bytes swapData) from params
+  return router.toLowerCase() + swapData.slice(2); // Remove 0x from swapData
 }
