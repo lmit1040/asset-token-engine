@@ -101,15 +101,14 @@ export async function getZeroXQuote(params: ZeroXQuoteParams): Promise<ZeroXQuot
   const chainId = CHAIN_IDS[normalizedNetwork];
   const apiKey = Deno.env.get("ZEROX_API_KEY");
 
-  // Build URL with query params
-  const url = new URL(`${baseUrl}/swap/permit2/quote`);
+  // Build URL with query params - use v1/quote for simpler price discovery
+  const url = new URL(`${baseUrl}/swap/v1/quote`);
   url.searchParams.set("sellToken", sellToken);
   url.searchParams.set("buyToken", buyToken);
   url.searchParams.set("sellAmount", sellAmount);
-  url.searchParams.set("chainId", chainId.toString());
   
   if (takerAddress) {
-    url.searchParams.set("taker", takerAddress);
+    url.searchParams.set("takerAddress", takerAddress);
   }
 
   console.log(`[zerox-client] Fetching quote: ${sellToken} -> ${buyToken} on ${normalizedNetwork}`);
