@@ -137,22 +137,23 @@ const handler = async (req: Request): Promise<Response> => {
     const treasuryTokenAccount = new PublicKey(tokenDef.treasury_account);
 
     // Find which fee payer owns the treasury account by matching ATAs
+    // Check ALL fee payers (including deactivated ones) since treasury may have been created by one that's now inactive
     console.log('Finding fee payer that owns treasury account...');
     const { data: feePayerKeys, error: feePayerError } = await supabase
       .from('fee_payer_keys')
-      .select('id, public_key, label')
-      .eq('is_active', true);
+      .select('id, public_key, label, is_active');
 
     if (feePayerError || !feePayerKeys || feePayerKeys.length === 0) {
-      console.error('No active fee payers found:', feePayerError);
+      console.error('No fee payers found:', feePayerError);
       return new Response(
-        JSON.stringify({ error: 'No active fee payers found' }),
+        JSON.stringify({ error: 'No fee payers found in the system' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     let matchingFeePayerId: string | null = null;
     let matchingFeePayerLabel: string | null = null;
+    let matchingFeePayerActive: boolean | null = null;
 
     // Check each fee payer to find the one whose ATA matches the treasury
     for (const fp of feePayerKeys) {
@@ -168,15 +169,18 @@ const handler = async (req: Request): Promise<Response> => {
       if (derivedAta.equals(treasuryTokenAccount)) {
         matchingFeePayerId = fp.id;
         matchingFeePayerLabel = fp.label;
-        console.log('Found matching fee payer:', fp.public_key, '(label:', fp.label, ')');
+        matchingFeePayerActive = fp.is_active;
+        console.log('Found matching fee payer:', fp.public_key, '(label:', fp.label, ', active:', fp.is_active, ')');
         break;
       }
     }
 
     if (!matchingFeePayerId) {
       console.error('Could not find fee payer that owns treasury account');
+      console.error('Treasury account:', treasuryTokenAccount.toBase58());
+      console.error('Checked', feePayerKeys.length, 'fee payers');
       return new Response(
-        JSON.stringify({ error: 'Could not find fee payer that owns the treasury account. The treasury may have been created by a deactivated fee payer.' }),
+        JSON.stringify({ error: 'Could not find fee payer that owns the treasury account. The treasury may have been created with a different wallet.' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
