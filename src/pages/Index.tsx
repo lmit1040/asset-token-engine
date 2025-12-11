@@ -4,32 +4,29 @@ import { Vault, ShieldCheck, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import MetallumXLogo from '@/assets/MetallumXLogo.png';
 const Index = () => {
-  const { user, isLoading } = useAuth();
-
+  const {
+    user,
+    isLoading
+  } = useAuth();
   if (isLoading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+    return <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-gold animate-pulse">
             <Vault className="h-8 w-8 text-primary-foreground" />
           </div>
           <p className="text-muted-foreground">Loading MetallumX Vault...</p>
         </div>
-      </div>
-    );
+      </div>;
   }
-
   if (user) {
     return <Navigate to="/dashboard" replace />;
   }
-
-  return (
-    <div className="min-h-screen bg-background flex flex-col">
+  return <div className="min-h-screen bg-background flex flex-col">
       {/* Header */}
       <header className="border-b border-border px-6 py-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <img src={MetallumXLogo} alt="MetallumX" className="h-40" />
+            
             <span className="text-xl font-bold gold-text">MetallumX Vault</span>
           </div>
           <div className="flex items-center gap-3">
@@ -88,8 +85,6 @@ const Index = () => {
           </Link>
         </div>
       </footer>
-    </div>
-  );
+    </div>;
 };
-
 export default Index;
