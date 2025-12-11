@@ -11,6 +11,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { toast } from 'sonner';
 import { 
   Zap, 
@@ -26,7 +29,12 @@ import {
   RefreshCw,
   ExternalLink,
   Settings,
-  DollarSign
+  Search,
+  ChevronDown,
+  ChevronRight,
+  Info,
+  Loader2,
+  XCircle
 } from 'lucide-react';
 
 interface SystemSettings {
@@ -62,6 +70,7 @@ interface ArbitrageRun {
   status: string;
   estimated_profit_lamports: number;
   actual_profit_lamports: number | null;
+  estimated_gas_cost_native: number | null;
   tx_signature: string | null;
   error_message: string | null;
   auto_executed: boolean;
@@ -99,6 +108,8 @@ const EXPLORER_URLS: Record<string, string> = {
   BSC: 'https://bscscan.com/tx/',
 };
 
+type OpportunityFilter = 'all' | 'errors' | 'profitable' | 'approved';
+
 export default function AdminAutomatedArbitragePage() {
   const navigate = useNavigate();
   const { isAdmin, isLoading: authLoading } = useAuth();
@@ -110,6 +121,14 @@ export default function AdminAutomatedArbitragePage() {
   const [refillRequests, setRefillRequests] = useState<WalletRefillRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
+  
+  // New state for enhanced functionality
+  const [scanning, setScanning] = useState(false);
+  const [runningAll, setRunningAll] = useState(false);
+  const [checkingWallets, setCheckingWallets] = useState(false);
+  const [opportunityFilter, setOpportunityFilter] = useState<OpportunityFilter>('all');
+  const [expandedErrors, setExpandedErrors] = useState<Set<string>>(new Set());
+  const [lastScanTime, setLastScanTime] = useState<Date | null>(null);
 
   useEffect(() => {
     if (!authLoading && !isAdmin) {
@@ -152,7 +171,7 @@ export default function AdminAutomatedArbitragePage() {
         .from('arbitrage_runs')
         .select('*')
         .order('created_at', { ascending: false })
-        .limit(50);
+        .limit(100);
       
       if (runsData) {
         setRuns(runsData as ArbitrageRun[]);
@@ -240,6 +259,45 @@ export default function AdminAutomatedArbitragePage() {
     }
   };
 
+  // Run scan for both Solana and EVM
+  const runScan = async (chainType?: 'SOLANA' | 'EVM') => {
+    setScanning(true);
+    const results: string[] = [];
+    
+    try {
+      if (!chainType || chainType === 'SOLANA') {
+        toast.info('Scanning Solana arbitrage opportunities...');
+        const { data: solanaData, error: solanaError } = await supabase.functions.invoke('scan-arbitrage');
+        
+        if (solanaError) {
+          results.push(`Solana: Error - ${solanaError.message}`);
+        } else {
+          results.push(`Solana: ${solanaData?.simulations?.length || 0} opportunities found`);
+        }
+      }
+      
+      if (!chainType || chainType === 'EVM') {
+        toast.info('Scanning EVM arbitrage opportunities...');
+        const { data: evmData, error: evmError } = await supabase.functions.invoke('scan-evm-arbitrage');
+        
+        if (evmError) {
+          results.push(`EVM: Error - ${evmError.message}`);
+        } else {
+          results.push(`EVM: ${evmData?.simulations?.length || 0} opportunities found`);
+        }
+      }
+      
+      setLastScanTime(new Date());
+      toast.success(`Scan complete: ${results.join(', ')}`);
+      fetchData();
+    } catch (error) {
+      console.error('Error running scan:', error);
+      toast.error('Failed to run scan');
+    } finally {
+      setScanning(false);
+    }
+  };
+
   const runDecisionEngine = async () => {
     try {
       toast.info('Running decision engine...');
@@ -247,7 +305,7 @@ export default function AdminAutomatedArbitragePage() {
       
       if (error) throw error;
       
-      toast.success(`Decision engine: ${data.approved_count} runs approved`);
+      toast.success(`Decision engine: ${data.approved_count || 0} runs approved`);
       fetchData();
     } catch (error) {
       console.error('Error running decision engine:', error);
@@ -265,7 +323,7 @@ export default function AdminAutomatedArbitragePage() {
       if (data.safe_mode_triggered) {
         toast.warning('Safe mode was triggered due to loss thresholds');
       } else {
-        toast.success(`Execution: ${data.executed_count} trades executed`);
+        toast.success(`Execution: ${data.executed_count || 0} trades executed`);
       }
       fetchData();
     } catch (error) {
@@ -274,15 +332,107 @@ export default function AdminAutomatedArbitragePage() {
     }
   };
 
+  // Run all engines in sequence: Scan -> Decision -> Execute
+  const runAllEngines = async () => {
+    setRunningAll(true);
+    try {
+      // Step 1: Scan
+      toast.info('Step 1/3: Scanning for opportunities...');
+      await supabase.functions.invoke('scan-arbitrage');
+      await supabase.functions.invoke('scan-evm-arbitrage');
+      
+      // Step 2: Decision
+      toast.info('Step 2/3: Running decision engine...');
+      const { data: decisionData } = await supabase.functions.invoke('arb-auto-controller');
+      
+      // Step 3: Execute (only if there are approved runs)
+      if (decisionData?.approved_count > 0) {
+        toast.info('Step 3/3: Executing approved trades...');
+        const { data: execData } = await supabase.functions.invoke('arb-auto-execute');
+        
+        if (execData?.safe_mode_triggered) {
+          toast.warning('Safe mode triggered during execution');
+        } else {
+          toast.success(`Complete! Approved: ${decisionData.approved_count}, Executed: ${execData?.executed_count || 0}`);
+        }
+      } else {
+        toast.info('Complete! No opportunities approved for execution.');
+      }
+      
+      setLastScanTime(new Date());
+      fetchData();
+    } catch (error) {
+      console.error('Error running all engines:', error);
+      toast.error('Failed to run automation pipeline');
+    } finally {
+      setRunningAll(false);
+    }
+  };
+
+  // Check wallet balances and create refill requests
+  const checkWalletBalances = async () => {
+    setCheckingWallets(true);
+    try {
+      toast.info('Checking wallet balances...');
+      
+      // First refresh balances
+      await supabase.functions.invoke('refresh-fee-payer-balances');
+      await supabase.functions.invoke('refresh-evm-fee-payer-balances');
+      
+      // Then check for low balances and create requests
+      const { data, error } = await supabase.functions.invoke('wallet-auto-refill');
+      
+      if (error) throw error;
+      
+      toast.success(`Wallet check complete: ${data.requests_created || 0} refill requests created`);
+      fetchData();
+    } catch (error) {
+      console.error('Error checking wallets:', error);
+      toast.error('Failed to check wallet balances');
+    } finally {
+      setCheckingWallets(false);
+    }
+  };
+
+  const toggleErrorExpanded = (runId: string) => {
+    setExpandedErrors(prev => {
+      const next = new Set(prev);
+      if (next.has(runId)) {
+        next.delete(runId);
+      } else {
+        next.add(runId);
+      }
+      return next;
+    });
+  };
+
+  // Filter opportunities based on selection
+  const getFilteredRuns = () => {
+    const simulated = runs.filter(r => r.status === 'SIMULATED');
+    
+    switch (opportunityFilter) {
+      case 'errors':
+        return simulated.filter(r => r.error_message);
+      case 'profitable':
+        return simulated.filter(r => r.estimated_profit_lamports > 0 && !r.error_message);
+      case 'approved':
+        return simulated.filter(r => r.approved_for_auto_execution);
+      default:
+        return simulated;
+    }
+  };
+
   // Calculate today's stats
   const todayPnl = dailyLimits.reduce((sum, l) => sum + (l.total_pnl_native || 0), 0);
   const todayTrades = dailyLimits.reduce((sum, l) => sum + (l.total_trades || 0), 0);
-  const todayLoss = dailyLimits.reduce((sum, l) => sum + (l.total_loss_native || 0), 0);
 
   const simulatedRuns = runs.filter(r => r.status === 'SIMULATED');
+  const errorRuns = simulatedRuns.filter(r => r.error_message);
+  const profitableRuns = simulatedRuns.filter(r => r.estimated_profit_lamports > 0 && !r.error_message);
   const approvedRuns = runs.filter(r => r.approved_for_auto_execution && r.status === 'SIMULATED');
   const executedRuns = runs.filter(r => r.status === 'EXECUTED');
   const failedRuns = runs.filter(r => r.status === 'FAILED');
+  const filteredSimulatedRuns = getFilteredRuns();
 
   if (authLoading || loading) {
     return (
@@ -297,21 +447,65 @@ export default function AdminAutomatedArbitragePage() {
   return (
     <DashboardLayout title="Automated Arbitrage" subtitle="Internal cost optimization & fee payer management">
       <div className="space-y-6">
+        {/* Jupiter API Limitation Notice */}
+        <Alert>
+          <Info className="h-4 w-4" />
+          <AlertTitle>Solana Scanning Limitation</AlertTitle>
+          <AlertDescription>
+            Jupiter API calls may fail from edge functions due to DNS resolution restrictions. 
+            EVM scanning via 0x API is fully functional. Solana scans may show errors but EVM arbitrage works.
+          </AlertDescription>
+        </Alert>
+
         {/* Action Buttons */}
-        <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={fetchData}>
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Refresh
-          </Button>
-          <Button variant="outline" onClick={runDecisionEngine}>
-            <Settings className="h-4 w-4 mr-2" />
-            Run Decision Engine
-          </Button>
-          <Button onClick={runExecutionEngine} disabled={!settings?.auto_arbitrage_enabled || settings?.safe_mode_enabled}>
-            <Play className="h-4 w-4 mr-2" />
-            Run Execution Engine
-          </Button>
+        <div className="flex flex-wrap justify-between gap-4">
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={() => runScan()} disabled={scanning}>
+              {scanning ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Search className="h-4 w-4 mr-2" />}
+              Scan All
+            </Button>
+            <Button variant="outline" onClick={() => runScan('SOLANA')} disabled={scanning}>
+              Scan Solana
+            </Button>
+            <Button variant="outline" onClick={() => runScan('EVM')} disabled={scanning}>
+              Scan EVM
+            </Button>
+            <Button variant="outline" onClick={checkWalletBalances} disabled={checkingWallets}>
+              {checkingWallets ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Wallet className="h-4 w-4 mr-2" />}
+              Check Wallets
+            </Button>
+          </div>
+          
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={fetchData}>
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Refresh
+            </Button>
+            <Button variant="outline" onClick={runDecisionEngine}>
+              <Settings className="h-4 w-4 mr-2" />
+              Decision Engine
+            </Button>
+            <Button 
+              variant="outline" 
+              onClick={runExecutionEngine} 
+              disabled={!settings?.auto_arbitrage_enabled || settings?.safe_mode_enabled}
+            >
+              <Play className="h-4 w-4 mr-2" />
+              Execute
+            </Button>
+            <Button onClick={runAllEngines} disabled={runningAll || settings?.safe_mode_enabled}>
+              {runningAll ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Zap className="h-4 w-4 mr-2" />}
+              Run All Engines
+            </Button>
+          </div>
         </div>
+
+        {/* Last Scan Time */}
+        {lastScanTime && (
+          <div className="text-sm text-muted-foreground">
+            Last scan: {lastScanTime.toLocaleString()}
+          </div>
+        )}
 
         {/* Safe Mode Alert */}
         {settings?.safe_mode_enabled && (
@@ -411,6 +605,9 @@ export default function AdminAutomatedArbitragePage() {
           <TabsList>
             <TabsTrigger value="opportunities">
               Opportunities ({simulatedRuns.length})
+              {errorRuns.length > 0 && (
+                <Badge variant="destructive" className="ml-2">{errorRuns.length} errors</Badge>
+              )}
             </TabsTrigger>
             <TabsTrigger value="executed">
               Executed ({executedRuns.length})
@@ -427,63 +624,121 @@ export default function AdminAutomatedArbitragePage() {
           <TabsContent value="opportunities">
             <Card>
               <CardHeader>
-                <CardTitle>Simulated Opportunities</CardTitle>
-                <CardDescription>Pending arbitrage opportunities awaiting approval or execution</CardDescription>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Simulated Opportunities</CardTitle>
+                    <CardDescription>Pending arbitrage opportunities awaiting approval or execution</CardDescription>
+                  </div>
+                  <Select value={opportunityFilter} onValueChange={(v) => setOpportunityFilter(v as OpportunityFilter)}>
+                    <SelectTrigger className="w-[180px]">
+                      <SelectValue placeholder="Filter" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All ({simulatedRuns.length})</SelectItem>
+                      <SelectItem value="profitable">Profitable ({profitableRuns.length})</SelectItem>
+                      <SelectItem value="approved">Approved ({approvedRuns.length})</SelectItem>
+                      <SelectItem value="errors">Errors ({errorRuns.length})</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </CardHeader>
               <CardContent>
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Strategy</TableHead>
+                      <TableHead>Chain</TableHead>
                       <TableHead>Purpose</TableHead>
                       <TableHead>Est. Profit</TableHead>
+                      <TableHead>Gas Cost</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Created</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {simulatedRuns.length === 0 ? (
+                    {filteredSimulatedRuns.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={5} className="text-center text-muted-foreground">
-                          No pending opportunities
+                        <TableCell colSpan={7} className="text-center text-muted-foreground">
+                          No opportunities matching filter
                         </TableCell>
                       </TableRow>
                     ) : (
-                      simulatedRuns.slice(0, 20).map((run) => {
+                      filteredSimulatedRuns.slice(0, 30).map((run) => {
                         const strategy = strategies.find(s => s.id === run.strategy_id);
+                        const hasError = !!run.error_message;
+                        const isExpanded = expandedErrors.has(run.id);
+                        
                         return (
-                          <TableRow key={run.id}>
-                            <TableCell className="font-medium">
-                              {strategy?.name || 'Unknown'}
-                              <Badge variant="outline" className="ml-2">
-                                {strategy?.chain_type}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant={
-                                run.purpose === 'FEE_PAYER_REFILL' ? 'default' :
-                                run.purpose === 'OPS_REFILL' ? 'secondary' : 'outline'
-                              }>
-                                {run.purpose || 'MANUAL'}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-green-500">
-                              +{(run.estimated_profit_lamports / 1e9).toFixed(6)}
-                            </TableCell>
-                            <TableCell>
-                              {run.approved_for_auto_execution ? (
-                                <Badge className="bg-green-500">Approved</Badge>
-                              ) : (
-                                <Badge variant="outline">
-                                  <Clock className="h-3 w-3 mr-1" />
-                                  Pending
-                                </Badge>
+                          <Collapsible key={run.id} asChild open={isExpanded}>
+                            <>
+                              <TableRow className={hasError ? 'bg-destructive/5' : ''}>
+                                <TableCell className="font-medium">
+                                  {strategy?.name || 'Unknown'}
+                                </TableCell>
+                                <TableCell>
+                                  <Badge variant="outline">
+                                    {strategy?.chain_type}
+                                  </Badge>
+                                  {strategy?.evm_network && (
+                                    <Badge variant="secondary" className="ml-1">
+                                      {strategy.evm_network}
+                                    </Badge>
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  <Badge variant={
+                                    run.purpose === 'FEE_PAYER_REFILL' ? 'default' :
+                                    run.purpose === 'OPS_REFILL' ? 'secondary' : 'outline'
+                                  }>
+                                    {run.purpose || 'MANUAL'}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className={hasError ? 'text-muted-foreground' : 'text-green-500'}>
+                                  {hasError ? '-' : `+${(run.estimated_profit_lamports / 1e9).toFixed(6)}`}
+                                </TableCell>
+                                <TableCell className="text-muted-foreground">
+                                  {run.estimated_gas_cost_native ? (run.estimated_gas_cost_native / 1e9).toFixed(6) : '-'}
+                                </TableCell>
+                                <TableCell>
+                                  {hasError ? (
+                                    <CollapsibleTrigger asChild>
+                                      <Button 
+                                        variant="ghost" 
+                                        size="sm" 
+                                        className="text-destructive p-0 h-auto"
+                                        onClick={() => toggleErrorExpanded(run.id)}
+                                      >
+                                        <XCircle className="h-4 w-4 mr-1" />
+                                        Error
+                                        {isExpanded ? <ChevronDown className="h-3 w-3 ml-1" /> : <ChevronRight className="h-3 w-3 ml-1" />}
+                                      </Button>
+                                    </CollapsibleTrigger>
+                                  ) : run.approved_for_auto_execution ? (
+                                    <Badge className="bg-green-500">Approved</Badge>
+                                  ) : (
+                                    <Badge variant="outline">
+                                      <Clock className="h-3 w-3 mr-1" />
+                                      Pending
+                                    </Badge>
+                                  )}
+                                </TableCell>
+                                <TableCell className="text-muted-foreground">
+                                  {new Date(run.created_at).toLocaleString()}
+                                </TableCell>
+                              </TableRow>
+                              {hasError && (
+                                <CollapsibleContent asChild>
+                                  <TableRow>
+                                    <TableCell colSpan={7} className="bg-destructive/5 py-2">
+                                      <div className="text-sm text-destructive font-mono px-4">
+                                        {run.error_message}
+                                      </div>
+                                    </TableCell>
+                                  </TableRow>
+                                </CollapsibleContent>
                               )}
-                            </TableCell>
-                            <TableCell className="text-muted-foreground">
-                              {new Date(run.created_at).toLocaleString()}
-                            </TableCell>
-                          </TableRow>
+                            </>
+                          </Collapsible>
                         );
                       })
                     )}
@@ -505,6 +760,7 @@ export default function AdminAutomatedArbitragePage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Strategy</TableHead>
+                      <TableHead>Chain</TableHead>
                       <TableHead>Type</TableHead>
                       <TableHead>PnL</TableHead>
                       <TableHead>Status</TableHead>
@@ -513,62 +769,76 @@ export default function AdminAutomatedArbitragePage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {[...executedRuns, ...failedRuns].slice(0, 30).map((run) => {
-                      const strategy = strategies.find(s => s.id === run.strategy_id);
-                      const pnl = run.actual_profit_lamports || 0;
-                      const chain = strategy?.chain_type || 'SOLANA';
-                      const network = strategy?.evm_network || chain;
-                      const explorerUrl = EXPLORER_URLS[network] || EXPLORER_URLS.SOLANA;
+                    {[...executedRuns, ...failedRuns].length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center text-muted-foreground">
+                          No executed trades yet
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      [...executedRuns, ...failedRuns].slice(0, 30).map((run) => {
+                        const strategy = strategies.find(s => s.id === run.strategy_id);
+                        const pnl = run.actual_profit_lamports || 0;
+                        const chain = strategy?.chain_type || 'SOLANA';
+                        const network = strategy?.evm_network || chain;
+                        const explorerUrl = EXPLORER_URLS[network] || EXPLORER_URLS.SOLANA;
 
-                      return (
-                        <TableRow key={run.id}>
-                          <TableCell className="font-medium">
-                            {strategy?.name || 'Unknown'}
-                          </TableCell>
-                          <TableCell>
-                            {run.auto_executed ? (
-                              <Badge variant="secondary">Auto</Badge>
-                            ) : (
-                              <Badge variant="outline">Manual</Badge>
-                            )}
-                          </TableCell>
-                          <TableCell className={pnl >= 0 ? 'text-green-500' : 'text-destructive'}>
-                            {pnl >= 0 ? '+' : ''}{(pnl / 1e9).toFixed(6)}
-                          </TableCell>
-                          <TableCell>
-                            {run.status === 'EXECUTED' ? (
-                              <Badge className="bg-green-500">
-                                <CheckCircle2 className="h-3 w-3 mr-1" />
-                                Success
-                              </Badge>
-                            ) : (
-                              <Badge variant="destructive">
-                                <AlertTriangle className="h-3 w-3 mr-1" />
-                                Failed
-                              </Badge>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {run.tx_signature ? (
-                              <a 
-                                href={`${explorerUrl}${run.tx_signature}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-primary hover:underline flex items-center gap-1"
-                              >
-                                {run.tx_signature.slice(0, 8)}...
-                                <ExternalLink className="h-3 w-3" />
-                              </a>
-                            ) : (
-                              <span className="text-muted-foreground">-</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-muted-foreground">
-                            {run.finished_at ? new Date(run.finished_at).toLocaleString() : '-'}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
+                        return (
+                          <TableRow key={run.id}>
+                            <TableCell className="font-medium">
+                              {strategy?.name || 'Unknown'}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline">{chain}</Badge>
+                              {strategy?.evm_network && (
+                                <Badge variant="secondary" className="ml-1">{strategy.evm_network}</Badge>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {run.auto_executed ? (
+                                <Badge variant="secondary">Auto</Badge>
+                              ) : (
+                                <Badge variant="outline">Manual</Badge>
+                              )}
+                            </TableCell>
+                            <TableCell className={pnl >= 0 ? 'text-green-500' : 'text-destructive'}>
+                              {pnl >= 0 ? '+' : ''}{(pnl / 1e9).toFixed(6)}
+                            </TableCell>
+                            <TableCell>
+                              {run.status === 'EXECUTED' ? (
+                                <Badge className="bg-green-500">
+                                  <CheckCircle2 className="h-3 w-3 mr-1" />
+                                  Success
+                                </Badge>
+                              ) : (
+                                <Badge variant="destructive">
+                                  <AlertTriangle className="h-3 w-3 mr-1" />
+                                  Failed
+                                </Badge>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {run.tx_signature ? (
+                                <a 
+                                  href={`${explorerUrl}${run.tx_signature}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-primary hover:underline flex items-center gap-1"
+                                >
+                                  {run.tx_signature.slice(0, 8)}...
+                                  <ExternalLink className="h-3 w-3" />
+                                </a>
+                              ) : (
+                                <span className="text-muted-foreground">-</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-muted-foreground">
+                              {run.finished_at ? new Date(run.finished_at).toLocaleString() : '-'}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
                   </TableBody>
                 </Table>
               </CardContent>
@@ -584,114 +854,134 @@ export default function AdminAutomatedArbitragePage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-6">
-                  {strategies.map((strategy) => (
-                    <div key={strategy.id} className="border rounded-lg p-4 space-y-4">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h3 className="font-semibold flex items-center gap-2">
-                            {strategy.name}
-                            <Badge variant="outline">{strategy.chain_type}</Badge>
-                            {strategy.evm_network && (
-                              <Badge variant="secondary">{strategy.evm_network}</Badge>
-                            )}
-                          </h3>
-                          <div className="flex gap-2 mt-1">
-                            {strategy.is_for_fee_payer_refill && (
-                              <Badge className="bg-blue-500">Fee Payer Refill</Badge>
-                            )}
-                            {strategy.is_for_ops_refill && (
-                              <Badge className="bg-purple-500">OPS Refill</Badge>
-                            )}
+                  {strategies.map((strategy) => {
+                    const strategyRuns = runs.filter(r => r.strategy_id === strategy.id);
+                    const strategyErrors = strategyRuns.filter(r => r.error_message);
+                    
+                    return (
+                      <div key={strategy.id} className="border rounded-lg p-4 space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h3 className="font-semibold flex items-center gap-2">
+                              {strategy.name}
+                              <Badge variant="outline">{strategy.chain_type}</Badge>
+                              {strategy.evm_network && (
+                                <Badge variant="secondary">{strategy.evm_network}</Badge>
+                              )}
+                              {strategyErrors.length > 0 && (
+                                <Badge variant="destructive">{strategyErrors.length} errors</Badge>
+                              )}
+                            </h3>
+                            <div className="flex gap-2 mt-1">
+                              {strategy.is_for_fee_payer_refill && (
+                                <Badge className="bg-blue-500">Fee Payer Refill</Badge>
+                              )}
+                              {strategy.is_for_ops_refill && (
+                                <Badge className="bg-purple-500">OPS Refill</Badge>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-4">
+                            <Button 
+                              variant="ghost" 
+                              size="sm"
+                              onClick={() => {
+                                const chain = strategy.chain_type === 'SOLANA' ? 'SOLANA' : 'EVM';
+                                runScan(chain as 'SOLANA' | 'EVM');
+                              }}
+                              disabled={scanning}
+                            >
+                              <Search className="h-4 w-4 mr-1" />
+                              Scan
+                            </Button>
+                            <div className="flex items-center gap-2">
+                              <Label htmlFor={`auto-${strategy.id}`} className="text-sm">
+                                Auto-Execute
+                              </Label>
+                              <Switch
+                                id={`auto-${strategy.id}`}
+                                checked={strategy.is_auto_enabled}
+                                onCheckedChange={(checked) => 
+                                  updateStrategy(strategy.id, { is_auto_enabled: checked })
+                                }
+                                disabled={updating}
+                              />
+                            </div>
                           </div>
                         </div>
-                        <div className="flex items-center gap-4">
-                          <div className="flex items-center gap-2">
-                            <Label htmlFor={`auto-${strategy.id}`} className="text-sm">
-                              Auto-Execute
-                            </Label>
-                            <Switch
-                              id={`auto-${strategy.id}`}
-                              checked={strategy.is_auto_enabled}
-                              onCheckedChange={(checked) => 
-                                updateStrategy(strategy.id, { is_auto_enabled: checked })
+
+                        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                          <div className="space-y-1">
+                            <Label className="text-xs text-muted-foreground">Min Profit (native)</Label>
+                            <Input
+                              type="number"
+                              value={strategy.min_expected_profit_native}
+                              onChange={(e) => 
+                                updateStrategy(strategy.id, { 
+                                  min_expected_profit_native: parseInt(e.target.value) || 0 
+                                })
                               }
-                              disabled={updating}
+                              className="h-8"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs text-muted-foreground">Min Profit/Gas Ratio</Label>
+                            <Input
+                              type="number"
+                              step="0.1"
+                              value={strategy.min_profit_to_gas_ratio}
+                              onChange={(e) => 
+                                updateStrategy(strategy.id, { 
+                                  min_profit_to_gas_ratio: parseFloat(e.target.value) || 1 
+                                })
+                              }
+                              className="h-8"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs text-muted-foreground">Max Daily Loss</Label>
+                            <Input
+                              type="number"
+                              value={strategy.max_daily_loss_native}
+                              onChange={(e) => 
+                                updateStrategy(strategy.id, { 
+                                  max_daily_loss_native: parseInt(e.target.value) || 0 
+                                })
+                              }
+                              className="h-8"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs text-muted-foreground">Max Trades/Day</Label>
+                            <Input
+                              type="number"
+                              value={strategy.max_trades_per_day}
+                              onChange={(e) => 
+                                updateStrategy(strategy.id, { 
+                                  max_trades_per_day: parseInt(e.target.value) || 10 
+                                })
+                              }
+                              className="h-8"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs text-muted-foreground">Max Trade Value</Label>
+                            <Input
+                              type="number"
+                              value={strategy.max_trade_value_native || ''}
+                              placeholder="No limit"
+                              onChange={(e) => 
+                                updateStrategy(strategy.id, { 
+                                  max_trade_value_native: e.target.value ? parseInt(e.target.value) : null 
+                                })
+                              }
+                              className="h-8"
                             />
                           </div>
                         </div>
                       </div>
-
-                      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                        <div className="space-y-1">
-                          <Label className="text-xs text-muted-foreground">Min Profit (native)</Label>
-                          <Input
-                            type="number"
-                            value={strategy.min_expected_profit_native}
-                            onChange={(e) => 
-                              updateStrategy(strategy.id, { 
-                                min_expected_profit_native: parseInt(e.target.value) || 0 
-                              })
-                            }
-                            className="h-8"
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-xs text-muted-foreground">Min Profit/Gas Ratio</Label>
-                          <Input
-                            type="number"
-                            step="0.1"
-                            value={strategy.min_profit_to_gas_ratio}
-                            onChange={(e) => 
-                              updateStrategy(strategy.id, { 
-                                min_profit_to_gas_ratio: parseFloat(e.target.value) || 1 
-                              })
-                            }
-                            className="h-8"
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-xs text-muted-foreground">Max Daily Loss</Label>
-                          <Input
-                            type="number"
-                            value={strategy.max_daily_loss_native}
-                            onChange={(e) => 
-                              updateStrategy(strategy.id, { 
-                                max_daily_loss_native: parseInt(e.target.value) || 0 
-                              })
-                            }
-                            className="h-8"
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-xs text-muted-foreground">Max Trades/Day</Label>
-                          <Input
-                            type="number"
-                            value={strategy.max_trades_per_day}
-                            onChange={(e) => 
-                              updateStrategy(strategy.id, { 
-                                max_trades_per_day: parseInt(e.target.value) || 10 
-                              })
-                            }
-                            className="h-8"
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-xs text-muted-foreground">Max Trade Value</Label>
-                          <Input
-                            type="number"
-                            value={strategy.max_trade_value_native || ''}
-                            placeholder="No limit"
-                            onChange={(e) => 
-                              updateStrategy(strategy.id, { 
-                                max_trade_value_native: e.target.value ? parseInt(e.target.value) : null 
-                              })
-                            }
-                            className="h-8"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </CardContent>
             </Card>
@@ -701,8 +991,16 @@ export default function AdminAutomatedArbitragePage() {
           <TabsContent value="refills">
             <Card>
               <CardHeader>
-                <CardTitle>Pending Refill Requests</CardTitle>
-                <CardDescription>Wallets requiring funding for transaction fees</CardDescription>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Pending Refill Requests</CardTitle>
+                    <CardDescription>Wallets requiring funding for transaction fees</CardDescription>
+                  </div>
+                  <Button variant="outline" onClick={checkWalletBalances} disabled={checkingWallets}>
+                    {checkingWallets ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+                    Check All Wallets
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 <Table>
