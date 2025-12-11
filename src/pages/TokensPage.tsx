@@ -1,12 +1,18 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { Coins, ExternalLink, Globe, CheckCircle, XCircle, Search, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { Coins, ExternalLink, Globe, CheckCircle, XCircle, Search, ArrowUpDown, ArrowUp, ArrowDown, RefreshCw, Wallet } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { supabase } from '@/integrations/supabase/client';
-import { TokenDefinition, Asset, TOKEN_MODEL_LABELS, ASSET_TYPE_LABELS, BLOCKCHAIN_CHAIN_LABELS, BlockchainChain, NETWORK_TYPE_LABELS, NetworkType, DEPLOYMENT_STATUS_LABELS, DeploymentStatus } from '@/types/database';
+import { TokenDefinition, Asset, UserTokenHolding, TOKEN_MODEL_LABELS, ASSET_TYPE_LABELS, BLOCKCHAIN_CHAIN_LABELS, BlockchainChain, NETWORK_TYPE_LABELS, NetworkType, DEPLOYMENT_STATUS_LABELS, DeploymentStatus } from '@/types/database';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { HoldingsTable } from '@/components/dashboard/HoldingsTable';
+import { useAuth } from '@/hooks/useAuth';
+import { useWallet } from '@/hooks/useWallet';
+import { useSolanaBalances } from '@/hooks/useSolanaBalances';
+import { Badge } from '@/components/ui/badge';
 import {
   Pagination,
   PaginationContent,
@@ -20,14 +26,27 @@ interface TokenWithAsset extends TokenDefinition {
   asset: Asset;
 }
 
+interface HoldingWithDetails extends UserTokenHolding {
+  token_definition: TokenDefinition & { asset: Asset };
+}
+
 type SortField = 'token_name' | 'token_symbol' | 'total_supply' | 'created_at';
 type SortDirection = 'asc' | 'desc';
 
 const PAGE_SIZE = 10;
 
 export default function TokensPage() {
+  const { user } = useAuth();
+  const { solanaAddress } = useWallet();
+  const { balances: onChainBalances, fetchBalances, isLoading: isLoadingBalances } = useSolanaBalances();
+  
   const [tokens, setTokens] = useState<TokenWithAsset[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('all-tokens');
+  
+  // Holdings state
+  const [holdings, setHoldings] = useState<HoldingWithDetails[]>([]);
+  const [isLoadingHoldings, setIsLoadingHoldings] = useState(false);
   
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -42,6 +61,7 @@ export default function TokensPage() {
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
 
+  // Fetch all tokens
   useEffect(() => {
     async function fetchTokens() {
       const { data } = await supabase
@@ -55,6 +75,58 @@ export default function TokensPage() {
     }
     fetchTokens();
   }, []);
+
+  // Fetch user holdings
+  useEffect(() => {
+    async function fetchHoldings() {
+      if (!user) return;
+      
+      setIsLoadingHoldings(true);
+      const { data } = await supabase
+        .from('user_token_holdings')
+        .select(`
+          *,
+          token_definition:token_definitions(
+            *,
+            asset:assets(*)
+          )
+        `)
+        .eq('user_id', user.id);
+      
+      if (data) {
+        setHoldings(data as unknown as HoldingWithDetails[]);
+        
+        // Fetch on-chain balances if user has Solana wallet
+        if (solanaAddress) {
+          const solanaHoldings = data.filter(
+            (h: any) => h.token_definition?.chain === 'SOLANA' && h.token_definition?.contract_address
+          );
+          const mintAddresses = solanaHoldings.map((h: any) => h.token_definition.contract_address);
+          if (mintAddresses.length > 0) {
+            fetchBalances(solanaAddress, mintAddresses);
+          }
+        }
+      }
+      setIsLoadingHoldings(false);
+    }
+    
+    if (activeTab === 'my-holdings') {
+      fetchHoldings();
+    }
+  }, [user, activeTab, solanaAddress]);
+
+  // Refresh on-chain balances
+  const handleRefreshBalances = async () => {
+    if (!solanaAddress || holdings.length === 0) return;
+    
+    const solanaHoldings = holdings.filter(
+      h => h.token_definition?.chain === 'SOLANA' && h.token_definition?.contract_address
+    );
+    const mintAddresses = solanaHoldings.map(h => h.token_definition.contract_address!);
+    if (mintAddresses.length > 0) {
+      await fetchBalances(solanaAddress, mintAddresses);
+    }
+  };
 
   // Filter and sort tokens
   const filteredAndSortedTokens = useMemo(() => {
@@ -139,199 +211,245 @@ export default function TokensPage() {
   return (
     <DashboardLayout title="Tokens" subtitle="All tokenized assets">
       <div className="animate-fade-in space-y-4">
-        {/* Filters */}
-        <div className="glass-card p-4">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search by name, symbol, or asset..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9"
-              />
-            </div>
-            <Select value={chainFilter} onValueChange={setChainFilter}>
-              <SelectTrigger className="w-full md:w-[160px]">
-                <SelectValue placeholder="Blockchain" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Chains</SelectItem>
-                {Object.entries(BLOCKCHAIN_CHAIN_LABELS).map(([key, label]) => (
-                  <SelectItem key={key} value={key}>{label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-full md:w-[160px]">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="DEPLOYED">Deployed</SelectItem>
-                <SelectItem value="PENDING">Pending</SelectItem>
-                <SelectItem value="NOT_DEPLOYED">Not Deployed</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={modelFilter} onValueChange={setModelFilter}>
-              <SelectTrigger className="w-full md:w-[160px]">
-                <SelectValue placeholder="Model" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Models</SelectItem>
-                {Object.entries(TOKEN_MODEL_LABELS).map(([key, label]) => (
-                  <SelectItem key={key} value={key}>{label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="grid w-full max-w-md grid-cols-2">
+            <TabsTrigger value="all-tokens" className="gap-2">
+              <Coins className="h-4 w-4" />
+              All Tokens
+            </TabsTrigger>
+            <TabsTrigger value="my-holdings" className="gap-2">
+              <Wallet className="h-4 w-4" />
+              My Holdings
+              {holdings.length > 0 && (
+                <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
+                  {holdings.length}
+                </Badge>
+              )}
+            </TabsTrigger>
+          </TabsList>
 
-        {isLoading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="h-8 w-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-          </div>
-        ) : filteredAndSortedTokens.length === 0 ? (
-          <div className="text-center py-12 glass-card">
-            <Coins className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <p className="text-muted-foreground">
-              {tokens.length === 0 ? 'No tokens defined yet.' : 'No tokens match your filters.'}
-            </p>
-          </div>
-        ) : (
-          <>
-            <div className="glass-card overflow-hidden">
-              <table className="w-full">
-                <thead>
-                  <tr className="table-header">
-                    <th className="text-left py-3 px-4">
-                      <Button variant="ghost" size="sm" onClick={() => handleSort('token_name')} className="gap-1 -ml-2">
-                        Token <SortIcon field="token_name" />
-                      </Button>
-                    </th>
-                    <th className="text-left py-3 px-4">Model</th>
-                    <th className="text-left py-3 px-4">
-                      <Button variant="ghost" size="sm" onClick={() => handleSort('total_supply')} className="gap-1 -ml-2">
-                        Total Supply <SortIcon field="total_supply" />
-                      </Button>
-                    </th>
-                    <th className="text-left py-3 px-4">Backing Asset</th>
-                    <th className="text-left py-3 px-4">Blockchain</th>
-                    <th className="text-left py-3 px-4">Status</th>
-                    <th className="text-right py-3 px-4">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {paginatedTokens.map((token) => (
-                    <tr key={token.id} className="hover:bg-muted/30 transition-colors">
-                      <td className="table-cell">
-                        <p className="font-medium text-foreground">{token.token_name}</p>
-                        <p className="text-sm font-mono text-primary">{token.token_symbol}</p>
-                      </td>
-                      <td className="table-cell">
-                        <span className="badge-gold">{TOKEN_MODEL_LABELS[token.token_model]}</span>
-                      </td>
-                      <td className="table-cell font-mono">{Number(token.total_supply).toLocaleString()}</td>
-                      <td className="table-cell">
-                        <p className="text-foreground">{token.asset?.name}</p>
-                        <p className="text-xs text-muted-foreground">{ASSET_TYPE_LABELS[token.asset?.asset_type]}</p>
-                      </td>
-                      <td className="table-cell">
-                        <div className="flex items-center gap-2">
-                          <Globe className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-sm">
-                            {BLOCKCHAIN_CHAIN_LABELS[(token.chain as BlockchainChain) || 'NONE']}
-                          </span>
-                        </div>
-                        {(token.network as NetworkType) !== 'NONE' && (
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {NETWORK_TYPE_LABELS[(token.network as NetworkType)]}
-                          </p>
-                        )}
-                        {token.contract_address && (
-                          <p className="text-xs font-mono text-muted-foreground mt-1">
-                            {token.contract_address.slice(0, 6)}...{token.contract_address.slice(-4)}
-                          </p>
-                        )}
-                      </td>
-                      <td className="table-cell">
-                        {(token.deployment_status as DeploymentStatus) === 'DEPLOYED' ? (
-                          <span className="inline-flex items-center gap-1 text-success text-sm">
-                            <CheckCircle className="h-4 w-4" />
-                            Deployed
-                          </span>
-                        ) : (token.deployment_status as DeploymentStatus) === 'PENDING' ? (
-                          <span className="inline-flex items-center gap-1 text-warning text-sm">
-                            <div className="h-4 w-4 border-2 border-warning border-t-transparent rounded-full animate-spin" />
-                            Pending
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-muted-foreground text-sm">
-                            <XCircle className="h-4 w-4" />
-                            Not Deployed
-                          </span>
-                        )}
-                      </td>
-                      <td className="table-cell text-right">
-                        <Link to={`/assets/${token.asset_id}`} className="text-primary hover:underline inline-flex items-center gap-1">
-                          View Asset <ExternalLink className="h-3 w-3" />
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          {/* All Tokens Tab */}
+          <TabsContent value="all-tokens" className="space-y-4 mt-4">
+            {/* Filters */}
+            <div className="glass-card p-4">
+              <div className="flex flex-col md:flex-row gap-4">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search by name, symbol, or asset..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-9"
+                  />
+                </div>
+                <Select value={chainFilter} onValueChange={setChainFilter}>
+                  <SelectTrigger className="w-full md:w-[160px]">
+                    <SelectValue placeholder="Blockchain" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Chains</SelectItem>
+                    {Object.entries(BLOCKCHAIN_CHAIN_LABELS).map(([key, label]) => (
+                      <SelectItem key={key} value={key}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-full md:w-[160px]">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="DEPLOYED">Deployed</SelectItem>
+                    <SelectItem value="PENDING">Pending</SelectItem>
+                    <SelectItem value="NOT_DEPLOYED">Not Deployed</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={modelFilter} onValueChange={setModelFilter}>
+                  <SelectTrigger className="w-full md:w-[160px]">
+                    <SelectValue placeholder="Model" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Models</SelectItem>
+                    {Object.entries(TOKEN_MODEL_LABELS).map(([key, label]) => (
+                      <SelectItem key={key} value={key}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
-            {/* Pagination */}
-            {totalPages > 1 && (
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-muted-foreground">
-                  Showing {((currentPage - 1) * PAGE_SIZE) + 1}-{Math.min(currentPage * PAGE_SIZE, filteredAndSortedTokens.length)} of {filteredAndSortedTokens.length} tokens
+            {isLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="h-8 w-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : filteredAndSortedTokens.length === 0 ? (
+              <div className="text-center py-12 glass-card">
+                <Coins className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground">
+                  {tokens.length === 0 ? 'No tokens defined yet.' : 'No tokens match your filters.'}
                 </p>
-                <Pagination>
-                  <PaginationContent>
-                    <PaginationItem>
-                      <PaginationPrevious 
-                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                        className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-                      />
-                    </PaginationItem>
-                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                      let pageNum: number;
-                      if (totalPages <= 5) {
-                        pageNum = i + 1;
-                      } else if (currentPage <= 3) {
-                        pageNum = i + 1;
-                      } else if (currentPage >= totalPages - 2) {
-                        pageNum = totalPages - 4 + i;
-                      } else {
-                        pageNum = currentPage - 2 + i;
-                      }
-                      return (
-                        <PaginationItem key={pageNum}>
-                          <PaginationLink
-                            onClick={() => setCurrentPage(pageNum)}
-                            isActive={currentPage === pageNum}
-                            className="cursor-pointer"
-                          >
-                            {pageNum}
-                          </PaginationLink>
+              </div>
+            ) : (
+              <>
+                <div className="glass-card overflow-hidden">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="table-header">
+                        <th className="text-left py-3 px-4">
+                          <Button variant="ghost" size="sm" onClick={() => handleSort('token_name')} className="gap-1 -ml-2">
+                            Token <SortIcon field="token_name" />
+                          </Button>
+                        </th>
+                        <th className="text-left py-3 px-4">Model</th>
+                        <th className="text-left py-3 px-4">
+                          <Button variant="ghost" size="sm" onClick={() => handleSort('total_supply')} className="gap-1 -ml-2">
+                            Total Supply <SortIcon field="total_supply" />
+                          </Button>
+                        </th>
+                        <th className="text-left py-3 px-4">Backing Asset</th>
+                        <th className="text-left py-3 px-4">Blockchain</th>
+                        <th className="text-left py-3 px-4">Status</th>
+                        <th className="text-right py-3 px-4">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paginatedTokens.map((token) => (
+                        <tr key={token.id} className="hover:bg-muted/30 transition-colors">
+                          <td className="table-cell">
+                            <p className="font-medium text-foreground">{token.token_name}</p>
+                            <p className="text-sm font-mono text-primary">{token.token_symbol}</p>
+                          </td>
+                          <td className="table-cell">
+                            <span className="badge-gold">{TOKEN_MODEL_LABELS[token.token_model]}</span>
+                          </td>
+                          <td className="table-cell font-mono">{Number(token.total_supply).toLocaleString()}</td>
+                          <td className="table-cell">
+                            <p className="text-foreground">{token.asset?.name}</p>
+                            <p className="text-xs text-muted-foreground">{ASSET_TYPE_LABELS[token.asset?.asset_type]}</p>
+                          </td>
+                          <td className="table-cell">
+                            <div className="flex items-center gap-2">
+                              <Globe className="h-4 w-4 text-muted-foreground" />
+                              <span className="text-sm">
+                                {BLOCKCHAIN_CHAIN_LABELS[(token.chain as BlockchainChain) || 'NONE']}
+                              </span>
+                            </div>
+                            {(token.network as NetworkType) !== 'NONE' && (
+                              <p className="text-xs text-muted-foreground mt-1">
+                                {NETWORK_TYPE_LABELS[(token.network as NetworkType)]}
+                              </p>
+                            )}
+                            {token.contract_address && (
+                              <p className="text-xs font-mono text-muted-foreground mt-1">
+                                {token.contract_address.slice(0, 6)}...{token.contract_address.slice(-4)}
+                              </p>
+                            )}
+                          </td>
+                          <td className="table-cell">
+                            {(token.deployment_status as DeploymentStatus) === 'DEPLOYED' ? (
+                              <span className="inline-flex items-center gap-1 text-success text-sm">
+                                <CheckCircle className="h-4 w-4" />
+                                Deployed
+                              </span>
+                            ) : (token.deployment_status as DeploymentStatus) === 'PENDING' ? (
+                              <span className="inline-flex items-center gap-1 text-warning text-sm">
+                                <div className="h-4 w-4 border-2 border-warning border-t-transparent rounded-full animate-spin" />
+                                Pending
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-muted-foreground text-sm">
+                                <XCircle className="h-4 w-4" />
+                                Not Deployed
+                              </span>
+                            )}
+                          </td>
+                          <td className="table-cell text-right">
+                            <Link to={`/assets/${token.asset_id}`} className="text-primary hover:underline inline-flex items-center gap-1">
+                              View Asset <ExternalLink className="h-3 w-3" />
+                            </Link>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Pagination */}
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-muted-foreground">
+                      Showing {((currentPage - 1) * PAGE_SIZE) + 1}-{Math.min(currentPage * PAGE_SIZE, filteredAndSortedTokens.length)} of {filteredAndSortedTokens.length} tokens
+                    </p>
+                    <Pagination>
+                      <PaginationContent>
+                        <PaginationItem>
+                          <PaginationPrevious 
+                            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                            className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                          />
                         </PaginationItem>
-                      );
-                    })}
-                    <PaginationItem>
-                      <PaginationNext 
-                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                        className={currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-                      />
-                    </PaginationItem>
-                  </PaginationContent>
-                </Pagination>
+                        {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                          let pageNum: number;
+                          if (totalPages <= 5) {
+                            pageNum = i + 1;
+                          } else if (currentPage <= 3) {
+                            pageNum = i + 1;
+                          } else if (currentPage >= totalPages - 2) {
+                            pageNum = totalPages - 4 + i;
+                          } else {
+                            pageNum = currentPage - 2 + i;
+                          }
+                          return (
+                            <PaginationItem key={pageNum}>
+                              <PaginationLink
+                                onClick={() => setCurrentPage(pageNum)}
+                                isActive={currentPage === pageNum}
+                                className="cursor-pointer"
+                              >
+                                {pageNum}
+                              </PaginationLink>
+                            </PaginationItem>
+                          );
+                        })}
+                        <PaginationItem>
+                          <PaginationNext 
+                            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                            className={currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                          />
+                        </PaginationItem>
+                      </PaginationContent>
+                    </Pagination>
+                  </div>
+                )}
+              </>
+            )}
+          </TabsContent>
+
+          {/* My Holdings Tab */}
+          <TabsContent value="my-holdings" className="space-y-4 mt-4">
+            {solanaAddress && holdings.some(h => h.token_definition?.chain === 'SOLANA') && (
+              <div className="flex justify-end">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleRefreshBalances}
+                  disabled={isLoadingBalances}
+                  className="gap-2"
+                >
+                  <RefreshCw className={`h-4 w-4 ${isLoadingBalances ? 'animate-spin' : ''}`} />
+                  Refresh On-Chain Balances
+                </Button>
               </div>
             )}
-          </>
-        )}
+            
+            <HoldingsTable
+              holdings={holdings}
+              isLoading={isLoadingHoldings}
+              onChainBalances={onChainBalances}
+              isLoadingBalances={isLoadingBalances}
+            />
+          </TabsContent>
+        </Tabs>
       </div>
     </DashboardLayout>
   );
