@@ -532,6 +532,7 @@ export type Database = {
           max_loan_amount_native: number | null
           name: string
           pool_address: string | null
+          receiver_contract_address: string | null
           supported_tokens: string[] | null
           updated_at: string | null
         }
@@ -546,6 +547,7 @@ export type Database = {
           max_loan_amount_native?: number | null
           name: string
           pool_address?: string | null
+          receiver_contract_address?: string | null
           supported_tokens?: string[] | null
           updated_at?: string | null
         }
@@ -560,6 +562,7 @@ export type Database = {
           max_loan_amount_native?: number | null
           name?: string
           pool_address?: string | null
+          receiver_contract_address?: string | null
           supported_tokens?: string[] | null
           updated_at?: string | null
         }

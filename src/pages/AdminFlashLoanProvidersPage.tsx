@@ -7,14 +7,20 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
+import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { 
   Zap, 
   RefreshCw,
   ExternalLink,
   Settings,
+  Edit2,
+  Check,
+  AlertTriangle,
 } from 'lucide-react';
 
 interface FlashLoanProvider {
@@ -24,6 +30,7 @@ interface FlashLoanProvider {
   chain: string;
   contract_address: string;
   pool_address: string | null;
+  receiver_contract_address: string | null;
   fee_bps: number;
   max_loan_amount_native: number;
   is_active: boolean;
@@ -46,6 +53,8 @@ export default function AdminFlashLoanProvidersPage() {
   const [providers, setProviders] = useState<FlashLoanProvider[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedChain, setSelectedChain] = useState<string>('all');
+  const [editingProvider, setEditingProvider] = useState<FlashLoanProvider | null>(null);
+  const [receiverAddress, setReceiverAddress] = useState('');
 
   useEffect(() => {
     if (!authLoading && !isAdmin) {
@@ -93,6 +102,33 @@ export default function AdminFlashLoanProvidersPage() {
     } catch (error) {
       console.error('Error updating provider:', error);
       toast.error('Failed to update provider');
+    }
+  };
+
+  const openEditReceiver = (provider: FlashLoanProvider) => {
+    setEditingProvider(provider);
+    setReceiverAddress(provider.receiver_contract_address || '');
+  };
+
+  const saveReceiverAddress = async () => {
+    if (!editingProvider) return;
+
+    try {
+      const { error } = await supabase
+        .from('flash_loan_providers')
+        .update({ receiver_contract_address: receiverAddress || null })
+        .eq('id', editingProvider.id);
+
+      if (error) throw error;
+
+      setProviders(providers.map(p => 
+        p.id === editingProvider.id ? { ...p, receiver_contract_address: receiverAddress || null } : p
+      ));
+      toast.success('Receiver contract address saved');
+      setEditingProvider(null);
+    } catch (error) {
+      console.error('Error saving receiver address:', error);
+      toast.error('Failed to save receiver address');
     }
   };
 
@@ -197,14 +233,15 @@ export default function AdminFlashLoanProvidersPage() {
                   <TableHead>Chain</TableHead>
                   <TableHead>Fee (bps)</TableHead>
                   <TableHead>Tokens</TableHead>
-                  <TableHead>Contract</TableHead>
+                  <TableHead>Pool Contract</TableHead>
+                  <TableHead>Receiver Contract</TableHead>
                   <TableHead>Active</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredProviders.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center text-muted-foreground">
                       No providers found
                     </TableCell>
                   </TableRow>
@@ -253,6 +290,40 @@ export default function AdminFlashLoanProvidersPage() {
                         </a>
                       </TableCell>
                       <TableCell>
+                        {provider.receiver_contract_address ? (
+                          <div className="flex items-center gap-2">
+                            <a
+                              href={`${EXPLORER_URLS[provider.chain] || ''}${provider.receiver_contract_address}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1 text-green-600 hover:underline text-xs font-mono"
+                            >
+                              <Check className="h-3 w-3" />
+                              {provider.receiver_contract_address.slice(0, 8)}...
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              onClick={() => openEditReceiver(provider)}
+                            >
+                              <Edit2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs"
+                            onClick={() => openEditReceiver(provider)}
+                          >
+                            <AlertTriangle className="h-3 w-3 mr-1 text-amber-500" />
+                            Set Receiver
+                          </Button>
+                        )}
+                      </TableCell>
+                      <TableCell>
                         <Switch
                           checked={provider.is_active}
                           onCheckedChange={(checked) => toggleProviderActive(provider.id, checked)}
@@ -289,6 +360,36 @@ export default function AdminFlashLoanProvidersPage() {
             </p>
           </CardContent>
         </Card>
+
+        {/* Edit Receiver Address Dialog */}
+        <Dialog open={!!editingProvider} onOpenChange={(open) => !open && setEditingProvider(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Set Receiver Contract Address</DialogTitle>
+              <DialogDescription>
+                Enter the deployed MetallumFlashReceiver contract address for {editingProvider?.display_name} on {editingProvider?.chain}.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label>Receiver Contract Address</Label>
+                <Input
+                  placeholder="0x..."
+                  value={receiverAddress}
+                  onChange={(e) => setReceiverAddress(e.target.value)}
+                  className="font-mono"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Deploy the MetallumFlashReceiver.sol contract and paste the address here.
+                </p>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setEditingProvider(null)}>Cancel</Button>
+              <Button onClick={saveReceiverAddress}>Save Address</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </DashboardLayout>
   );
