@@ -450,14 +450,23 @@ export default function AdminAutomatedArbitragePage() {
   return (
     <DashboardLayout title="Automated Arbitrage" subtitle="Internal cost optimization & fee payer management">
       <div className="space-y-6">
-        {/* Jupiter API Limitation Notice */}
-        <Alert>
-          <Info className="h-4 w-4" />
-          <AlertTitle>Solana Scanning with Mock Fallback</AlertTitle>
-          <AlertDescription>
-            Jupiter API may fail due to DNS restrictions in edge functions. When this happens, the system 
-            automatically falls back to mock prices for testing. Use "Scan Solana (Mock)" to force mock mode.
-            EVM scanning via 0x API is fully functional with real prices.
+        {/* Real Trading Status */}
+        <Alert className="border-primary/50 bg-primary/5">
+          <Zap className="h-4 w-4 text-primary" />
+          <AlertTitle>Real Testnet Trading Enabled</AlertTitle>
+          <AlertDescription className="space-y-2">
+            <p>
+              <strong>EVM (Real Trades):</strong> Uses 0x API for real DEX trades on Polygon, Ethereum, Arbitrum, BSC (mainnets & testnets).
+              Trades execute with actual transactions using OPS wallet or fee payers.
+            </p>
+            <p>
+              <strong>Solana (Mock Only):</strong> Jupiter API has DNS issues in edge functions. Solana scans use mock prices.
+              Real Solana trades require mainnet Jupiter which isn't accessible from edge functions.
+            </p>
+            <div className="mt-2 flex gap-2">
+              <Badge variant="default">EVM: Real Trades</Badge>
+              <Badge variant="secondary">Solana: Mock Prices</Badge>
+            </div>
           </AlertDescription>
         </Alert>
 
