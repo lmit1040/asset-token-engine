@@ -26,6 +26,7 @@ import AdminArchivedPage from "./pages/AdminArchivedPage";
 import AdminArbitrageStrategiesPage from "./pages/AdminArbitrageStrategiesPage";
 import AdminArbitrageRunsPage from "./pages/AdminArbitrageRunsPage";
 import AdminAutomatedArbitragePage from "./pages/AdminAutomatedArbitragePage";
+import AdminFlashLoanProvidersPage from "./pages/AdminFlashLoanProvidersPage";
 import MxuBenefitsPage from "./pages/MxuBenefitsPage";
 import GovernancePage from "./pages/GovernancePage";
 import ProposalDetailPage from "./pages/ProposalDetailPage";
@@ -78,6 +79,7 @@ const App = () => (
               <Route path="/admin/arbitrage/strategies" element={<AdminArbitrageStrategiesPage />} />
               <Route path="/admin/arbitrage/runs" element={<AdminArbitrageRunsPage />} />
               <Route path="/admin/arbitrage/automation" element={<AdminAutomatedArbitragePage />} />
+              <Route path="/admin/arbitrage/flash-loans" element={<AdminFlashLoanProvidersPage />} />
               <Route path="/admin/archived" element={<AdminArchivedPage />} />
               <Route path="/admin/news" element={<AdminNewsPage />} />
               <Route path="/admin/activity" element={<AdminActivityPage />} />
