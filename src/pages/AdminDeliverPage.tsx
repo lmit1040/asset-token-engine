@@ -132,16 +132,21 @@ export default function AdminDeliverPage() {
     // Chain filter
     const matchesChain = filterChain === 'all' || token.chain === filterChain;
 
-    // Status filter
+    // When searching, show all matches regardless of status filter
+    if (searchQuery !== '') {
+      return matchesSearch && matchesChain;
+    }
+
+    // Status filter (only applied when not searching)
     const isDeployed = token.deployment_status === 'DEPLOYED';
     const hasWallet =
       (token.chain === 'SOLANA' && user.solana_wallet_address) ||
       (['ETHEREUM', 'POLYGON', 'BSC'].includes(token.chain) && user.evm_wallet_address);
     const isReady = isDeployed && hasWallet && token.chain === 'SOLANA';
 
-    if (filterStatus === 'ready') return matchesSearch && matchesChain && isReady;
-    if (filterStatus === 'pending') return matchesSearch && matchesChain && (!isDeployed || !hasWallet);
-    return matchesSearch && matchesChain;
+    if (filterStatus === 'ready') return matchesChain && isReady;
+    if (filterStatus === 'pending') return matchesChain && (!isDeployed || !hasWallet);
+    return matchesChain;
 
   });
 
