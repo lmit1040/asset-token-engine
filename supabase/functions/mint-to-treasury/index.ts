@@ -79,30 +79,6 @@ const handler = async (req: Request): Promise<Response> => {
       );
     }
 
-    // Get fee payer keypair from database (automatic rotation)
-    console.log('Fetching fee payer from database...');
-    const feePayerResponse = await fetch(`${supabaseUrl}/functions/v1/get-fee-payer-keypair`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${supabaseServiceKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ prefer_least_used: true }),
-    });
-
-    if (!feePayerResponse.ok) {
-      const errorData = await feePayerResponse.json();
-      console.error('Failed to get fee payer:', errorData);
-      return new Response(
-        JSON.stringify({ error: errorData.error || 'Failed to get fee payer keypair' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    const feePayerData = await feePayerResponse.json();
-    const feePayerKeypair = Keypair.fromSecretKey(new Uint8Array(feePayerData.secret_key_array));
-    console.log('Using fee payer:', feePayerData.public_key, '(label:', feePayerData.label, ')');
-
     // Connect to Solana Devnet
     const rpcUrl = Deno.env.get('SOLANA_DEVNET_RPC_URL') || 'https://api.devnet.solana.com';
     console.log('Connecting to Solana RPC:', rpcUrl);
@@ -111,12 +87,78 @@ const handler = async (req: Request): Promise<Response> => {
     const mintPubkey = new PublicKey(tokenDef.contract_address);
     console.log('Mint address:', mintPubkey.toBase58());
 
-    // Get the correct Associated Token Account for treasury
-    const treasuryATA = getAssociatedTokenAddressSync(
-      mintPubkey,
-      feePayerKeypair.publicKey
-    );
-    console.log('Treasury ATA (correct):', treasuryATA.toBase58());
+    // Find the fee payer that is the mint authority by matching treasury ATA
+    // The fee payer that deployed the token is the mint authority
+    console.log('Finding mint authority fee payer...');
+    
+    const { data: allFeePayers, error: feePayerListError } = await supabase
+      .from('fee_payer_keys')
+      .select('id, public_key, label')
+      .eq('is_active', true);
+
+    if (feePayerListError || !allFeePayers || allFeePayers.length === 0) {
+      console.error('Failed to fetch fee payers:', feePayerListError);
+      return new Response(
+        JSON.stringify({ error: 'No active fee payers found' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Find which fee payer's ATA matches the stored treasury_account
+    let mintAuthorityFeePayerId: string | null = null;
+    let mintAuthorityPublicKey: PublicKey | null = null;
+
+    for (const fp of allFeePayers) {
+      const fpPubkey = new PublicKey(fp.public_key);
+      const derivedATA = getAssociatedTokenAddressSync(mintPubkey, fpPubkey);
+      console.log(`Fee payer ${fp.label} (${fp.public_key}) -> ATA: ${derivedATA.toBase58()}`);
+      
+      if (derivedATA.toBase58() === tokenDef.treasury_account) {
+        mintAuthorityFeePayerId = fp.id;
+        mintAuthorityPublicKey = fpPubkey;
+        console.log(`Found mint authority: ${fp.label} (${fp.public_key})`);
+        break;
+      }
+    }
+
+    if (!mintAuthorityFeePayerId || !mintAuthorityPublicKey) {
+      console.error('Could not find mint authority fee payer. Treasury account:', tokenDef.treasury_account);
+      return new Response(
+        JSON.stringify({ 
+          error: 'Could not identify mint authority. The original deployer fee payer may be inactive or removed.',
+          hint: 'The treasury account does not match any active fee payer ATAs'
+        }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Get the keypair for the mint authority fee payer
+    console.log('Fetching mint authority keypair...');
+    const feePayerResponse = await fetch(`${supabaseUrl}/functions/v1/get-fee-payer-keypair`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${supabaseServiceKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ fee_payer_id: mintAuthorityFeePayerId }),
+    });
+
+    if (!feePayerResponse.ok) {
+      const errorData = await feePayerResponse.json();
+      console.error('Failed to get fee payer keypair:', errorData);
+      return new Response(
+        JSON.stringify({ error: errorData.error || 'Failed to get fee payer keypair' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const feePayerData = await feePayerResponse.json();
+    const feePayerKeypair = Keypair.fromSecretKey(new Uint8Array(feePayerData.secret_key_array));
+    console.log('Using mint authority fee payer:', feePayerData.public_key, '(label:', feePayerData.label, ')');
+
+    // Use the stored treasury account (which is the ATA for this mint authority)
+    const treasuryATA = new PublicKey(tokenDef.treasury_account);
+    console.log('Treasury ATA:', treasuryATA.toBase58());
 
     // Check if ATA exists
     let ataExists = false;
