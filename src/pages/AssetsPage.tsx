@@ -1,12 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, Search, Filter } from 'lucide-react';
+import { Plus, Search, Filter, Package } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
+import { Card, CardContent } from '@/components/ui/card';
 import { AssetCard } from '@/components/assets/AssetCard';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -86,6 +87,44 @@ export default function AssetsPage() {
     const matchesOwner = myOwnerFilter === 'all' || asset.owner_entity === myOwnerFilter;
     return matchesSearch && matchesType && matchesOwner;
   });
+
+  // Calculate asset counts by type for My Assets summary
+  const myAssetTypeCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    myAssets.forEach((asset) => {
+      counts[asset.asset_type] = (counts[asset.asset_type] || 0) + 1;
+    });
+    return counts;
+  }, [myAssets]);
+
+  const renderMyAssetsSummary = () => {
+    if (myAssets.length === 0) return null;
+    
+    const typeEntries = Object.entries(myAssetTypeCounts);
+    
+    return (
+      <Card className="glass-card border-border/50">
+        <CardContent className="p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Package className="h-4 w-4 text-primary" />
+            <span className="text-sm font-medium">My Assets Summary</span>
+            <Badge variant="outline" className="ml-auto">{myAssets.length} Total</Badge>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {typeEntries.map(([type, count]) => (
+              <div 
+                key={type} 
+                className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-muted/50 border border-border/30"
+              >
+                <span className="text-xs text-muted-foreground">{ASSET_TYPE_LABELS[type as AssetType]}</span>
+                <Badge variant="secondary" className="h-5 min-w-[20px] justify-center">{count}</Badge>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
 
   const renderFiltersBar = (
     search: string,
@@ -221,6 +260,7 @@ export default function AssetsPage() {
           </TabsContent>
 
           <TabsContent value="my-assets" className="space-y-6 mt-6">
+            {renderMyAssetsSummary()}
             {renderFiltersBar(
               mySearchQuery,
               setMySearchQuery,
