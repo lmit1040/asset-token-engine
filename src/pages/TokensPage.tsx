@@ -104,11 +104,13 @@ export default function TokensPage() {
         .eq('user_id', user.id);
       
       if (data) {
-        setHoldings(data as unknown as HoldingWithDetails[]);
+        // Filter out holdings where token_definition is null (archived tokens)
+        const validHoldings = data.filter((h: any) => h.token_definition !== null);
+        setHoldings(validHoldings as unknown as HoldingWithDetails[]);
         
         // Fetch on-chain balances if user has Solana wallet
         if (solanaAddress) {
-          const solanaHoldings = data.filter(
+          const solanaHoldings = validHoldings.filter(
             (h: any) => h.token_definition?.chain === 'SOLANA' && h.token_definition?.contract_address
           );
           const mintAddresses = solanaHoldings.map((h: any) => h.token_definition.contract_address);
