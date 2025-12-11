@@ -113,12 +113,13 @@ serve(async (req) => {
     }
 
     const otherPendingAmount = pendingTransfers?.reduce((sum, t) => sum + Number(t.amount), 0) || 0;
-    const senderBalance = senderHolding?.balance || 0;
+    const senderBalance = Number(senderHolding?.balance || 0);
     const availableBalance = senderBalance - otherPendingAmount;
+    const requestAmount = Number(request.amount);
 
-    console.log(`Sender balance: ${senderBalance}, other pending: ${otherPendingAmount}, available: ${availableBalance}, requested: ${request.amount}`);
+    console.log(`Sender balance: ${senderBalance}, other pending: ${otherPendingAmount}, available: ${availableBalance}, requested: ${requestAmount}`);
 
-    if (availableBalance < request.amount) {
+    if (availableBalance < requestAmount) {
       return new Response(JSON.stringify({ 
         error: `Sender has insufficient balance. Available: ${availableBalance}, Requested: ${request.amount}` 
       }), {
@@ -128,9 +129,11 @@ serve(async (req) => {
     }
 
     // Deduct from sender
+    const newSenderBalance = senderBalance - requestAmount;
+    console.log(`Updating sender balance from ${senderBalance} to ${newSenderBalance}`);
     const { error: deductError } = await adminClient
       .from('user_token_holdings')
-      .update({ balance: senderBalance - request.amount })
+      .update({ balance: newSenderBalance })
       .eq('id', senderHolding.id);
 
     if (deductError) {
@@ -150,9 +153,12 @@ serve(async (req) => {
       .maybeSingle();
 
     if (recipientHolding) {
+      const currentRecipientBalance = Number(recipientHolding.balance);
+      const newRecipientBalance = currentRecipientBalance + requestAmount;
+      console.log(`Updating recipient balance from ${currentRecipientBalance} to ${newRecipientBalance}`);
       const { error: addError } = await adminClient
         .from('user_token_holdings')
-        .update({ balance: recipientHolding.balance + request.amount })
+        .update({ balance: newRecipientBalance })
         .eq('id', recipientHolding.id);
 
       if (addError) {
@@ -169,12 +175,13 @@ serve(async (req) => {
         });
       }
     } else {
+      console.log(`Creating new holding for recipient with balance ${requestAmount}`);
       const { error: createError } = await adminClient
         .from('user_token_holdings')
         .insert({
           user_id: request.to_user_id,
           token_definition_id: request.token_definition_id,
-          balance: request.amount,
+          balance: requestAmount,
           assigned_by: request.from_user_id,
         });
 
