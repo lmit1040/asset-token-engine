@@ -164,6 +164,41 @@ const handler = async (req: Request): Promise<Response> => {
     console.log('Treasury account:', treasuryTokenAccount.toBase58());
     console.log('Recipient wallet:', recipientWallet.toBase58());
 
+    // Calculate transfer amount with decimals
+    const transferAmountWithDecimals = BigInt(Math.floor(amount * Math.pow(10, tokenDef.decimals)));
+    console.log('Transfer amount with decimals:', transferAmountWithDecimals.toString());
+
+    // CHECK TREASURY BALANCE BEFORE TRANSFER
+    console.log('Checking treasury balance...');
+    try {
+      const treasuryAccountInfo = await getAccount(connection, treasuryTokenAccount);
+      const treasuryBalance = treasuryAccountInfo.amount;
+      console.log('Treasury balance (raw):', treasuryBalance.toString());
+      
+      if (treasuryBalance < transferAmountWithDecimals) {
+        const treasuryBalanceHuman = Number(treasuryBalance) / Math.pow(10, tokenDef.decimals);
+        console.error('Insufficient treasury balance:', treasuryBalanceHuman, 'requested:', amount);
+        return new Response(
+          JSON.stringify({ 
+            error: `Insufficient treasury balance. Treasury has ${treasuryBalanceHuman.toLocaleString()} ${tokenDef.token_symbol}, but ${amount.toLocaleString()} requested. Please mint more tokens to the treasury first.`,
+            treasuryBalance: treasuryBalanceHuman,
+            requestedAmount: amount,
+            tokenSymbol: tokenDef.token_symbol,
+          }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      console.log('Treasury balance sufficient for transfer');
+    } catch (treasuryError) {
+      console.error('Failed to fetch treasury account:', treasuryError);
+      return new Response(
+        JSON.stringify({ 
+          error: 'Failed to verify treasury balance. The treasury account may not exist or be inaccessible.',
+        }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // Get or create recipient's associated token account
     const recipientTokenAccount = getAssociatedTokenAddressSync(
       mintAddress,
@@ -196,10 +231,6 @@ const handler = async (req: Request): Promise<Response> => {
         )
       );
     }
-
-    // Calculate transfer amount with decimals
-    const transferAmountWithDecimals = BigInt(Math.floor(amount * Math.pow(10, tokenDef.decimals)));
-    console.log('Transfer amount with decimals:', transferAmountWithDecimals.toString());
 
     // Add transfer instruction
     transaction.add(
