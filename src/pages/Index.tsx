@@ -2,7 +2,7 @@ import { Navigate, Link } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { Vault, ShieldCheck, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-
+import MetallumXLogo from '@/assets/MetallumXLogo.png';
 const Index = () => {
   const { user, isLoading } = useAuth();
 
@@ -29,9 +29,7 @@ const Index = () => {
       <header className="border-b border-border px-6 py-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center">
-              <Vault className="h-6 w-6 text-primary-foreground" />
-            </div>
+            <img src={MetallumXLogo} alt="MetallumX" className="h-10" />
             <span className="text-xl font-bold gold-text">MetallumX Vault</span>
           </div>
           <div className="flex items-center gap-3">
