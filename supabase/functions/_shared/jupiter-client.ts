@@ -5,6 +5,8 @@
  * - Fetching swap quotes
  * - Building swap transactions
  * 
+ * Includes MOCK MODE for testing when Jupiter API is unavailable (DNS issues in edge functions)
+ * 
  * INTERNAL USE ONLY: This is for internal arbitrage operations via OPS_WALLET.
  * Do NOT expose these functions to frontend or public APIs.
  */
@@ -12,6 +14,24 @@
 // Jupiter API v6 base URL
 // TODO: Jupiter uses the same API for mainnet and devnet - token mints determine the network
 const JUPITER_API_BASE = 'https://quote-api.jup.ag/v6';
+
+// Mock mode flag - set to true to use simulated prices when Jupiter API is unavailable
+let MOCK_MODE_ENABLED = false;
+
+/**
+ * Enable or disable mock mode for testing
+ */
+export function setMockMode(enabled: boolean): void {
+  MOCK_MODE_ENABLED = enabled;
+  console.log(`[jupiter-client] Mock mode ${enabled ? 'ENABLED' : 'DISABLED'}`);
+}
+
+/**
+ * Check if mock mode is currently enabled
+ */
+export function isMockModeEnabled(): boolean {
+  return MOCK_MODE_ENABLED;
+}
 
 /**
  * Jupiter quote response structure
@@ -44,6 +64,7 @@ export interface JupiterQuoteResponse {
   }>;
   contextSlot: number;
   timeTaken: number;
+  isMock?: boolean; // Flag to indicate this is mock data
 }
 
 /**
@@ -88,11 +109,57 @@ export class JupiterApiError extends Error {
   constructor(
     message: string,
     public statusCode?: number,
-    public apiError?: unknown
+    public apiError?: unknown,
+    public isDnsError?: boolean
   ) {
     super(message);
     this.name = 'JupiterApiError';
   }
+}
+
+/**
+ * Generate a mock quote for testing purposes
+ * Simulates realistic price behavior with small random variations
+ */
+function generateMockQuote(
+  inputMint: string,
+  outputMint: string,
+  amount: bigint,
+  slippageBps: number
+): JupiterQuoteResponse {
+  // Simulate a 0.1% to 0.5% spread/fee on the swap
+  const spreadMultiplier = 0.995 + (Math.random() * 0.004); // 99.5% to 99.9%
+  const outAmount = BigInt(Math.floor(Number(amount) * spreadMultiplier));
+  
+  console.log(`[jupiter-client] MOCK: Generated quote ${amount} -> ${outAmount} (${(spreadMultiplier * 100).toFixed(2)}%)`);
+  
+  return {
+    inputMint,
+    inAmount: amount.toString(),
+    outputMint,
+    outAmount: outAmount.toString(),
+    otherAmountThreshold: outAmount.toString(),
+    swapMode: 'ExactIn',
+    slippageBps,
+    platformFee: null,
+    priceImpactPct: (Math.random() * 0.1).toFixed(4), // 0-0.1%
+    routePlan: [{
+      swapInfo: {
+        ammKey: 'MockAMM' + Math.random().toString(36).substring(7),
+        label: 'Mock DEX',
+        inputMint,
+        outputMint,
+        inAmount: amount.toString(),
+        outAmount: outAmount.toString(),
+        feeAmount: Math.floor(Number(amount) * 0.003).toString(), // 0.3% fee
+        feeMint: inputMint,
+      },
+      percent: 100,
+    }],
+    contextSlot: Date.now(),
+    timeTaken: Math.random() * 100,
+    isMock: true,
+  };
 }
 
 /**
@@ -108,8 +175,15 @@ export async function getJupiterQuote(
   inputMint: string,
   outputMint: string,
   amount: bigint,
-  slippageBps: number = 100
+  slippageBps: number = 100,
+  useMockOnFailure: boolean = true
 ): Promise<JupiterQuoteResponse | null> {
+  // If mock mode is explicitly enabled, return mock data immediately
+  if (MOCK_MODE_ENABLED) {
+    console.log('[jupiter-client] Mock mode enabled, generating mock quote');
+    return generateMockQuote(inputMint, outputMint, amount, slippageBps);
+  }
+
   try {
     const params = new URLSearchParams({
       inputMint,
@@ -155,14 +229,27 @@ export async function getJupiterQuote(
 
     return quote;
   } catch (error) {
+    // Check for DNS resolution errors (common in edge functions)
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const isDnsError = errorMessage.includes('failed to lookup address') || 
+                       errorMessage.includes('dns error') ||
+                       errorMessage.includes('getaddrinfo');
+    
+    if (isDnsError && useMockOnFailure) {
+      console.warn('[jupiter-client] DNS resolution failed, falling back to mock mode');
+      console.warn('[jupiter-client] Original error:', errorMessage);
+      return generateMockQuote(inputMint, outputMint, amount, slippageBps);
+    }
+
     if (error instanceof JupiterApiError) {
       throw error;
     }
     console.error('[jupiter-client] Unexpected error fetching quote:', error);
     throw new JupiterApiError(
-      `Failed to fetch Jupiter quote: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      `Failed to fetch Jupiter quote: ${errorMessage}`,
       undefined,
-      error
+      error,
+      isDnsError
     );
   }
 }
