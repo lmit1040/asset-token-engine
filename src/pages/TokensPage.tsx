@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { Coins, ExternalLink, Globe, CheckCircle, XCircle, Search, ArrowUpDown, ArrowUp, ArrowDown, RefreshCw, Wallet, TrendingUp } from 'lucide-react';
+import { Coins, ExternalLink, Globe, CheckCircle, XCircle, Search, ArrowUpDown, ArrowUp, ArrowDown, RefreshCw, Wallet, TrendingUp, Archive } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { supabase } from '@/integrations/supabase/client';
 import { TokenDefinition, Asset, UserTokenHolding, TOKEN_MODEL_LABELS, ASSET_TYPE_LABELS, BLOCKCHAIN_CHAIN_LABELS, BlockchainChain, NETWORK_TYPE_LABELS, NetworkType, DEPLOYMENT_STATUS_LABELS, DeploymentStatus, ASSET_PRICES } from '@/types/database';
@@ -47,6 +47,7 @@ export default function TokensPage() {
   
   // Holdings state
   const [holdings, setHoldings] = useState<HoldingWithDetails[]>([]);
+  const [archivedHoldingsCount, setArchivedHoldingsCount] = useState(0);
   const [isLoadingHoldings, setIsLoadingHoldings] = useState(false);
   
   // All Tokens Filters
@@ -106,7 +107,9 @@ export default function TokensPage() {
       if (data) {
         // Filter out holdings where token_definition is null (archived tokens)
         const validHoldings = data.filter((h: any) => h.token_definition !== null);
+        const archivedCount = data.filter((h: any) => h.token_definition === null).length;
         setHoldings(validHoldings as unknown as HoldingWithDetails[]);
+        setArchivedHoldingsCount(archivedCount);
         
         // Fetch on-chain balances if user has Solana wallet
         if (solanaAddress) {
@@ -531,6 +534,21 @@ export default function TokensPage() {
 
           {/* My Holdings Tab */}
           <TabsContent value="my-holdings" className="space-y-4 mt-4">
+            {/* Archived Holdings Notice */}
+            {archivedHoldingsCount > 0 && (
+              <div className="flex items-start gap-3 p-4 rounded-lg border border-amber-500/30 bg-amber-500/10">
+                <Archive className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-amber-500">
+                    {archivedHoldingsCount} holding{archivedHoldingsCount > 1 ? 's' : ''} linked to archived tokens
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Some of your token holdings are linked to tokens that have been archived and are not displayed below. Contact an administrator if you have questions.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Portfolio Summary */}
             {holdings.length > 0 && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
