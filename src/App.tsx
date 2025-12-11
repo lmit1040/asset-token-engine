@@ -38,6 +38,7 @@ import AdminNewsPage from "./pages/AdminNewsPage";
 import AdminTokenProposalsPage from "./pages/AdminTokenProposalsPage";
 import ProofOfReservePage from "./pages/ProofOfReservePage";
 import AdminLaunchChecklistPage from "./pages/AdminLaunchChecklistPage";
+import AdminFlashLoanAnalyticsPage from "./pages/AdminFlashLoanAnalyticsPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -80,6 +81,7 @@ const App = () => (
               <Route path="/admin/arbitrage/runs" element={<AdminArbitrageRunsPage />} />
               <Route path="/admin/arbitrage/automation" element={<AdminAutomatedArbitragePage />} />
               <Route path="/admin/arbitrage/flash-loans" element={<AdminFlashLoanProvidersPage />} />
+              <Route path="/admin/arbitrage/flash-loan-analytics" element={<AdminFlashLoanAnalyticsPage />} />
               <Route path="/admin/archived" element={<AdminArchivedPage />} />
               <Route path="/admin/news" element={<AdminNewsPage />} />
               <Route path="/admin/activity" element={<AdminActivityPage />} />
