@@ -85,7 +85,7 @@ const adminNavigation = [{
   icon: Bot
 }, {
   name: "Flash Loan Providers",
-  href: "/admin/flash-loan-providers",
+  href: "/admin/arbitrage/flash-loans",
   icon: Sparkles
 }, {
   name: "News",
