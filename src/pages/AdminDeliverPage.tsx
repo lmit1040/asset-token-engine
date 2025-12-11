@@ -1,11 +1,12 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Search, Send, ExternalLink, AlertTriangle, CheckCircle2, Wallet, RefreshCw, Coins } from 'lucide-react';
+import { Search, Send, ExternalLink, AlertTriangle, CheckCircle2, Wallet, RefreshCw, Coins, Plus } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { supabase } from '@/integrations/supabase/client';
 import { Profile, TokenDefinition, Asset, UserTokenHolding } from '@/types/database';
 import { toast } from 'sonner';
@@ -25,6 +26,14 @@ interface TreasuryBalance {
   error?: string;
 }
 
+interface TokenForMint {
+  id: string;
+  symbol: string;
+  name: string;
+  totalSupply: number;
+  decimals: number;
+}
+
 export default function AdminDeliverPage() {
   const [holdings, setHoldings] = useState<HoldingWithDetails[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -34,6 +43,9 @@ export default function AdminDeliverPage() {
   const [filterStatus, setFilterStatus] = useState<string>('ready');
   const [treasuryBalances, setTreasuryBalances] = useState<Record<string, TreasuryBalance>>({});
   const [isRefreshingBalances, setIsRefreshingBalances] = useState(false);
+  const [mintModalOpen, setMintModalOpen] = useState(false);
+  const [mintingToken, setMintingToken] = useState<TokenForMint | null>(null);
+  const [isMinting, setIsMinting] = useState(false);
 
   useEffect(() => {
     fetchHoldings();
@@ -152,6 +164,51 @@ export default function AdminDeliverPage() {
       fetchTreasuryBalances(holdings);
     }
   }, [holdings, fetchTreasuryBalances]);
+
+  const openMintModal = (token: TokenForMint) => {
+    setMintingToken(token);
+    setMintModalOpen(true);
+  };
+
+  const handleMintToTreasury = async () => {
+    if (!mintingToken) return;
+    
+    setIsMinting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('mint-to-treasury', {
+        body: { tokenDefinitionId: mintingToken.id },
+      });
+
+      if (error) throw error;
+      if (data.error) throw new Error(data.error);
+
+      toast.success(
+        <div className="space-y-1">
+          <p>Minted tokens to {mintingToken.symbol} treasury!</p>
+          {data.transactionSignature && (
+            <a
+              href={`https://explorer.solana.com/tx/${data.transactionSignature}?cluster=devnet`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary hover:underline text-sm flex items-center gap-1"
+            >
+              View transaction <ExternalLink className="h-3 w-3" />
+            </a>
+          )}
+        </div>
+      );
+
+      setMintModalOpen(false);
+      setMintingToken(null);
+      // Refresh balances after minting
+      handleRefreshBalances();
+    } catch (error: any) {
+      console.error('Minting failed:', error);
+      toast.error(error.message || 'Failed to mint tokens to treasury');
+    } finally {
+      setIsMinting(false);
+    }
+  };
 
   const handleDeliver = async (holding: HoldingWithDetails, amount: number) => {
     if (!holding.user.solana_wallet_address) {
@@ -275,7 +332,7 @@ export default function AdminDeliverPage() {
           <div className="flex flex-wrap gap-2">
             {(() => {
               // Get unique deployed Solana tokens
-              const uniqueTokens = new Map<string, { symbol: string; name: string; balance: number | undefined; isLoading: boolean; error?: string; totalUserBalance: number }>();
+              const uniqueTokens = new Map<string, { symbol: string; name: string; balance: number | undefined; isLoading: boolean; error?: string; totalUserBalance: number; totalSupply: number; decimals: number }>();
               holdings.forEach(h => {
                 const token = h.token_definition;
                 if (token.chain === 'SOLANA' && token.deployment_status === 'DEPLOYED' && token.treasury_account) {
@@ -288,6 +345,8 @@ export default function AdminDeliverPage() {
                     isLoading: treasuryData?.isLoading ?? true,
                     error: treasuryData?.error,
                     totalUserBalance: (existing?.totalUserBalance || 0) + Number(h.balance),
+                    totalSupply: token.total_supply,
+                    decimals: token.decimals,
                   });
                 }
               });
@@ -300,6 +359,7 @@ export default function AdminDeliverPage() {
                 const balance = data.balance ?? 0;
                 const isEmpty = balance === 0;
                 const isLow = !isEmpty && balance < data.totalUserBalance;
+                const needsMint = isEmpty || isLow;
                 
                 return (
                   <div
@@ -329,6 +389,23 @@ export default function AdminDeliverPage() {
                         <CheckCircle2 className="h-3 w-3" />
                         {balance.toLocaleString()}
                       </span>
+                    )}
+                    {needsMint && !data.isLoading && !data.error && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-xs"
+                        onClick={() => openMintModal({
+                          id: tokenId,
+                          symbol: data.symbol,
+                          name: data.name,
+                          totalSupply: data.totalSupply,
+                          decimals: data.decimals,
+                        })}
+                      >
+                        <Plus className="h-3 w-3 mr-1" />
+                        Mint
+                      </Button>
                     )}
                   </div>
                 );
@@ -507,6 +584,59 @@ export default function AdminDeliverPage() {
           </div>
         )}
       </div>
+
+      {/* Mint to Treasury Modal */}
+      <Dialog open={mintModalOpen} onOpenChange={setMintModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Mint to Treasury</DialogTitle>
+            <DialogDescription>
+              This will mint the full token supply to the treasury account for {mintingToken?.symbol}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <Label className="text-muted-foreground">Token</Label>
+                <p className="font-mono font-medium">{mintingToken?.symbol}</p>
+              </div>
+              <div>
+                <Label className="text-muted-foreground">Name</Label>
+                <p className="text-foreground">{mintingToken?.name}</p>
+              </div>
+              <div>
+                <Label className="text-muted-foreground">Total Supply</Label>
+                <p className="font-mono">{mintingToken?.totalSupply?.toLocaleString()}</p>
+              </div>
+              <div>
+                <Label className="text-muted-foreground">Decimals</Label>
+                <p className="font-mono">{mintingToken?.decimals}</p>
+              </div>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              The mint function will top up the treasury to the full total supply. Any existing tokens in the treasury will remain.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMintModalOpen(false)} disabled={isMinting}>
+              Cancel
+            </Button>
+            <Button onClick={handleMintToTreasury} disabled={isMinting}>
+              {isMinting ? (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  Minting...
+                </>
+              ) : (
+                <>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Mint to Treasury
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }
