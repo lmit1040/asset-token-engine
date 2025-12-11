@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Search, Send, ExternalLink, AlertTriangle, CheckCircle2, Wallet } from 'lucide-react';
+import { useEffect, useState, useCallback } from 'react';
+import { Search, Send, ExternalLink, AlertTriangle, CheckCircle2, Wallet, RefreshCw, Coins } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,6 +19,12 @@ interface HoldingWithDetails extends UserTokenHolding {
   user: Profile;
 }
 
+interface TreasuryBalance {
+  balance: number;
+  isLoading: boolean;
+  error?: string;
+}
+
 export default function AdminDeliverPage() {
   const [holdings, setHoldings] = useState<HoldingWithDetails[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -26,6 +32,8 @@ export default function AdminDeliverPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterChain, setFilterChain] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('ready');
+  const [treasuryBalances, setTreasuryBalances] = useState<Record<string, TreasuryBalance>>({});
+  const [isRefreshingBalances, setIsRefreshingBalances] = useState(false);
 
   useEffect(() => {
     fetchHoldings();
@@ -70,6 +78,80 @@ export default function AdminDeliverPage() {
       setIsLoading(false);
     }
   }
+
+  // Fetch treasury balances for all unique deployed tokens
+  const fetchTreasuryBalances = useCallback(async (holdingsData: HoldingWithDetails[]) => {
+    // Get unique deployed Solana tokens with treasury accounts
+    const uniqueTokens = new Map<string, { treasuryAccount: string; contractAddress: string; symbol: string }>();
+    
+    holdingsData.forEach(h => {
+      const token = h.token_definition;
+      if (token.chain === 'SOLANA' && token.deployment_status === 'DEPLOYED' && token.treasury_account && token.contract_address) {
+        if (!uniqueTokens.has(token.id)) {
+          uniqueTokens.set(token.id, {
+            treasuryAccount: token.treasury_account,
+            contractAddress: token.contract_address,
+            symbol: token.token_symbol,
+          });
+        }
+      }
+    });
+
+    if (uniqueTokens.size === 0) return;
+
+    // Mark all as loading
+    const loadingState: Record<string, TreasuryBalance> = {};
+    uniqueTokens.forEach((_, tokenId) => {
+      loadingState[tokenId] = { balance: 0, isLoading: true };
+    });
+    setTreasuryBalances(loadingState);
+
+    // Fetch balances for each token
+    for (const [tokenId, tokenInfo] of uniqueTokens) {
+      try {
+        const { data, error } = await supabase.functions.invoke('get-solana-balances', {
+          body: {
+            walletAddress: tokenInfo.treasuryAccount,
+            mintAddresses: [tokenInfo.contractAddress],
+            isTreasuryAccount: true,
+          },
+        });
+
+        if (error || !data?.success) {
+          setTreasuryBalances(prev => ({
+            ...prev,
+            [tokenId]: { balance: 0, isLoading: false, error: 'Failed to fetch' },
+          }));
+        } else {
+          const balance = data.balances?.[0]?.balance || 0;
+          setTreasuryBalances(prev => ({
+            ...prev,
+            [tokenId]: { balance, isLoading: false },
+          }));
+        }
+      } catch (err) {
+        console.error(`Failed to fetch treasury balance for ${tokenInfo.symbol}:`, err);
+        setTreasuryBalances(prev => ({
+          ...prev,
+          [tokenId]: { balance: 0, isLoading: false, error: 'Error' },
+        }));
+      }
+    }
+  }, []);
+
+  const handleRefreshBalances = async () => {
+    setIsRefreshingBalances(true);
+    await fetchTreasuryBalances(holdings);
+    setIsRefreshingBalances(false);
+    toast.success('Treasury balances refreshed');
+  };
+
+  // Fetch balances when holdings change
+  useEffect(() => {
+    if (holdings.length > 0) {
+      fetchTreasuryBalances(holdings);
+    }
+  }, [holdings, fetchTreasuryBalances]);
 
   const handleDeliver = async (holding: HoldingWithDetails, amount: number) => {
     if (!holding.user.solana_wallet_address) {
@@ -209,6 +291,15 @@ export default function AdminDeliverPage() {
                   <SelectItem value="pending">Pending Setup</SelectItem>
                 </SelectContent>
               </Select>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={handleRefreshBalances}
+                disabled={isRefreshingBalances}
+                title="Refresh treasury balances"
+              >
+                <RefreshCw className={`h-4 w-4 ${isRefreshingBalances ? 'animate-spin' : ''}`} />
+              </Button>
             </div>
           </div>
         </div>
@@ -261,11 +352,32 @@ export default function AdminDeliverPage() {
                           {holding.token_definition.token_name}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 mt-1 text-sm">
-                        <span className="text-muted-foreground">Balance:</span>
-                        <span className="font-mono text-foreground">
-                          {Number(holding.balance).toLocaleString()}
-                        </span>
+                      <div className="flex items-center gap-4 mt-1 text-sm">
+                        <div className="flex items-center gap-1">
+                          <span className="text-muted-foreground">User Balance:</span>
+                          <span className="font-mono text-foreground">
+                            {Number(holding.balance).toLocaleString()}
+                          </span>
+                        </div>
+                        {holding.token_definition.deployment_status === 'DEPLOYED' && (
+                          <div className="flex items-center gap-1">
+                            <Coins className="h-3 w-3 text-muted-foreground" />
+                            <span className="text-muted-foreground">Treasury:</span>
+                            {treasuryBalances[holding.token_definition.id]?.isLoading ? (
+                              <span className="text-xs text-muted-foreground">loading...</span>
+                            ) : treasuryBalances[holding.token_definition.id]?.error ? (
+                              <span className="text-xs text-destructive">error</span>
+                            ) : (
+                              <span className={`font-mono ${
+                                (treasuryBalances[holding.token_definition.id]?.balance || 0) < Number(holding.balance)
+                                  ? 'text-amber-500'
+                                  : 'text-emerald-500'
+                              }`}>
+                                {(treasuryBalances[holding.token_definition.id]?.balance || 0).toLocaleString()}
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
                       <div className="flex items-center gap-2 mt-1">
                         <Badge variant="outline" className="text-xs">
