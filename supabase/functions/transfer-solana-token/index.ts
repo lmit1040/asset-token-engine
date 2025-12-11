@@ -11,6 +11,7 @@ import {
   createTransferInstruction,
   createAssociatedTokenAccountInstruction,
   getAssociatedTokenAddressSync,
+  getAssociatedTokenAddress,
   getAccount,
   TOKEN_PROGRAM_ID,
   ASSOCIATED_TOKEN_PROGRAM_ID
@@ -126,15 +127,69 @@ const handler = async (req: Request): Promise<Response> => {
       );
     }
 
-    // Get fee payer keypair from database (automatic rotation)
-    console.log('Fetching fee payer from database...');
+    // Connect to Solana Devnet
+    const rpcUrl = Deno.env.get('SOLANA_DEVNET_RPC_URL') || 'https://api.devnet.solana.com';
+    console.log('Connecting to Solana RPC:', rpcUrl);
+    const connection = new Connection(rpcUrl, 'confirmed');
+
+    // Parse addresses
+    const mintAddress = new PublicKey(tokenDef.contract_address);
+    const treasuryTokenAccount = new PublicKey(tokenDef.treasury_account);
+
+    // Find which fee payer owns the treasury account by matching ATAs
+    console.log('Finding fee payer that owns treasury account...');
+    const { data: feePayerKeys, error: feePayerError } = await supabase
+      .from('fee_payer_keys')
+      .select('id, public_key, label')
+      .eq('is_active', true);
+
+    if (feePayerError || !feePayerKeys || feePayerKeys.length === 0) {
+      console.error('No active fee payers found:', feePayerError);
+      return new Response(
+        JSON.stringify({ error: 'No active fee payers found' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    let matchingFeePayerId: string | null = null;
+    let matchingFeePayerLabel: string | null = null;
+
+    // Check each fee payer to find the one whose ATA matches the treasury
+    for (const fp of feePayerKeys) {
+      const fpPubkey = new PublicKey(fp.public_key);
+      const derivedAta = await getAssociatedTokenAddress(
+        mintAddress,
+        fpPubkey,
+        false,
+        TOKEN_PROGRAM_ID,
+        ASSOCIATED_TOKEN_PROGRAM_ID
+      );
+      
+      if (derivedAta.equals(treasuryTokenAccount)) {
+        matchingFeePayerId = fp.id;
+        matchingFeePayerLabel = fp.label;
+        console.log('Found matching fee payer:', fp.public_key, '(label:', fp.label, ')');
+        break;
+      }
+    }
+
+    if (!matchingFeePayerId) {
+      console.error('Could not find fee payer that owns treasury account');
+      return new Response(
+        JSON.stringify({ error: 'Could not find fee payer that owns the treasury account. The treasury may have been created by a deactivated fee payer.' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Get the specific fee payer keypair that owns the treasury
+    console.log('Fetching treasury owner fee payer keypair...');
     const feePayerResponse = await fetch(`${supabaseUrl}/functions/v1/get-fee-payer-keypair`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${supabaseServiceKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ prefer_least_used: true }),
+      body: JSON.stringify({ fee_payer_id: matchingFeePayerId }),
     });
 
     if (!feePayerResponse.ok) {
@@ -148,16 +203,8 @@ const handler = async (req: Request): Promise<Response> => {
 
     const feePayerData = await feePayerResponse.json();
     const feePayerKeypair = Keypair.fromSecretKey(new Uint8Array(feePayerData.secret_key_array));
-    console.log('Using fee payer:', feePayerData.public_key, '(label:', feePayerData.label, ')');
+    console.log('Using treasury owner fee payer:', feePayerData.public_key, '(label:', matchingFeePayerLabel, ')');
 
-    // Connect to Solana Devnet
-    const rpcUrl = Deno.env.get('SOLANA_DEVNET_RPC_URL') || 'https://api.devnet.solana.com';
-    console.log('Connecting to Solana RPC:', rpcUrl);
-    const connection = new Connection(rpcUrl, 'confirmed');
-
-    // Parse addresses
-    const mintAddress = new PublicKey(tokenDef.contract_address);
-    const treasuryTokenAccount = new PublicKey(tokenDef.treasury_account);
     const recipientWallet = new PublicKey(user.solana_wallet_address);
 
     console.log('Mint address:', mintAddress.toBase58());
