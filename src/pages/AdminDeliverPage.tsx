@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Search, Send, ExternalLink, AlertTriangle, CheckCircle2, Wallet, RefreshCw, Coins, Plus } from 'lucide-react';
+import { Search, Send, ExternalLink, AlertTriangle, CheckCircle2, Wallet, RefreshCw, Coins, Plus, Pause, Play } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -46,6 +46,8 @@ export default function AdminDeliverPage() {
   const [mintModalOpen, setMintModalOpen] = useState(false);
   const [mintingToken, setMintingToken] = useState<TokenForMint | null>(null);
   const [isMinting, setIsMinting] = useState(false);
+  const [autoRefreshPaused, setAutoRefreshPaused] = useState(false);
+  const [countdown, setCountdown] = useState(30);
 
   useEffect(() => {
     fetchHoldings();
@@ -162,15 +164,28 @@ export default function AdminDeliverPage() {
   useEffect(() => {
     if (holdings.length > 0) {
       fetchTreasuryBalances(holdings);
-      
-      // Auto-refresh every 30 seconds
-      const interval = setInterval(() => {
-        fetchTreasuryBalances(holdings);
-      }, 30000);
-      
-      return () => clearInterval(interval);
+      setCountdown(30);
     }
   }, [holdings, fetchTreasuryBalances]);
+
+  // Countdown timer and auto-refresh
+  useEffect(() => {
+    if (holdings.length === 0) return;
+
+    const interval = setInterval(() => {
+      if (autoRefreshPaused) return;
+      
+      setCountdown(prev => {
+        if (prev <= 1) {
+          fetchTreasuryBalances(holdings);
+          return 30;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [holdings, autoRefreshPaused, fetchTreasuryBalances]);
 
   const openMintModal = (token: TokenForMint) => {
     setMintingToken(token);
@@ -326,6 +341,26 @@ export default function AdminDeliverPage() {
               <Coins className="h-4 w-4" />
               Treasury Status
             </h3>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              <span>Auto-refresh in</span>
+              <span className={`font-mono min-w-[2ch] ${autoRefreshPaused ? 'text-muted-foreground/50' : 'text-foreground'}`}>
+                {autoRefreshPaused ? '--' : countdown}s
+              </span>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 p-0"
+              onClick={() => setAutoRefreshPaused(!autoRefreshPaused)}
+              title={autoRefreshPaused ? 'Resume auto-refresh' : 'Pause auto-refresh'}
+            >
+              {autoRefreshPaused ? (
+                <Play className="h-4 w-4" />
+              ) : (
+                <Pause className="h-4 w-4" />
+              )}
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -335,6 +370,7 @@ export default function AdminDeliverPage() {
               <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshingBalances ? 'animate-spin' : ''}`} />
               Refresh
             </Button>
+          </div>
           </div>
           <div className="flex flex-wrap gap-2">
             {(() => {
