@@ -182,17 +182,20 @@ export default function TransfersPage() {
 
   const handleCancel = async (requestId: string) => {
     try {
-      await supabase
+      const { error } = await supabase
         .from('transfer_requests')
         .update({ status: 'CANCELLED', resolved_at: new Date().toISOString() })
         .eq('id', requestId);
 
+      if (error) throw error;
+
       toast({ title: 'Transfer cancelled' });
       fetchRequests();
     } catch (error: any) {
+      console.error('Cancel error:', error);
       toast({
         title: 'Error',
-        description: 'Failed to cancel transfer',
+        description: error.message || 'Failed to cancel transfer',
         variant: 'destructive',
       });
     }
