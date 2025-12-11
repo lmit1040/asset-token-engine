@@ -113,7 +113,7 @@ export function Sidebar() {
   return <div className="flex h-full w-64 flex-col bg-sidebar border-r border-sidebar-border">
       {/* Logo */}
       <div className="flex h-40 items-center gap-3 px-6 border-b border-sidebar-border">
-        <img src="/assets/MetallumXLogo.png" alt="MetallumX" className="hue-rotate-30 w-auto" />
+        <img src="/assets/MetallumXLogo.png" alt="MetallumX" className="w-auto" />
       </div>
 
       {/* Navigation */}
