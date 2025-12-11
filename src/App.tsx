@@ -36,6 +36,7 @@ import AdminSubmissionsPage from "./pages/AdminSubmissionsPage";
 import AdminNewsPage from "./pages/AdminNewsPage";
 import AdminTokenProposalsPage from "./pages/AdminTokenProposalsPage";
 import ProofOfReservePage from "./pages/ProofOfReservePage";
+import AdminLaunchChecklistPage from "./pages/AdminLaunchChecklistPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -80,6 +81,7 @@ const App = () => (
               <Route path="/admin/archived" element={<AdminArchivedPage />} />
               <Route path="/admin/news" element={<AdminNewsPage />} />
               <Route path="/admin/activity" element={<AdminActivityPage />} />
+              <Route path="/admin/launch-checklist" element={<AdminLaunchChecklistPage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </WalletProvider>
