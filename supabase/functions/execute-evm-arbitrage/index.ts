@@ -13,19 +13,31 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Network RPC URLs
+// Network RPC URLs (mainnets and testnets)
 const NETWORK_RPC_URLS: Record<string, string> = {
+  // Mainnets
   POLYGON: "https://polygon-rpc.com",
   ETHEREUM: "https://eth.llamarpc.com",
   ARBITRUM: "https://arb1.arbitrum.io/rpc",
   BSC: "https://bsc-dataseed1.binance.org",
+  // Testnets
+  POLYGON_AMOY: "https://rpc-amoy.polygon.technology",
+  SEPOLIA: "https://eth-sepolia.g.alchemy.com/v2/demo",
+  ARBITRUM_SEPOLIA: "https://sepolia-rollup.arbitrum.io/rpc",
+  BSC_TESTNET: "https://data-seed-prebsc-1-s1.binance.org:8545",
 };
 
 const CHAIN_IDS: Record<string, number> = {
+  // Mainnets
   POLYGON: 137,
   ETHEREUM: 1,
   ARBITRUM: 42161,
   BSC: 56,
+  // Testnets
+  POLYGON_AMOY: 80002,
+  SEPOLIA: 11155111,
+  ARBITRUM_SEPOLIA: 421614,
+  BSC_TESTNET: 97,
 };
 
 // EVM auto-refill thresholds (in native token units - ETH/MATIC/etc)

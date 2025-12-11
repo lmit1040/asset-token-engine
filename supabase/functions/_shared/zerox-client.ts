@@ -1,21 +1,52 @@
 // 0x Swap API v2 Client Helper
 // Used for EVM DEX price fetching and swap quotes
 
-// 0x API endpoints per network
+// 0x API endpoints per network (mainnets and testnets)
+// Note: 0x Swap API primarily works on mainnets. Testnets have limited liquidity.
 const ZEROX_API_URLS: Record<string, string> = {
+  // Mainnets
   POLYGON: "https://polygon.api.0x.org",
   ETHEREUM: "https://api.0x.org",
   ARBITRUM: "https://arbitrum.api.0x.org",
   BSC: "https://bsc.api.0x.org",
+  // Testnets - same API endpoints but use testnet chain IDs
+  POLYGON_AMOY: "https://polygon.api.0x.org",
+  SEPOLIA: "https://api.0x.org",
+  ARBITRUM_SEPOLIA: "https://arbitrum.api.0x.org",
+  BSC_TESTNET: "https://bsc.api.0x.org",
 };
 
 // Chain IDs for 0x API
 const CHAIN_IDS: Record<string, number> = {
+  // Mainnets
   POLYGON: 137,
   ETHEREUM: 1,
   ARBITRUM: 42161,
   BSC: 56,
+  // Testnets
+  POLYGON_AMOY: 80002,
+  SEPOLIA: 11155111,
+  ARBITRUM_SEPOLIA: 421614,
+  BSC_TESTNET: 97,
 };
+
+// Network display names
+export const NETWORK_NAMES: Record<string, string> = {
+  POLYGON: "Polygon (Mainnet)",
+  ETHEREUM: "Ethereum (Mainnet)",
+  ARBITRUM: "Arbitrum (Mainnet)",
+  BSC: "BNB Chain (Mainnet)",
+  POLYGON_AMOY: "Polygon Amoy (Testnet)",
+  SEPOLIA: "Ethereum Sepolia (Testnet)",
+  ARBITRUM_SEPOLIA: "Arbitrum Sepolia (Testnet)",
+  BSC_TESTNET: "BNB Chain Testnet",
+};
+
+// Check if network is a testnet
+export function isTestnet(network: string): boolean {
+  const testnets = ["POLYGON_AMOY", "SEPOLIA", "ARBITRUM_SEPOLIA", "BSC_TESTNET"];
+  return testnets.includes(network.toUpperCase());
+}
 
 export interface ZeroXQuote {
   sellToken: string;
