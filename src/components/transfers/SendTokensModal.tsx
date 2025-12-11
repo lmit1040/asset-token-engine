@@ -36,6 +36,7 @@ interface UserProfile {
 export function SendTokensModal({ onClose, onSuccess }: SendTokensModalProps) {
   const { user } = useAuth();
   const [holdings, setHoldings] = useState<UserHolding[]>([]);
+  const [pendingAmounts, setPendingAmounts] = useState<Map<string, number>>(new Map());
   const [selectedToken, setSelectedToken] = useState<string>('');
   const [recipientSearch, setRecipientSearch] = useState('');
   const [searchResults, setSearchResults] = useState<UserProfile[]>([]);
@@ -46,14 +47,30 @@ export function SendTokensModal({ onClose, onSuccess }: SendTokensModalProps) {
   const [isSearching, setIsSearching] = useState(false);
 
   useEffect(() => {
-    async function fetchHoldings() {
+    async function fetchHoldingsAndPending() {
       if (!user) return;
       
+      // Fetch holdings
       const { data: holdingsData } = await supabase
         .from('user_token_holdings')
         .select('token_definition_id, balance')
         .eq('user_id', user.id)
         .gt('balance', 0);
+
+      // Fetch pending outgoing transfer requests to calculate reserved amounts
+      const { data: pendingTransfers } = await supabase
+        .from('transfer_requests')
+        .select('token_definition_id, amount')
+        .eq('from_user_id', user.id)
+        .eq('status', 'PENDING');
+
+      // Calculate pending amounts per token
+      const pendingMap = new Map<string, number>();
+      pendingTransfers?.forEach(t => {
+        const current = pendingMap.get(t.token_definition_id) || 0;
+        pendingMap.set(t.token_definition_id, current + t.amount);
+      });
+      setPendingAmounts(pendingMap);
 
       if (holdingsData && holdingsData.length > 0) {
         const tokenIds = holdingsData.map(h => h.token_definition_id);
@@ -72,7 +89,7 @@ export function SendTokensModal({ onClose, onSuccess }: SendTokensModalProps) {
         })));
       }
     }
-    fetchHoldings();
+    fetchHoldingsAndPending();
   }, [user]);
 
   const handleSearch = async () => {
@@ -97,7 +114,10 @@ export function SendTokensModal({ onClose, onSuccess }: SendTokensModalProps) {
   };
 
   const selectedHolding = holdings.find(h => h.token_definition_id === selectedToken);
-  const maxAmount = selectedHolding?.balance || 0;
+  const pendingForToken = pendingAmounts.get(selectedToken) || 0;
+  const totalBalance = selectedHolding?.balance || 0;
+  const availableBalance = Math.max(0, totalBalance - pendingForToken);
+  const maxAmount = availableBalance;
 
   const handleSubmit = async () => {
     if (!user || !selectedToken || !selectedRecipient || !amount) return;
@@ -158,11 +178,16 @@ export function SendTokensModal({ onClose, onSuccess }: SendTokensModalProps) {
                 <SelectValue placeholder="Choose a token to send" />
               </SelectTrigger>
               <SelectContent>
-                {holdings.map((h) => (
-                  <SelectItem key={h.token_definition_id} value={h.token_definition_id}>
-                    {h.token_symbol} - Balance: {h.balance.toLocaleString()}
-                  </SelectItem>
-                ))}
+                {holdings.map((h) => {
+                  const pending = pendingAmounts.get(h.token_definition_id) || 0;
+                  const available = Math.max(0, h.balance - pending);
+                  return (
+                    <SelectItem key={h.token_definition_id} value={h.token_definition_id}>
+                      {h.token_symbol} - Available: {available.toLocaleString()}
+                      {pending > 0 && ` (${pending.toLocaleString()} pending)`}
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
             {holdings.length === 0 && (
@@ -247,9 +272,14 @@ export function SendTokensModal({ onClose, onSuccess }: SendTokensModalProps) {
               )}
             </div>
             {selectedHolding && (
-              <p className="text-sm text-muted-foreground">
-                Available: {maxAmount.toLocaleString()} {selectedHolding.token_symbol}
-              </p>
+              <div className="text-sm text-muted-foreground">
+                <p>Available: {availableBalance.toLocaleString()} {selectedHolding.token_symbol}</p>
+                {pendingForToken > 0 && (
+                  <p className="text-amber-500">
+                    ({pendingForToken.toLocaleString()} reserved in pending transfers)
+                  </p>
+                )}
+              </div>
             )}
           </div>
 
