@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { FooterLegalText } from '@/components/layout/LegalDisclaimer';
 import { supabase } from '@/integrations/supabase/client';
 import MetallumXLogo from '@/assets/MetallumXLogo.png';
+import { NDAModal, NDA_VERSION, NDA_CONTENT } from '@/components/auth/NDAModal';
 
 const authSchema = z.object({
   email: z.string().email('Please enter a valid email address'),
@@ -39,6 +40,15 @@ const passwordSchema = z.object({
 
 type AuthMode = 'login' | 'signup' | 'forgot-password' | 'reset-password';
 
+// Generate SHA-256 hash of signature data
+async function generateSignatureHash(data: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const dataBuffer = encoder.encode(data);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', dataBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 export default function AuthPage() {
   const [searchParams] = useSearchParams();
   const [mode, setMode] = useState<AuthMode>('login');
@@ -48,6 +58,11 @@ export default function AuthPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
   const { signIn, signUp, user } = useAuth();
+  
+  // NDA state
+  const [showNDA, setShowNDA] = useState(false);
+  const [pendingSignup, setPendingSignup] = useState<{ email: string; password: string; name?: string } | null>(null);
+  const [isRecordingNDA, setIsRecordingNDA] = useState(false);
 
   // Check if user came from password reset link
   useEffect(() => {
@@ -60,6 +75,87 @@ export default function AuthPage() {
   if (user && mode !== 'reset-password') {
     return <Navigate to="/dashboard" replace />;
   }
+
+  const handleNDAAccept = async (signatureName: string) => {
+    if (!pendingSignup) return;
+    
+    setIsRecordingNDA(true);
+    
+    try {
+      // First, create the account
+      const { error: signupError } = await signUp(
+        pendingSignup.email, 
+        pendingSignup.password, 
+        pendingSignup.name
+      );
+      
+      if (signupError) {
+        if (signupError.message?.includes('already registered')) {
+          toast.error('This email is already registered. Try signing in instead.');
+        } else {
+          toast.error(signupError.message || 'Failed to create account');
+        }
+        setIsRecordingNDA(false);
+        return;
+      }
+
+      // Get the session to record NDA
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session?.user) {
+        toast.error('Failed to get session after signup');
+        setIsRecordingNDA(false);
+        return;
+      }
+
+      const userId = sessionData.session.user.id;
+      const signedAt = new Date().toISOString();
+      
+      // Generate signature hash
+      const signatureData = `${signatureName}|${pendingSignup.email}|${NDA_VERSION}|${signedAt}|${NDA_CONTENT}`;
+      const signatureHash = await generateSignatureHash(signatureData);
+
+      // Record NDA signature via edge function
+      const { data: ndaResult, error: ndaError } = await supabase.functions.invoke('record-nda-signature', {
+        body: {
+          userId,
+          signerName: signatureName,
+          signerEmail: pendingSignup.email,
+          ndaVersion: NDA_VERSION,
+          signatureHash,
+          userAgent: navigator.userAgent,
+        }
+      });
+
+      if (ndaError) {
+        console.error('NDA recording error:', ndaError);
+        toast.error('Account created, but NDA recording failed. Please contact support.');
+      } else if (ndaResult?.blockchainTxSignature) {
+        toast.success(
+          <div>
+            <p>Account created successfully!</p>
+            <p className="text-xs mt-1">NDA recorded on Solana blockchain</p>
+          </div>
+        );
+      } else {
+        toast.success('Account created successfully!');
+      }
+
+      setShowNDA(false);
+      setPendingSignup(null);
+      
+    } catch (error) {
+      console.error('Signup error:', error);
+      toast.error('Failed to complete signup');
+    } finally {
+      setIsRecordingNDA(false);
+    }
+  };
+
+  const handleNDACancel = () => {
+    setShowNDA(false);
+    setPendingSignup(null);
+    toast.info('Signup cancelled. You must agree to the NDA to create an account.');
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -99,17 +195,10 @@ export default function AuthPage() {
           toast.success('Welcome back!');
         }
       } else {
+        // Signup - show NDA first
         const validated = authSchema.parse({ email, password, name });
-        const { error } = await signUp(validated.email, validated.password, validated.name);
-        if (error) {
-          if (error.message?.includes('already registered')) {
-            toast.error('This email is already registered. Try signing in instead.');
-          } else {
-            toast.error(error.message || 'Failed to create account');
-          }
-        } else {
-          toast.success('Account created successfully!');
-        }
+        setPendingSignup({ email: validated.email, password: validated.password, name: validated.name });
+        setShowNDA(true);
       }
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -142,7 +231,7 @@ export default function AuthPage() {
     switch (mode) {
       case 'reset-password': return 'Update Password';
       case 'forgot-password': return 'Send Reset Link';
-      case 'signup': return 'Create Account';
+      case 'signup': return 'Continue';
       default: return 'Sign In';
     }
   };
@@ -347,6 +436,16 @@ export default function AuthPage() {
           </div>
         </div>
       </div>
+
+      {/* NDA Modal */}
+      <NDAModal
+        open={showNDA}
+        onAccept={handleNDAAccept}
+        onCancel={handleNDACancel}
+        userName={pendingSignup?.name || name}
+        userEmail={pendingSignup?.email || email}
+        isSubmitting={isRecordingNDA}
+      />
     </div>
   );
 }

@@ -754,6 +754,51 @@ export type Database = {
           },
         ]
       }
+      nda_signatures: {
+        Row: {
+          blockchain_recorded_at: string | null
+          blockchain_tx_signature: string | null
+          created_at: string
+          id: string
+          ip_address: string | null
+          nda_version: string
+          signature_hash: string
+          signed_at: string
+          signer_email: string
+          signer_name: string
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          blockchain_recorded_at?: string | null
+          blockchain_tx_signature?: string | null
+          created_at?: string
+          id?: string
+          ip_address?: string | null
+          nda_version?: string
+          signature_hash: string
+          signed_at?: string
+          signer_email: string
+          signer_name: string
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          blockchain_recorded_at?: string | null
+          blockchain_tx_signature?: string | null
+          created_at?: string
+          id?: string
+          ip_address?: string | null
+          nda_version?: string
+          signature_hash?: string
+          signed_at?: string
+          signer_email?: string
+          signer_name?: string
+          user_agent?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       news_articles: {
         Row: {
           category: string | null
