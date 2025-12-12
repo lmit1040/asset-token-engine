@@ -40,6 +40,25 @@ const CHAIN_IDS: Record<string, number> = {
   BSC_TESTNET: 97,
 };
 
+// Testnet networks where 0x API is not available
+const TESTNET_NETWORKS = ['SEPOLIA', 'POLYGON_AMOY', 'ARBITRUM_SEPOLIA', 'BSC_TESTNET'];
+
+function isTestnetNetwork(network: string): boolean {
+  return TESTNET_NETWORKS.includes(network.toUpperCase());
+}
+
+// Mock quote generator for testnets (simulates realistic price behavior)
+function getMockQuote(sellAmount: string): { buyAmount: string; sources: string[] } {
+  const sellAmountBigInt = BigInt(sellAmount);
+  // Simulate a 0.1-0.5% price spread (random)
+  const spreadBps = 10 + Math.floor(Math.random() * 40); // 10-50 bps
+  const buyAmount = sellAmountBigInt - (sellAmountBigInt * BigInt(spreadBps)) / 10000n;
+  return {
+    buyAmount: buyAmount.toString(),
+    sources: ['Mock DEX (testnet simulation)'],
+  };
+}
+
 // EVM auto-refill thresholds (in native token units - ETH/MATIC/etc)
 const MIN_BALANCE_THRESHOLD = 0.05; // Minimum balance before refill
 const TOP_UP_AMOUNT = 0.1; // Amount to top up (in native token)
@@ -421,6 +440,11 @@ serve(async (req) => {
 
     const startedAt = new Date().toISOString();
     const network = strategy.evm_network || 'POLYGON';
+    const isTestnet = isTestnetNetwork(network);
+
+    if (isTestnet) {
+      console.log(`[execute-evm-arbitrage] Testnet detected (${network}) - 0x API not available, using simulated execution`);
+    }
 
     // Try to get a fee payer from the rotation pool first, fall back to OPS wallet
     let executionWallet: ethers.Wallet;
@@ -487,6 +511,59 @@ serve(async (req) => {
     // Use 0.01 ETH equivalent for real execution (smaller for safety)
     const inputWei = '10000000000000000'; // 0.01 ETH
 
+    // ============ TESTNET SIMULATED EXECUTION ============
+    if (isTestnet) {
+      console.log(`[execute-evm-arbitrage] Running simulated execution for testnet ${network}...`);
+      
+      // Generate mock quotes
+      const mockQuoteA = getMockQuote(inputWei);
+      const mockQuoteB = getMockQuote(mockQuoteA.buyAmount);
+      
+      // Calculate simulated profit (usually slightly negative due to spread)
+      const inputBigInt = BigInt(inputWei);
+      const outputBigInt = BigInt(mockQuoteB.buyAmount);
+      const simulatedProfit = outputBigInt - inputBigInt;
+      
+      console.log(`[execute-evm-arbitrage] Simulated leg A output: ${mockQuoteA.buyAmount}`);
+      console.log(`[execute-evm-arbitrage] Simulated leg B output: ${mockQuoteB.buyAmount}`);
+      console.log(`[execute-evm-arbitrage] Simulated profit: ${simulatedProfit} wei`);
+      
+      // Record as simulated run
+      const finishedAt = new Date().toISOString();
+      const { data: runData } = await supabase
+        .from('arbitrage_runs')
+        .insert({
+          strategy_id: strategy.id,
+          started_at: startedAt,
+          finished_at: finishedAt,
+          status: 'SIMULATED',
+          estimated_profit_lamports: Number(simulatedProfit / 1_000_000_000n),
+          error_message: `Testnet simulation (${network}) - 0x API not available on testnets`,
+        })
+        .select()
+        .maybeSingle();
+
+      return new Response(JSON.stringify({
+        success: true,
+        message: `Testnet simulated execution (0x API not available on ${network})`,
+        strategy_name: strategy.name,
+        network,
+        wallet_used: walletAddress,
+        is_testnet: true,
+        simulated: true,
+        leg_a_output: mockQuoteA.buyAmount,
+        leg_b_output: mockQuoteB.buyAmount,
+        estimated_profit_wei: simulatedProfit.toString(),
+        estimated_profit_eth: Number(simulatedProfit) / 1e18,
+        run_id: runData?.id,
+        status: 'SIMULATED',
+        note: '0x API does not support testnet networks. This is a simulation only.',
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // ============ MAINNET REAL EXECUTION ============
     // Step 1: Get quote for leg A
     console.log(`[execute-evm-arbitrage] Fetching leg A quote...`);
     const quoteA = await getZeroXQuote({
