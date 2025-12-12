@@ -39,6 +39,7 @@ import AdminTokenProposalsPage from "./pages/AdminTokenProposalsPage";
 import ProofOfReservePage from "./pages/ProofOfReservePage";
 import AdminLaunchChecklistPage from "./pages/AdminLaunchChecklistPage";
 import AdminFlashLoanAnalyticsPage from "./pages/AdminFlashLoanAnalyticsPage";
+import AdminNDASignaturesPage from "./pages/AdminNDASignaturesPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -86,6 +87,7 @@ const App = () => (
               <Route path="/admin/news" element={<AdminNewsPage />} />
               <Route path="/admin/activity" element={<AdminActivityPage />} />
               <Route path="/admin/launch-checklist" element={<AdminLaunchChecklistPage />} />
+              <Route path="/admin/nda-signatures" element={<AdminNDASignaturesPage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </WalletProvider>
