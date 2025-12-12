@@ -10,7 +10,15 @@ const corsHeaders = {
 
 // Configuration
 const MIN_BALANCE_THRESHOLD = 0.01; // Top up if balance below this (in native token)
-const TOP_UP_AMOUNT = 0.05; // Amount to send when topping up (in native token)
+const TOP_UP_AMOUNT_MAINNET = 0.05; // Amount to send on mainnets (in native token)
+const TOP_UP_AMOUNT_TESTNET = 0.02; // Amount to send on testnets (in native token)
+
+// Testnets list for configuration
+const TESTNETS = ['SEPOLIA', 'POLYGON_AMOY', 'ARBITRUM_SEPOLIA', 'BSC_TESTNET'];
+
+function getTopUpAmount(network: string): number {
+  return TESTNETS.includes(network.toUpperCase()) ? TOP_UP_AMOUNT_TESTNET : TOP_UP_AMOUNT_MAINNET;
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -118,7 +126,8 @@ serve(async (req) => {
       console.log(`[top-up-evm-fee-payers] Found ${feePayers?.length || 0} active fee payers for ${network}`);
 
       const networkResults = [];
-      const topUpAmountWei = ethers.parseEther(TOP_UP_AMOUNT.toString());
+      const topUpAmount = getTopUpAmount(network);
+      const topUpAmountWei = ethers.parseEther(topUpAmount.toString());
 
       for (const feePayer of feePayers || []) {
         try {
@@ -128,7 +137,7 @@ serve(async (req) => {
           console.log(`[top-up-evm-fee-payers] ${feePayer.label}: ${balanceFormatted}`);
 
           if (balanceFormatted < MIN_BALANCE_THRESHOLD) {
-            console.log(`[top-up-evm-fee-payers] ${feePayer.label} below threshold, sending ${TOP_UP_AMOUNT}...`);
+            console.log(`[top-up-evm-fee-payers] ${feePayer.label} below threshold, sending ${topUpAmount}...`);
 
             // Check if OPS wallet has enough balance
             const currentOpsBalance = await opsWallet.provider.getBalance(opsWallet.address);
@@ -187,7 +196,7 @@ serve(async (req) => {
               public_key: feePayer.public_key,
               previous_balance: balanceFormatted,
               topped_up: true,
-              amount: TOP_UP_AMOUNT,
+              amount: topUpAmount,
               new_balance: parseFloat(ethers.formatEther(newBalance)),
               tx_hash: tx.hash,
             });
@@ -231,7 +240,7 @@ serve(async (req) => {
       message: `Topped up ${totalToppedUp} fee payers across ${Object.keys(allResults).length} networks`,
       ops_wallet_balances: opsWalletBalances,
       threshold: MIN_BALANCE_THRESHOLD,
-      top_up_amount: TOP_UP_AMOUNT,
+      top_up_amount: { mainnet: TOP_UP_AMOUNT_MAINNET, testnet: TOP_UP_AMOUNT_TESTNET },
       results: allResults,
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
