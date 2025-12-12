@@ -38,12 +38,23 @@ export const ERC20_ABI = [
 
 // Provider addresses per network
 export const FLASH_LOAN_CONTRACTS: Record<string, Record<string, string>> = {
-  // Aave V3 Pool addresses
+  // Aave V3 Pool addresses (mainnets and testnets)
   AAVE_V3: {
+    // Mainnets
     POLYGON: "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
     ETHEREUM: "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2",
     ARBITRUM: "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
-    BSC: "0x6807dc923806fE8Fd134338EABCA509979a7e0cB", // Aave V3 BSC
+    BSC: "0x6807dc923806fE8Fd134338EABCA509979a7e0cB",
+    // Testnets
+    SEPOLIA: "0x6Ae43d3271ff6888e7Fc43Fd7321a503ff738951",
+  },
+  // Aave V3 Pool Addresses Provider (for contract deployment)
+  AAVE_V3_ADDRESSES_PROVIDER: {
+    POLYGON: "0xa97684ead0e402dC232d5A977953DF7ECBaB3CDb",
+    ETHEREUM: "0x2f39d218133AFaB8F2B819B1066c7E434Ad94E9e",
+    ARBITRUM: "0xa97684ead0e402dC232d5A977953DF7ECBaB3CDb",
+    BSC: "0xff75B6da14FfbbfD355Daf7a2731456b3562Ba6D",
+    SEPOLIA: "0x012bAC54348C0E635dCAc9D5FB99f06F24136C9A",
   },
   // Balancer Vault (same address on all networks)
   BALANCER: {
@@ -53,6 +64,11 @@ export const FLASH_LOAN_CONTRACTS: Record<string, Record<string, string>> = {
     BSC: "0xBA12222222228d8Ba445958a75a0704d566BF2C8",
   },
 };
+
+// Get Pool Addresses Provider for contract deployment
+export function getPoolAddressesProvider(network: string): string | null {
+  return FLASH_LOAN_CONTRACTS.AAVE_V3_ADDRESSES_PROVIDER?.[network.toUpperCase()] || null;
+}
 
 // Common token addresses per network for flash loans
 export const FLASH_LOAN_TOKENS: Record<string, Record<string, string>> = {
@@ -80,6 +96,12 @@ export const FLASH_LOAN_TOKENS: Record<string, Record<string, string>> = {
     USDT: "0x55d398326f99059fF775485246999027B3197955",
     DAI: "0x1AF3F329e8BE154074D8769D1FFa4eE058B1DBc3",
     WBNB: "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c",
+  },
+  // Testnets
+  SEPOLIA: {
+    USDC: "0x94a9D9AC8a22534E3FaCa9F4e7F2E2cf85d5E4C8", // Aave faucet USDC
+    DAI: "0xFF34B3d4Aee8ddCd6F9AFFFB6Fe49bD371b8a357", // Aave faucet DAI
+    WETH: "0xC558DBdd856501FCd9aaF1E62eae57A9F0629a3c", // Aave WETH
   },
 };
 

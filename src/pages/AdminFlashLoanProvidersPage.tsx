@@ -43,7 +43,22 @@ const EXPLORER_URLS: Record<string, string> = {
   ETHEREUM: 'https://etherscan.io/address/',
   ARBITRUM: 'https://arbiscan.io/address/',
   BSC: 'https://bscscan.com/address/',
+  SEPOLIA: 'https://sepolia.etherscan.io/address/',
   SOLANA: 'https://solscan.io/account/',
+};
+
+// Aave V3 Pool Addresses Provider per network (for contract deployment)
+const POOL_ADDRESSES_PROVIDERS: Record<string, string> = {
+  POLYGON: '0xa97684ead0e402dC232d5A977953DF7ECBaB3CDb',
+  ETHEREUM: '0x2f39d218133AFaB8F2B819B1066c7E434Ad94E9e',
+  ARBITRUM: '0xa97684ead0e402dC232d5A977953DF7ECBaB3CDb',
+  BSC: '0xff75B6da14FfbbfD355Daf7a2731456b3562Ba6D',
+  SEPOLIA: '0x012bAC54348C0E635dCAc9D5FB99f06F24136C9A',
+};
+
+// Faucet URLs for testnets
+const FAUCET_URLS: Record<string, string> = {
+  SEPOLIA: 'https://staging.aave.com/faucet/',
 };
 
 export default function AdminFlashLoanProvidersPage() {
@@ -363,14 +378,38 @@ export default function AdminFlashLoanProvidersPage() {
 
         {/* Edit Receiver Address Dialog */}
         <Dialog open={!!editingProvider} onOpenChange={(open) => !open && setEditingProvider(null)}>
-          <DialogContent>
+          <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>Set Receiver Contract Address</DialogTitle>
               <DialogDescription>
-                Enter the deployed MetallumFlashReceiver contract address for {editingProvider?.display_name} on {editingProvider?.chain}.
+                Deploy MetallumFlashReceiver on {editingProvider?.chain} and paste the contract address.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
+              {editingProvider?.chain && POOL_ADDRESSES_PROVIDERS[editingProvider.chain] && (
+                <div className="bg-muted p-4 rounded-lg space-y-3">
+                  <h4 className="font-medium text-sm">Deployment Instructions for {editingProvider.chain}</h4>
+                  <ol className="text-xs text-muted-foreground space-y-2 list-decimal list-inside">
+                    <li>Open <a href="https://remix.ethereum.org" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Remix IDE</a></li>
+                    <li>Create MetallumFlashReceiver.sol and paste the contract code</li>
+                    <li>Compile with Solidity 0.8.20 and optimization enabled</li>
+                    <li>Connect MetaMask to <strong>{editingProvider.chain}</strong> network</li>
+                    <li>Deploy with constructor parameter:</li>
+                  </ol>
+                  <div className="bg-background p-2 rounded font-mono text-xs break-all">
+                    <span className="text-muted-foreground">_addressesProvider: </span>
+                    <span className="text-primary">{POOL_ADDRESSES_PROVIDERS[editingProvider.chain]}</span>
+                  </div>
+                  {FAUCET_URLS[editingProvider.chain] && (
+                    <p className="text-xs text-amber-500">
+                      💡 Need testnet tokens? Get them from the{' '}
+                      <a href={FAUCET_URLS[editingProvider.chain]} target="_blank" rel="noopener noreferrer" className="underline">
+                        Aave Faucet
+                      </a>
+                    </p>
+                  )}
+                </div>
+              )}
               <div className="space-y-2">
                 <Label>Receiver Contract Address</Label>
                 <Input
@@ -380,7 +419,7 @@ export default function AdminFlashLoanProvidersPage() {
                   className="font-mono"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Deploy the MetallumFlashReceiver.sol contract and paste the address here.
+                  After deployment, paste the contract address above.
                 </p>
               </div>
             </div>
