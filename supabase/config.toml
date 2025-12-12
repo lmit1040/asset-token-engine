@@ -74,3 +74,6 @@ verify_jwt = false
 
 [functions.wallet-auto-refill]
 verify_jwt = false
+
+[functions.test-sepolia-flash-loan]
+verify_jwt = false
