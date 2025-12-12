@@ -44,17 +44,23 @@ interface EvmFeePayerTopup {
 }
 
 const EVM_NETWORKS = [
-  { id: 'POLYGON', name: 'Polygon', symbol: 'MATIC', explorer: 'https://polygonscan.com' },
-  { id: 'ETHEREUM', name: 'Ethereum', symbol: 'ETH', explorer: 'https://etherscan.io' },
-  { id: 'ARBITRUM', name: 'Arbitrum', symbol: 'ETH', explorer: 'https://arbiscan.io' },
-  { id: 'BSC', name: 'BSC', symbol: 'BNB', explorer: 'https://bscscan.com' },
+  // Mainnets
+  { id: 'POLYGON', name: 'Polygon', symbol: 'MATIC', explorer: 'https://polygonscan.com', isTestnet: false, faucet: null },
+  { id: 'ETHEREUM', name: 'Ethereum', symbol: 'ETH', explorer: 'https://etherscan.io', isTestnet: false, faucet: null },
+  { id: 'ARBITRUM', name: 'Arbitrum', symbol: 'ETH', explorer: 'https://arbiscan.io', isTestnet: false, faucet: null },
+  { id: 'BSC', name: 'BSC', symbol: 'BNB', explorer: 'https://bscscan.com', isTestnet: false, faucet: null },
+  // Testnets
+  { id: 'SEPOLIA', name: 'Sepolia', symbol: 'ETH', explorer: 'https://sepolia.etherscan.io', isTestnet: true, faucet: 'https://www.alchemy.com/faucets/ethereum-sepolia' },
+  { id: 'POLYGON_AMOY', name: 'Polygon Amoy', symbol: 'MATIC', explorer: 'https://amoy.polygonscan.com', isTestnet: true, faucet: 'https://faucet.polygon.technology' },
+  { id: 'ARBITRUM_SEPOLIA', name: 'Arbitrum Sepolia', symbol: 'ETH', explorer: 'https://sepolia.arbiscan.io', isTestnet: true, faucet: 'https://www.alchemy.com/faucets/arbitrum-sepolia' },
+  { id: 'BSC_TESTNET', name: 'BSC Testnet', symbol: 'tBNB', explorer: 'https://testnet.bscscan.com', isTestnet: true, faucet: 'https://testnet.bnbchain.org/faucet-smart' },
 ];
 
 export default function AdminEvmFeePayersPage() {
   const [feePayers, setFeePayers] = useState<EvmFeePayerKey[]>([]);
   const [topups, setTopups] = useState<EvmFeePayerTopup[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedNetwork, setSelectedNetwork] = useState('POLYGON');
+  const [selectedNetwork, setSelectedNetwork] = useState('SEPOLIA');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [newFeePayer, setNewFeePayer] = useState({ label: '', public_key: '', network: 'POLYGON' });
@@ -216,7 +222,17 @@ export default function AdminEvmFeePayersPage() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {EVM_NETWORKS.map(network => (
+              <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">Testnets</div>
+              {EVM_NETWORKS.filter(n => n.isTestnet).map(network => (
+                <SelectItem key={network.id} value={network.id}>
+                  <div className="flex items-center gap-2">
+                    <span>{network.name}</span>
+                    <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 border-amber-500 text-amber-600">Testnet</Badge>
+                  </div>
+                </SelectItem>
+              ))}
+              <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 pt-2">Mainnets</div>
+              {EVM_NETWORKS.filter(n => !n.isTestnet).map(network => (
                 <SelectItem key={network.id} value={network.id}>
                   {network.name} ({network.symbol})
                 </SelectItem>
@@ -226,25 +242,41 @@ export default function AdminEvmFeePayersPage() {
         </div>
 
         {/* OPS Wallet Info Card */}
-        <Card className="border-primary/30 bg-primary/5">
+        <Card className={`border-primary/30 ${networkInfo.isTestnet ? 'bg-amber-500/5 border-amber-500/30' : 'bg-primary/5'}`}>
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Landmark className="h-5 w-5 text-primary" />
-                <CardTitle className="text-lg">EVM Operations Wallet ({networkInfo.name})</CardTitle>
+                <Landmark className={`h-5 w-5 ${networkInfo.isTestnet ? 'text-amber-500' : 'text-primary'}`} />
+                <CardTitle className="text-lg">
+                  EVM Operations Wallet ({networkInfo.name})
+                  {networkInfo.isTestnet && (
+                    <Badge variant="outline" className="ml-2 border-amber-500 text-amber-600">Testnet</Badge>
+                  )}
+                </CardTitle>
               </div>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={() => fetchOpsWalletInfo(selectedNetwork)}
-                disabled={isLoadingOpsWallet}
-              >
-                <RefreshCw className={`h-3 w-3 mr-1 ${isLoadingOpsWallet ? 'animate-spin' : ''}`} />
-                Refresh
-              </Button>
+              <div className="flex items-center gap-2">
+                {networkInfo.isTestnet && networkInfo.faucet && (
+                  <a href={networkInfo.faucet} target="_blank" rel="noopener noreferrer">
+                    <Button variant="outline" size="sm" className="border-amber-500 text-amber-600 hover:bg-amber-500/10">
+                      <Fuel className="h-3 w-3 mr-1" />
+                      Get Testnet {networkInfo.symbol}
+                    </Button>
+                  </a>
+                )}
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => fetchOpsWalletInfo(selectedNetwork)}
+                  disabled={isLoadingOpsWallet}
+                >
+                  <RefreshCw className={`h-3 w-3 mr-1 ${isLoadingOpsWallet ? 'animate-spin' : ''}`} />
+                  Refresh
+                </Button>
+              </div>
             </div>
             <CardDescription>
               Internal wallet used to fund EVM fee payers on {networkInfo.name}.
+              {networkInfo.isTestnet && ' Use the faucet to get free testnet tokens.'}
             </CardDescription>
           </CardHeader>
           <CardContent>
