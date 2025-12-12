@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { Connection, Keypair, Transaction, TransactionInstruction, PublicKey, sendAndConfirmTransaction } from "https://esm.sh/@solana/web3.js@1.87.6";
+import { Connection, Keypair, Transaction, TransactionInstruction, PublicKey } from "https://esm.sh/@solana/web3.js@1.87.6";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -15,6 +15,22 @@ interface RecordNDARequest {
   signatureHash: string;
   ipAddress?: string;
   userAgent?: string;
+}
+
+// Helper to wait for transaction confirmation without WebSocket
+async function confirmTransaction(connection: Connection, signature: string, maxRetries = 30): Promise<boolean> {
+  for (let i = 0; i < maxRetries; i++) {
+    const status = await connection.getSignatureStatus(signature);
+    if (status?.value?.confirmationStatus === 'confirmed' || status?.value?.confirmationStatus === 'finalized') {
+      return true;
+    }
+    if (status?.value?.err) {
+      throw new Error(`Transaction failed: ${JSON.stringify(status.value.err)}`);
+    }
+    // Wait 1 second before checking again
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+  return false;
 }
 
 serve(async (req) => {
@@ -92,18 +108,29 @@ serve(async (req) => {
         transaction.recentBlockhash = blockhash;
         transaction.feePayer = feePayerKeypair.publicKey;
 
-        // Sign and send transaction
-        const signature = await sendAndConfirmTransaction(
-          connection,
-          transaction,
-          [feePayerKeypair],
-          { commitment: 'confirmed' }
-        );
+        // Sign transaction
+        transaction.sign(feePayerKeypair);
 
-        blockchainTxSignature = signature;
-        blockchainRecordedAt = new Date().toISOString();
+        // Send transaction (without WebSocket confirmation)
+        const signature = await connection.sendRawTransaction(transaction.serialize(), {
+          skipPreflight: false,
+          preflightCommitment: 'confirmed',
+        });
+
+        console.log(`Transaction sent: ${signature}, waiting for confirmation...`);
+
+        // Wait for confirmation using polling instead of WebSocket
+        const confirmed = await confirmTransaction(connection, signature);
         
-        console.log(`NDA signature recorded on Solana: ${signature}`);
+        if (confirmed) {
+          blockchainTxSignature = signature;
+          blockchainRecordedAt = new Date().toISOString();
+          console.log(`NDA signature recorded on Solana: ${signature}`);
+        } else {
+          console.log('Transaction confirmation timed out, but may still succeed');
+          blockchainTxSignature = signature; // Still store the signature
+          blockchainRecordedAt = new Date().toISOString();
+        }
       }
     } catch (blockchainError) {
       console.error('Blockchain recording failed:', blockchainError);
@@ -131,6 +158,8 @@ serve(async (req) => {
       console.error('Database insert error:', insertError);
       throw new Error(`Failed to record NDA signature: ${insertError.message}`);
     }
+
+    console.log(`NDA signature saved to database with id: ${ndaRecord.id}`);
 
     return new Response(JSON.stringify({
       success: true,
