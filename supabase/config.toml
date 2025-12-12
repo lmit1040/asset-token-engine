@@ -77,3 +77,6 @@ verify_jwt = false
 
 [functions.test-sepolia-flash-loan]
 verify_jwt = false
+
+[functions.record-nda-signature]
+verify_jwt = false
