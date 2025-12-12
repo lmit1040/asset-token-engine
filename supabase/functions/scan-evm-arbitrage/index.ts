@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
-import { getZeroXQuote, isValidEvmAddress, calculateArbitrageProfit, isSupportedZeroXNetwork } from "../_shared/zerox-client.ts";
+import { getZeroXQuote, isValidEvmAddress, calculateArbitrageProfit, isSupportedZeroXNetwork, isTestnet } from "../_shared/zerox-client.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -19,6 +19,23 @@ const SUPPORTED_EVM_DEXS = [
   'Curve',
   'Balancer',
 ];
+
+// Testnets don't have 0x API support, so we use mock prices
+const TESTNET_NETWORKS = ['SEPOLIA', 'POLYGON_AMOY', 'ARBITRUM_SEPOLIA', 'BSC_TESTNET'];
+
+/**
+ * Generate mock quote for testnet strategies (0x API doesn't support testnets)
+ */
+function getMockQuote(sellAmount: string): { buyAmount: string; sources: string[] } {
+  // Simulate realistic spread of 0.1-0.5%
+  const input = BigInt(sellAmount);
+  const spreadBps = 10 + Math.floor(Math.random() * 40); // 10-50 bps
+  const output = input - (input * BigInt(spreadBps) / BigInt(10000));
+  return {
+    buyAmount: output.toString(),
+    sources: ['Mock DEX (testnet)'],
+  };
+}
 
 serve(async (req) => {
   // Handle CORS preflight
@@ -111,38 +128,61 @@ serve(async (req) => {
       let estimatedProfitWei = BigInt(0);
       let quoteError: string | null = null;
       let usedSources: string[] = [];
+      let isMockPrice = false;
+      let priceSource = '0x Aggregator';
 
-      // Step 1: Get quote for token_in -> token_out (leg A)
-      const quoteA = await getZeroXQuote({
-        network: strategy.evm_network,
-        sellToken: strategy.token_in_mint,
-        buyToken: strategy.token_out_mint,
-        sellAmount: inputWei,
-      });
+      // Check if this is a testnet - 0x API doesn't support testnets
+      const isTestnetNetwork = TESTNET_NETWORKS.includes(strategy.evm_network?.toUpperCase() || '');
 
-      if (quoteA) {
-        console.log(`[scan-evm-arbitrage] Leg A output: ${quoteA.buyAmount}`);
-        usedSources = quoteA.sources;
+      if (isTestnetNetwork) {
+        // Use mock prices for testnets
+        console.log(`[scan-evm-arbitrage] Using mock prices for testnet: ${strategy.evm_network}`);
+        isMockPrice = true;
+        priceSource = 'Mock Prices (testnet - 0x API not available)';
 
-        // Step 2: Get quote for token_out -> token_in (leg B - round trip)
-        const quoteB = await getZeroXQuote({
+        const mockQuoteA = getMockQuote(inputWei);
+        const mockQuoteB = getMockQuote(mockQuoteA.buyAmount);
+        
+        usedSources = mockQuoteA.sources;
+        estimatedProfitWei = calculateArbitrageProfit(inputWei, mockQuoteB.buyAmount);
+        
+        console.log(`[scan-evm-arbitrage] Mock Leg A output: ${mockQuoteA.buyAmount}`);
+        console.log(`[scan-evm-arbitrage] Mock Leg B output: ${mockQuoteB.buyAmount}`);
+        console.log(`[scan-evm-arbitrage] Mock round-trip profit: ${estimatedProfitWei} wei`);
+      } else {
+        // Use real 0x API for mainnets
+        // Step 1: Get quote for token_in -> token_out (leg A)
+        const quoteA = await getZeroXQuote({
           network: strategy.evm_network,
-          sellToken: strategy.token_out_mint,
-          buyToken: strategy.token_in_mint,
-          sellAmount: quoteA.buyAmount,
+          sellToken: strategy.token_in_mint,
+          buyToken: strategy.token_out_mint,
+          sellAmount: inputWei,
         });
 
-        if (quoteB) {
-          console.log(`[scan-evm-arbitrage] Leg B output: ${quoteB.buyAmount}`);
-          
-          // Calculate round-trip profit
-          estimatedProfitWei = calculateArbitrageProfit(inputWei, quoteB.buyAmount);
-          console.log(`[scan-evm-arbitrage] Round-trip profit: ${estimatedProfitWei} wei`);
+        if (quoteA) {
+          console.log(`[scan-evm-arbitrage] Leg A output: ${quoteA.buyAmount}`);
+          usedSources = quoteA.sources;
+
+          // Step 2: Get quote for token_out -> token_in (leg B - round trip)
+          const quoteB = await getZeroXQuote({
+            network: strategy.evm_network,
+            sellToken: strategy.token_out_mint,
+            buyToken: strategy.token_in_mint,
+            sellAmount: quoteA.buyAmount,
+          });
+
+          if (quoteB) {
+            console.log(`[scan-evm-arbitrage] Leg B output: ${quoteB.buyAmount}`);
+            
+            // Calculate round-trip profit
+            estimatedProfitWei = calculateArbitrageProfit(inputWei, quoteB.buyAmount);
+            console.log(`[scan-evm-arbitrage] Round-trip profit: ${estimatedProfitWei} wei`);
+          } else {
+            quoteError = 'Failed to fetch return leg quote';
+          }
         } else {
-          quoteError = 'Failed to fetch return leg quote';
+          quoteError = 'Failed to fetch initial leg quote';
         }
-      } else {
-        quoteError = 'Failed to fetch initial leg quote';
       }
 
       const finishedAt = new Date().toISOString();
@@ -181,14 +221,18 @@ serve(async (req) => {
         estimated_profit_wei: estimatedProfitWei.toString(),
         estimated_profit_eth: Number(estimatedProfitWei) / 1e18,
         meets_min_threshold: Number(estimatedProfitWei) >= strategy.min_profit_lamports * 1_000_000_000,
-        price_source: '0x Aggregator',
+        price_source: priceSource,
+        is_mock: isMockPrice,
         liquidity_sources: usedSources,
         run_id: runData?.id,
         error: quoteError,
       });
     }
 
-    console.log(`[scan-evm-arbitrage] Scan complete. ${results.length} EVM strategies simulated.`);
+    const mockCount = results.filter(r => r.is_mock).length;
+    const realCount = results.length - mockCount;
+
+    console.log(`[scan-evm-arbitrage] Scan complete. ${results.length} EVM strategies simulated (${realCount} real, ${mockCount} mock/testnet).`);
 
     return new Response(JSON.stringify({
       success: true,
@@ -197,7 +241,11 @@ serve(async (req) => {
       simulations: results,
       total_strategies: results.length,
       profitable_count: results.filter(r => r.meets_min_threshold && Number(r.estimated_profit_wei) > 0).length,
-      note: 'Using real 0x API prices via zerox-client helper',
+      real_price_count: realCount,
+      mock_price_count: mockCount,
+      note: mockCount > 0 
+        ? `Using real 0x API for mainnets, mock prices for testnets (0x API does not support testnets)` 
+        : 'Using real 0x API prices via zerox-client helper',
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
