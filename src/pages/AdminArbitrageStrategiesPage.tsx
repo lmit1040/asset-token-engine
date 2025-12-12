@@ -70,13 +70,29 @@ const SUPPORTED_EVM_DEXS = [
   'Balancer',
 ];
 
-// EVM Networks
+// EVM Networks (including testnets)
 const EVM_NETWORKS = [
-  { value: 'ETHEREUM', label: 'Ethereum' },
-  { value: 'POLYGON', label: 'Polygon' },
-  { value: 'ARBITRUM', label: 'Arbitrum' },
-  { value: 'BSC', label: 'BNB Chain' },
+  { value: 'ETHEREUM', label: 'Ethereum', isTestnet: false },
+  { value: 'POLYGON', label: 'Polygon', isTestnet: false },
+  { value: 'ARBITRUM', label: 'Arbitrum', isTestnet: false },
+  { value: 'BSC', label: 'BNB Chain', isTestnet: false },
+  { value: 'SEPOLIA', label: 'Sepolia', isTestnet: true },
+  { value: 'POLYGON_AMOY', label: 'Polygon Amoy', isTestnet: true },
+  { value: 'ARBITRUM_SEPOLIA', label: 'Arbitrum Sepolia', isTestnet: true },
+  { value: 'BSC_TESTNET', label: 'BSC Testnet', isTestnet: true },
 ];
+
+// Testnet token reference (common Sepolia tokens from Aave V3)
+const SEPOLIA_TOKENS = {
+  WETH: '0xC558DBdd856501FCd9aaF1E62eae57A9F0629a3c',
+  USDC: '0x94a9D9AC8a22534E3FaCa9F4e7F2E2cf85d5E4C8',
+  DAI: '0xFF34B3d4Aee8ddCd6F9AFFFB6Fe49bD371b8a357',
+  LINK: '0xf8Fb3713D459D7C1018BD0A49D19b4C44290EBE5',
+};
+
+const isTestnetNetwork = (network: string | null): boolean => {
+  return ['SEPOLIA', 'POLYGON_AMOY', 'ARBITRUM_SEPOLIA', 'BSC_TESTNET'].includes(network || '');
+};
 
 type ChainType = 'SOLANA' | 'EVM';
 
@@ -136,10 +152,14 @@ interface OpsWalletInfo {
 }
 
 const EVM_NETWORK_OPTIONS = [
-  { value: 'POLYGON', label: 'Polygon', symbol: 'MATIC' },
-  { value: 'ETHEREUM', label: 'Ethereum', symbol: 'ETH' },
-  { value: 'ARBITRUM', label: 'Arbitrum', symbol: 'ETH' },
-  { value: 'BSC', label: 'BNB Chain', symbol: 'BNB' },
+  { value: 'POLYGON', label: 'Polygon', symbol: 'MATIC', isTestnet: false },
+  { value: 'ETHEREUM', label: 'Ethereum', symbol: 'ETH', isTestnet: false },
+  { value: 'ARBITRUM', label: 'Arbitrum', symbol: 'ETH', isTestnet: false },
+  { value: 'BSC', label: 'BNB Chain', symbol: 'BNB', isTestnet: false },
+  { value: 'SEPOLIA', label: 'Sepolia', symbol: 'ETH', isTestnet: true },
+  { value: 'POLYGON_AMOY', label: 'Polygon Amoy', symbol: 'MATIC', isTestnet: true },
+  { value: 'ARBITRUM_SEPOLIA', label: 'Arbitrum Sepolia', symbol: 'ETH', isTestnet: true },
+  { value: 'BSC_TESTNET', label: 'BSC Testnet', symbol: 'BNB', isTestnet: true },
 ];
 
 export default function AdminArbitrageStrategiesPage() {
@@ -961,7 +981,18 @@ export default function AdminArbitrageStrategiesPage() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            <Badge variant="outline">{strategy.evm_network}</Badge>
+                            <Badge 
+                              variant="outline" 
+                              className={isTestnetNetwork(strategy.evm_network) 
+                                ? 'bg-amber-500/10 text-amber-600 border-amber-500/30' 
+                                : ''
+                              }
+                            >
+                              {strategy.evm_network}
+                              {isTestnetNetwork(strategy.evm_network) && (
+                                <span className="ml-1 text-[10px]">🧪</span>
+                              )}
+                            </Badge>
                           </TableCell>
                           <TableCell>
                             <span className="text-sm">{strategy.dex_a} → {strategy.dex_b}</span>
