@@ -14,7 +14,7 @@ const NETWORK_RPC_URLS: Record<string, string> = {
   BSC: "https://bsc-dataseed1.binance.org",
   // Testnets
   POLYGON_AMOY: "https://rpc-amoy.polygon.technology",
-  SEPOLIA: "https://eth-sepolia.g.alchemy.com/v2/demo",
+  SEPOLIA: "https://rpc.ankr.com/eth_sepolia",
   ARBITRUM_SEPOLIA: "https://sepolia-rollup.arbitrum.io/rpc",
   BSC_TESTNET: "https://data-seed-prebsc-1-s1.binance.org:8545",
 };
