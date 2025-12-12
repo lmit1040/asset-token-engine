@@ -119,14 +119,18 @@ export function NDAModal({
           </DialogDescription>
         </DialogHeader>
 
-        <ScrollArea 
-          className="flex-1 max-h-[40vh] border rounded-md p-4 bg-muted/30"
-          onScrollCapture={handleScroll}
-        >
-          <pre className="whitespace-pre-wrap font-sans text-sm text-foreground/90 leading-relaxed">
-            {NDA_CONTENT}
-          </pre>
-        </ScrollArea>
+        <div className="h-[40vh] border rounded-md bg-muted/30">
+          <ScrollArea 
+            className="h-full"
+            onScrollCapture={handleScroll}
+          >
+            <div className="p-4">
+              <pre className="whitespace-pre-wrap font-sans text-sm text-foreground/90 leading-relaxed">
+                {NDA_CONTENT}
+              </pre>
+            </div>
+          </ScrollArea>
+        </div>
 
         {!hasScrolledToBottom && (
           <p className="text-xs text-amber-500 text-center">
