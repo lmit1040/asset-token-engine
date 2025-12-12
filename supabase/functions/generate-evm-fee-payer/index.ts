@@ -86,8 +86,8 @@ serve(async (req) => {
       // Use defaults
     }
 
-    // Validate network
-    const validNetworks = ['POLYGON', 'ETHEREUM', 'ARBITRUM', 'BSC'];
+    // Validate network (mainnets + testnets)
+    const validNetworks = ['POLYGON', 'ETHEREUM', 'ARBITRUM', 'BSC', 'SEPOLIA', 'POLYGON_AMOY', 'ARBITRUM_SEPOLIA', 'BSC_TESTNET'];
     if (!validNetworks.includes(network)) {
       return new Response(
         JSON.stringify({ error: `Invalid network. Must be one of: ${validNetworks.join(', ')}` }),
