@@ -38,6 +38,28 @@ interface FlashLoanProvider {
   created_at: string;
 }
 
+interface SepoliaTestResult {
+  success: boolean;
+  mode: string;
+  network: string;
+  wallet?: {
+    address: string;
+    eth_balance: string;
+    token_balance: string;
+  };
+  flash_loan?: {
+    pool_address: string;
+    token_symbol: string;
+    amount: string;
+    premium: string;
+    has_sufficient_premium_funds: boolean;
+  };
+  ready_to_execute?: boolean;
+  next_steps?: string;
+  error?: string;
+  hint?: string;
+}
+
 const EXPLORER_URLS: Record<string, string> = {
   POLYGON: 'https://polygonscan.com/address/',
   ETHEREUM: 'https://etherscan.io/address/',
@@ -70,6 +92,8 @@ export default function AdminFlashLoanProvidersPage() {
   const [selectedChain, setSelectedChain] = useState<string>('all');
   const [editingProvider, setEditingProvider] = useState<FlashLoanProvider | null>(null);
   const [receiverAddress, setReceiverAddress] = useState('');
+  const [testingFlashLoan, setTestingFlashLoan] = useState(false);
+  const [testResult, setTestResult] = useState<SepoliaTestResult | null>(null);
 
   useEffect(() => {
     if (!authLoading && !isAdmin) {
@@ -144,6 +168,41 @@ export default function AdminFlashLoanProvidersPage() {
     } catch (error) {
       console.error('Error saving receiver address:', error);
       toast.error('Failed to save receiver address');
+    }
+  };
+
+  const runSepoliaFlashLoanTest = async () => {
+    setTestingFlashLoan(true);
+    setTestResult(null);
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('test-sepolia-flash-loan', {
+        body: { 
+          test_mode: 'SIMULATION',
+          token: 'USDC',
+          amount: '100000', // 0.1 USDC
+        }
+      });
+
+      if (error) throw error;
+      setTestResult(data as SepoliaTestResult);
+      
+      if (data?.success) {
+        toast.success('Sepolia flash loan test completed');
+      } else {
+        toast.warning(data?.error || 'Test completed with issues');
+      }
+    } catch (error) {
+      console.error('Flash loan test error:', error);
+      toast.error('Failed to run flash loan test');
+      setTestResult({ 
+        success: false, 
+        mode: 'ERROR', 
+        network: 'SEPOLIA',
+        error: error instanceof Error ? error.message : 'Unknown error' 
+      });
+    } finally {
+      setTestingFlashLoan(false);
     }
   };
 
@@ -351,6 +410,108 @@ export default function AdminFlashLoanProvidersPage() {
               </TableBody>
             </Table>
           </CardContent>
+        </Card>
+
+        {/* Sepolia Flash Loan Test Card */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Zap className="h-4 w-4 text-primary" />
+                  Sepolia Flash Loan Test
+                </CardTitle>
+                <CardDescription>Test the flash loan infrastructure on Sepolia testnet</CardDescription>
+              </div>
+              <Button 
+                onClick={runSepoliaFlashLoanTest} 
+                disabled={testingFlashLoan}
+                variant="outline"
+              >
+                {testingFlashLoan ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    Testing...
+                  </>
+                ) : (
+                  <>
+                    <Zap className="h-4 w-4 mr-2" />
+                    Run Test
+                  </>
+                )}
+              </Button>
+            </div>
+          </CardHeader>
+          {testResult && (
+            <CardContent>
+              <div className={`p-4 rounded-lg border ${testResult.success ? 'bg-green-500/10 border-green-500/30' : 'bg-red-500/10 border-red-500/30'}`}>
+                <div className="flex items-center gap-2 mb-3">
+                  {testResult.success ? (
+                    <Check className="h-5 w-5 text-green-500" />
+                  ) : (
+                    <AlertTriangle className="h-5 w-5 text-red-500" />
+                  )}
+                  <span className="font-medium">
+                    {testResult.success ? 'Test Passed' : 'Test Failed'}
+                  </span>
+                  <Badge variant="outline">{testResult.mode}</Badge>
+                  <Badge variant="secondary">{testResult.network}</Badge>
+                </div>
+                
+                {testResult.error && (
+                  <p className="text-sm text-red-500 mb-3">{testResult.error}</p>
+                )}
+                
+                {testResult.wallet && (
+                  <div className="space-y-2 text-sm">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <span className="text-muted-foreground">Wallet:</span>
+                        <span className="ml-2 font-mono text-xs">{testResult.wallet.address.slice(0, 10)}...</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">ETH Balance:</span>
+                        <span className="ml-2">{parseFloat(testResult.wallet.eth_balance).toFixed(4)} ETH</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {testResult.flash_loan && (
+                  <div className="mt-3 space-y-2 text-sm">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <span className="text-muted-foreground">Token:</span>
+                        <span className="ml-2">{testResult.flash_loan.token_symbol}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Premium:</span>
+                        <span className="ml-2">{testResult.flash_loan.premium}</span>
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Has Premium Funds:</span>
+                      <span className={`ml-2 ${testResult.flash_loan.has_sufficient_premium_funds ? 'text-green-500' : 'text-amber-500'}`}>
+                        {testResult.flash_loan.has_sufficient_premium_funds ? 'Yes' : 'No'}
+                      </span>
+                    </div>
+                  </div>
+                )}
+                
+                {testResult.next_steps && (
+                  <p className="mt-3 text-sm text-muted-foreground border-t pt-3">
+                    <strong>Next:</strong> {testResult.next_steps}
+                  </p>
+                )}
+                
+                {testResult.hint && (
+                  <p className="mt-2 text-sm text-amber-500">
+                    💡 {testResult.hint}
+                  </p>
+                )}
+              </div>
+            </CardContent>
+          )}
         </Card>
 
         {/* Info Card */}
