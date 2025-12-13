@@ -104,6 +104,10 @@ interface ArbitrageRun {
   created_at: string;
   finished_at: string | null;
   approved_for_auto_execution: boolean;
+  used_flash_loan: boolean;
+  flash_loan_provider: string | null;
+  flash_loan_amount: string | null;
+  flash_loan_fee: string | null;
 }
 
 interface DailyRiskLimit {
@@ -530,6 +534,11 @@ export default function AdminAutomatedArbitragePage() {
   const executedRuns = runs.filter(r => r.status === 'EXECUTED');
   const failedRuns = runs.filter(r => r.status === 'FAILED');
   const filteredSimulatedRuns = getFilteredRuns();
+  
+  // Flash loan stats
+  const flashLoanRuns = runs.filter(r => r.used_flash_loan);
+  const flashLoanExecuted = flashLoanRuns.filter(r => r.status === 'EXECUTED');
+  const flashLoanStrategies = strategies.filter(s => s.use_flash_loan);
 
   if (authLoading || loading) {
     return (
@@ -942,6 +951,7 @@ export default function AdminAutomatedArbitragePage() {
                       <TableHead>Strategy</TableHead>
                       <TableHead>Chain</TableHead>
                       <TableHead>Type</TableHead>
+                      <TableHead>Mode</TableHead>
                       <TableHead>PnL</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>TX</TableHead>
@@ -951,7 +961,7 @@ export default function AdminAutomatedArbitragePage() {
                   <TableBody>
                     {[...executedRuns, ...failedRuns].length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={7} className="text-center text-muted-foreground">
+                        <TableCell colSpan={8} className="text-center text-muted-foreground">
                           No executed trades yet
                         </TableCell>
                       </TableRow>
@@ -979,6 +989,16 @@ export default function AdminAutomatedArbitragePage() {
                                 <Badge variant="secondary">Auto</Badge>
                               ) : (
                                 <Badge variant="outline">Manual</Badge>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {run.used_flash_loan ? (
+                                <Badge className="bg-primary">
+                                  <Zap className="h-3 w-3 mr-1" />
+                                  Flash
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline">Standard</Badge>
                               )}
                             </TableCell>
                             <TableCell className={pnl >= 0 ? 'text-green-500' : 'text-destructive'}>

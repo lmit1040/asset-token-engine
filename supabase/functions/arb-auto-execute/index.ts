@@ -29,6 +29,10 @@ interface ArbitrageStrategy {
   is_for_ops_refill: boolean;
   min_expected_profit_native: number;
   max_daily_loss_native: number;
+  use_flash_loan: boolean;
+  flash_loan_provider: string | null;
+  flash_loan_token: string | null;
+  flash_loan_amount_native: number | null;
 }
 
 interface ExecutionResult {
@@ -313,35 +317,45 @@ async function executeEvmArbitrage(
   run: ArbitrageRun,
   strategy: ArbitrageStrategy
 ): Promise<ExecutionResult> {
-  console.log(`[arb-auto-execute] Executing EVM arbitrage for strategy ${strategy.name} on ${strategy.evm_network}...`);
-
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
-  // Call the existing execute-evm-arbitrage function
-  const response = await fetch(`${supabaseUrl}/functions/v1/execute-evm-arbitrage`, {
+  // Determine which execution function to call based on flash loan config
+  const useFlashLoan = strategy.use_flash_loan && strategy.flash_loan_provider;
+  const functionName = useFlashLoan ? 'execute-evm-flash-arbitrage' : 'execute-evm-arbitrage';
+  
+  console.log(`[arb-auto-execute] Executing EVM arbitrage for strategy ${strategy.name} on ${strategy.evm_network}...`);
+  console.log(`[arb-auto-execute] Mode: ${useFlashLoan ? 'FLASH LOAN' : 'STANDARD'}, Function: ${functionName}`);
+
+  const response = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${serviceRoleKey}`,
     },
     body: JSON.stringify({
-      strategyId: strategy.id,
+      strategy_id: strategy.id,
+      strategyId: strategy.id, // Support both formats
       autoExecution: true,
+      simulate_only: false,
     }),
   });
 
   const result = await response.json();
 
   if (!response.ok || !result.success) {
-    throw new Error(result.error || 'EVM arbitrage execution failed');
+    throw new Error(result.error || result.message || 'EVM arbitrage execution failed');
   }
 
+  // Handle different response formats from flash loan vs standard execution
+  const txSignature = result.tx_hash || result.tx_signatures?.join(',') || result.txHash;
+  const profitWei = result.profit_wei || result.net_profit || result.actual_profit;
+  
   return {
     run_id: run.id,
     success: true,
-    tx_signature: result.tx_hash || result.tx_signatures?.join(','),
-    pnl: result.profit_wei ? Number(BigInt(result.profit_wei) / BigInt(1e9)) : 0, // Convert to gwei
+    tx_signature: txSignature,
+    pnl: profitWei ? Number(BigInt(profitWei) / BigInt(1e9)) : 0, // Convert to gwei
   };
 }
 
