@@ -38,6 +38,7 @@ import {
   Timer,
   History
 } from 'lucide-react';
+import { PnLTrendsChart } from '@/components/arbitrage/PnLTrendsChart';
 
 interface SystemSettings {
   id: string;
@@ -687,6 +688,9 @@ export default function AdminAutomatedArbitragePage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* PnL Trends Chart */}
+        <PnLTrendsChart runs={runs} />
 
         <Tabs defaultValue="opportunities" className="space-y-4">
           <TabsList className="flex-wrap">
