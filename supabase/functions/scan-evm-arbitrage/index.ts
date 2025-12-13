@@ -25,16 +25,28 @@ const TESTNET_NETWORKS = ['SEPOLIA', 'POLYGON_AMOY', 'ARBITRUM_SEPOLIA', 'BSC_TE
 
 /**
  * Generate mock quote for testnet strategies (0x API doesn't support testnets)
+ * Now configured to simulate PROFITABLE opportunities for testing flash loan execution
  */
-function getMockQuote(sellAmount: string): { buyAmount: string; sources: string[] } {
-  // Simulate realistic spread of 0.1-0.5%
+function getMockQuote(sellAmount: string, isLegA: boolean): { buyAmount: string; sources: string[] } {
   const input = BigInt(sellAmount);
-  const spreadBps = 10 + Math.floor(Math.random() * 40); // 10-50 bps
-  const output = input - (input * BigInt(spreadBps) / BigInt(10000));
-  return {
-    buyAmount: output.toString(),
-    sources: ['Mock DEX (testnet)'],
-  };
+  
+  if (isLegA) {
+    // Leg A: Simulate getting MORE tokens (favorable rate) - gain 1-2%
+    const gainBps = 100 + Math.floor(Math.random() * 100); // 100-200 bps gain
+    const output = input + (input * BigInt(gainBps) / BigInt(10000));
+    return {
+      buyAmount: output.toString(),
+      sources: ['Mock DEX A (testnet - profitable sim)'],
+    };
+  } else {
+    // Leg B: Simulate slight loss but still net profitable - lose 0.1-0.3%
+    const spreadBps = 10 + Math.floor(Math.random() * 20); // 10-30 bps loss
+    const output = input - (input * BigInt(spreadBps) / BigInt(10000));
+    return {
+      buyAmount: output.toString(),
+      sources: ['Mock DEX B (testnet - profitable sim)'],
+    };
+  }
 }
 
 serve(async (req) => {
@@ -140,8 +152,8 @@ serve(async (req) => {
         isMockPrice = true;
         priceSource = 'Mock Prices (testnet - 0x API not available)';
 
-        const mockQuoteA = getMockQuote(inputWei);
-        const mockQuoteB = getMockQuote(mockQuoteA.buyAmount);
+        const mockQuoteA = getMockQuote(inputWei, true);
+        const mockQuoteB = getMockQuote(mockQuoteA.buyAmount, false);
         
         usedSources = mockQuoteA.sources;
         estimatedProfitWei = calculateArbitrageProfit(inputWei, mockQuoteB.buyAmount);
