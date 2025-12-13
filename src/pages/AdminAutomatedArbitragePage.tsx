@@ -49,6 +49,21 @@ interface SystemSettings {
   max_global_trades_per_day: number;
   safe_mode_triggered_at: string | null;
   safe_mode_reason: string | null;
+  max_flash_loan_amount_native: number | null;
+  flash_loan_cooldown_seconds: number | null;
+  flash_loan_profit_threshold_bps: number | null;
+}
+
+interface FlashLoanProvider {
+  id: string;
+  name: string;
+  display_name: string;
+  chain: string;
+  contract_address: string;
+  receiver_contract_address: string | null;
+  fee_bps: number;
+  is_active: boolean;
+  supported_tokens: string[];
 }
 
 interface ArbitrageStrategy {
@@ -65,6 +80,13 @@ interface ArbitrageStrategy {
   max_daily_loss_native: number;
   max_trades_per_day: number;
   max_trade_value_native: number | null;
+  use_flash_loan: boolean;
+  flash_loan_provider: string | null;
+  flash_loan_token: string | null;
+  flash_loan_amount_native: number | null;
+  flash_loan_fee_bps: number | null;
+  token_in_mint: string;
+  token_out_mint: string;
 }
 
 interface ArbitrageRun {
@@ -137,6 +159,7 @@ export default function AdminAutomatedArbitragePage() {
   const [dailyLimits, setDailyLimits] = useState<DailyRiskLimit[]>([]);
   const [refillRequests, setRefillRequests] = useState<WalletRefillRequest[]>([]);
   const [automationLogs, setAutomationLogs] = useState<AutomationLog[]>([]);
+  const [flashLoanProviders, setFlashLoanProviders] = useState<FlashLoanProvider[]>([]);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
   const [runningCycle, setRunningCycle] = useState(false);
@@ -148,6 +171,7 @@ export default function AdminAutomatedArbitragePage() {
   const [opportunityFilter, setOpportunityFilter] = useState<OpportunityFilter>('all');
   const [expandedErrors, setExpandedErrors] = useState<Set<string>>(new Set());
   const [lastScanTime, setLastScanTime] = useState<Date | null>(null);
+  const [expandedStrategies, setExpandedStrategies] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!authLoading && !isAdmin) {
@@ -227,6 +251,17 @@ export default function AdminAutomatedArbitragePage() {
       
       if (logsData) {
         setAutomationLogs(logsData as AutomationLog[]);
+      }
+
+      // Fetch flash loan providers
+      const { data: providersData } = await supabase
+        .from('flash_loan_providers')
+        .select('*')
+        .eq('is_active', true)
+        .order('chain, name');
+      
+      if (providersData) {
+        setFlashLoanProviders(providersData as FlashLoanProvider[]);
       }
 
     } catch (error) {
@@ -614,7 +649,7 @@ export default function AdminAutomatedArbitragePage() {
         )}
 
         {/* Section 1: Overview */}
-        <div className="grid gap-4 md:grid-cols-5">
+        <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Auto Arbitrage</CardTitle>
@@ -623,7 +658,7 @@ export default function AdminAutomatedArbitragePage() {
             <CardContent>
               <div className="flex items-center justify-between">
                 <span className="text-2xl font-bold">
-                  {settings?.auto_arbitrage_enabled ? 'Enabled' : 'Disabled'}
+                  {settings?.auto_arbitrage_enabled ? 'ON' : 'OFF'}
                 </span>
                 <Switch
                   checked={settings?.auto_arbitrage_enabled || false}
@@ -634,13 +669,35 @@ export default function AdminAutomatedArbitragePage() {
             </CardContent>
           </Card>
 
+          <Card className={settings?.auto_flash_loans_enabled ? 'border-primary/50' : ''}>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Flash Loans</CardTitle>
+              <Zap className={`h-4 w-4 ${settings?.auto_flash_loans_enabled ? 'text-primary' : 'text-muted-foreground'}`} />
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between">
+                <span className="text-2xl font-bold">
+                  {settings?.auto_flash_loans_enabled ? 'ON' : 'OFF'}
+                </span>
+                <Switch
+                  checked={settings?.auto_flash_loans_enabled || false}
+                  onCheckedChange={(checked) => updateSystemSetting('auto_flash_loans_enabled', checked)}
+                  disabled={updating}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                {flashLoanProviders.length} providers active
+              </p>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Cron Schedule</CardTitle>
               <Timer className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">Every 5 min</div>
+              <div className="text-2xl font-bold">5 min</div>
               <p className="text-xs text-muted-foreground">
                 Last: {automationLogs[0] ? new Date(automationLogs[0].cycle_started_at).toLocaleTimeString() : 'N/A'}
               </p>
@@ -660,7 +717,7 @@ export default function AdminAutomatedArbitragePage() {
               <div className={`text-2xl font-bold ${todayPnl >= 0 ? 'text-green-500' : 'text-destructive'}`}>
                 {todayPnl >= 0 ? '+' : ''}{(todayPnl / 1e9).toFixed(4)}
               </div>
-              <p className="text-xs text-muted-foreground">in native token units (Gwei/lamports)</p>
+              <p className="text-xs text-muted-foreground">Gwei/lamports</p>
             </CardContent>
           </Card>
 
@@ -688,6 +745,34 @@ export default function AdminAutomatedArbitragePage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Flash Loan Providers Overview */}
+        {settings?.auto_flash_loans_enabled && flashLoanProviders.length > 0 && (
+          <Card className="border-primary/30 bg-primary/5">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <Zap className="h-4 w-4 text-primary" />
+                Active Flash Loan Providers
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-3">
+                {flashLoanProviders.map((provider) => (
+                  <div key={provider.id} className="flex items-center gap-2 bg-background/60 rounded-lg px-3 py-2 text-sm">
+                    <Badge variant="outline">{provider.chain}</Badge>
+                    <span className="font-medium">{provider.display_name}</span>
+                    <span className="text-muted-foreground">({provider.fee_bps} bps)</span>
+                    {provider.receiver_contract_address ? (
+                      <Badge className="bg-green-500 text-xs">Atomic</Badge>
+                    ) : (
+                      <Badge variant="secondary" className="text-xs">Legacy</Badge>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* PnL Trends Chart */}
         <PnLTrendsChart runs={runs} strategies={strategies} />
@@ -944,17 +1029,22 @@ export default function AdminAutomatedArbitragePage() {
           <TabsContent value="strategies">
             <Card>
               <CardHeader>
-                <CardTitle>Strategy Risk Controls</CardTitle>
-                <CardDescription>Configure automation settings and risk thresholds per strategy</CardDescription>
+                <CardTitle>Strategy Configuration</CardTitle>
+                <CardDescription>Configure automation, flash loans, and risk thresholds per strategy</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-6">
                   {strategies.map((strategy) => {
                     const strategyRuns = runs.filter(r => r.strategy_id === strategy.id);
                     const strategyErrors = strategyRuns.filter(r => r.error_message);
+                    const isExpanded = expandedStrategies.has(strategy.id);
+                    const availableProviders = flashLoanProviders.filter(
+                      p => p.chain === strategy.evm_network || 
+                           (strategy.chain_type === 'EVM' && p.chain === strategy.evm_network)
+                    );
                     
                     return (
-                      <div key={strategy.id} className="border rounded-lg p-4 space-y-4">
+                      <div key={strategy.id} className={`border rounded-lg p-4 space-y-4 ${strategy.use_flash_loan ? 'border-primary/50 bg-primary/5' : ''}`}>
                         <div className="flex items-center justify-between">
                           <div>
                             <h3 className="font-semibold flex items-center gap-2">
@@ -962,6 +1052,12 @@ export default function AdminAutomatedArbitragePage() {
                               <Badge variant="outline">{strategy.chain_type}</Badge>
                               {strategy.evm_network && (
                                 <Badge variant="secondary">{strategy.evm_network}</Badge>
+                              )}
+                              {strategy.use_flash_loan && (
+                                <Badge className="bg-primary">
+                                  <Zap className="h-3 w-3 mr-1" />
+                                  Flash Loan
+                                </Badge>
                               )}
                               {strategyErrors.length > 0 && (
                                 <Badge variant="destructive">{strategyErrors.length} errors</Badge>
@@ -1002,78 +1098,197 @@ export default function AdminAutomatedArbitragePage() {
                                 disabled={updating}
                               />
                             </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setExpandedStrategies(prev => {
+                                  const next = new Set(prev);
+                                  if (next.has(strategy.id)) {
+                                    next.delete(strategy.id);
+                                  } else {
+                                    next.add(strategy.id);
+                                  }
+                                  return next;
+                                });
+                              }}
+                            >
+                              {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                            </Button>
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                          <div className="space-y-1">
-                            <Label className="text-xs text-muted-foreground">Min Profit (native)</Label>
-                            <Input
-                              type="number"
-                              value={strategy.min_expected_profit_native}
-                              onChange={(e) => 
-                                updateStrategy(strategy.id, { 
-                                  min_expected_profit_native: parseInt(e.target.value) || 0 
-                                })
-                              }
-                              className="h-8"
-                            />
+                        {/* Flash Loan Configuration (for EVM strategies) */}
+                        {strategy.chain_type === 'EVM' && (
+                          <div className="border-t pt-4 mt-4">
+                            <div className="flex items-center justify-between mb-3">
+                              <Label className="text-sm font-medium flex items-center gap-2">
+                                <Zap className="h-4 w-4" />
+                                Flash Loan Mode
+                              </Label>
+                              <Switch
+                                checked={strategy.use_flash_loan || false}
+                                onCheckedChange={(checked) => 
+                                  updateStrategy(strategy.id, { use_flash_loan: checked })
+                                }
+                                disabled={updating || availableProviders.length === 0}
+                              />
+                            </div>
+                            
+                            {strategy.use_flash_loan && (
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-3">
+                                <div className="space-y-1">
+                                  <Label className="text-xs text-muted-foreground">Provider</Label>
+                                  <Select
+                                    value={strategy.flash_loan_provider || ''}
+                                    onValueChange={(value) => 
+                                      updateStrategy(strategy.id, { flash_loan_provider: value })
+                                    }
+                                  >
+                                    <SelectTrigger className="h-8">
+                                      <SelectValue placeholder="Select provider" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="AAVE_V3">Aave V3</SelectItem>
+                                      <SelectItem value="AAVE_V3_SEPOLIA">Aave V3 (Sepolia)</SelectItem>
+                                      <SelectItem value="BALANCER">Balancer</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div className="space-y-1">
+                                  <Label className="text-xs text-muted-foreground">Flash Loan Token</Label>
+                                  <Select
+                                    value={strategy.flash_loan_token || ''}
+                                    onValueChange={(value) => 
+                                      updateStrategy(strategy.id, { flash_loan_token: value })
+                                    }
+                                  >
+                                    <SelectTrigger className="h-8">
+                                      <SelectValue placeholder="Select token" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value={strategy.token_in_mint}>
+                                        Token In ({strategy.token_in_mint?.slice(0, 8)}...)
+                                      </SelectItem>
+                                      <SelectItem value="WETH">WETH</SelectItem>
+                                      <SelectItem value="USDC">USDC</SelectItem>
+                                      <SelectItem value="DAI">DAI</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div className="space-y-1">
+                                  <Label className="text-xs text-muted-foreground">Loan Amount (wei)</Label>
+                                  <Input
+                                    type="number"
+                                    value={strategy.flash_loan_amount_native || ''}
+                                    placeholder="1000000000000000000"
+                                    onChange={(e) => 
+                                      updateStrategy(strategy.id, { 
+                                        flash_loan_amount_native: e.target.value ? parseInt(e.target.value) : null 
+                                      })
+                                    }
+                                    className="h-8"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <Label className="text-xs text-muted-foreground">Fee (bps)</Label>
+                                  <Input
+                                    type="number"
+                                    value={strategy.flash_loan_fee_bps || 5}
+                                    onChange={(e) => 
+                                      updateStrategy(strategy.id, { 
+                                        flash_loan_fee_bps: parseInt(e.target.value) || 5 
+                                      })
+                                    }
+                                    className="h-8"
+                                  />
+                                </div>
+                              </div>
+                            )}
+                            
+                            {availableProviders.length === 0 && strategy.chain_type === 'EVM' && (
+                              <p className="text-xs text-muted-foreground mt-2">
+                                No flash loan providers configured for {strategy.evm_network}
+                              </p>
+                            )}
                           </div>
-                          <div className="space-y-1">
-                            <Label className="text-xs text-muted-foreground">Min Profit/Gas Ratio</Label>
-                            <Input
-                              type="number"
-                              step="0.1"
-                              value={strategy.min_profit_to_gas_ratio}
-                              onChange={(e) => 
-                                updateStrategy(strategy.id, { 
-                                  min_profit_to_gas_ratio: parseFloat(e.target.value) || 1 
-                                })
-                              }
-                              className="h-8"
-                            />
+                        )}
+
+                        {/* Risk Controls (collapsible) */}
+                        {isExpanded && (
+                          <div className="border-t pt-4 mt-4">
+                            <Label className="text-sm font-medium mb-3 block">Risk Controls</Label>
+                            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                              <div className="space-y-1">
+                                <Label className="text-xs text-muted-foreground">Min Profit (native)</Label>
+                                <Input
+                                  type="number"
+                                  value={strategy.min_expected_profit_native}
+                                  onChange={(e) => 
+                                    updateStrategy(strategy.id, { 
+                                      min_expected_profit_native: parseInt(e.target.value) || 0 
+                                    })
+                                  }
+                                  className="h-8"
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <Label className="text-xs text-muted-foreground">Min Profit/Gas Ratio</Label>
+                                <Input
+                                  type="number"
+                                  step="0.1"
+                                  value={strategy.min_profit_to_gas_ratio}
+                                  onChange={(e) => 
+                                    updateStrategy(strategy.id, { 
+                                      min_profit_to_gas_ratio: parseFloat(e.target.value) || 1 
+                                    })
+                                  }
+                                  className="h-8"
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <Label className="text-xs text-muted-foreground">Max Daily Loss</Label>
+                                <Input
+                                  type="number"
+                                  value={strategy.max_daily_loss_native}
+                                  onChange={(e) => 
+                                    updateStrategy(strategy.id, { 
+                                      max_daily_loss_native: parseInt(e.target.value) || 0 
+                                    })
+                                  }
+                                  className="h-8"
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <Label className="text-xs text-muted-foreground">Max Trades/Day</Label>
+                                <Input
+                                  type="number"
+                                  value={strategy.max_trades_per_day}
+                                  onChange={(e) => 
+                                    updateStrategy(strategy.id, { 
+                                      max_trades_per_day: parseInt(e.target.value) || 10 
+                                    })
+                                  }
+                                  className="h-8"
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <Label className="text-xs text-muted-foreground">Max Trade Value</Label>
+                                <Input
+                                  type="number"
+                                  value={strategy.max_trade_value_native || ''}
+                                  placeholder="No limit"
+                                  onChange={(e) => 
+                                    updateStrategy(strategy.id, { 
+                                      max_trade_value_native: e.target.value ? parseInt(e.target.value) : null 
+                                    })
+                                  }
+                                  className="h-8"
+                                />
+                              </div>
+                            </div>
                           </div>
-                          <div className="space-y-1">
-                            <Label className="text-xs text-muted-foreground">Max Daily Loss</Label>
-                            <Input
-                              type="number"
-                              value={strategy.max_daily_loss_native}
-                              onChange={(e) => 
-                                updateStrategy(strategy.id, { 
-                                  max_daily_loss_native: parseInt(e.target.value) || 0 
-                                })
-                              }
-                              className="h-8"
-                            />
-                          </div>
-                          <div className="space-y-1">
-                            <Label className="text-xs text-muted-foreground">Max Trades/Day</Label>
-                            <Input
-                              type="number"
-                              value={strategy.max_trades_per_day}
-                              onChange={(e) => 
-                                updateStrategy(strategy.id, { 
-                                  max_trades_per_day: parseInt(e.target.value) || 10 
-                                })
-                              }
-                              className="h-8"
-                            />
-                          </div>
-                          <div className="space-y-1">
-                            <Label className="text-xs text-muted-foreground">Max Trade Value</Label>
-                            <Input
-                              type="number"
-                              value={strategy.max_trade_value_native || ''}
-                              placeholder="No limit"
-                              onChange={(e) => 
-                                updateStrategy(strategy.id, { 
-                                  max_trade_value_native: e.target.value ? parseInt(e.target.value) : null 
-                                })
-                              }
-                              className="h-8"
-                            />
-                          </div>
-                        </div>
+                        )}
                       </div>
                     );
                   })}
