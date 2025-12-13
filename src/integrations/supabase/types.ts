@@ -309,6 +309,51 @@ export type Database = {
           },
         ]
       }
+      automation_logs: {
+        Row: {
+          created_at: string
+          cycle_finished_at: string | null
+          cycle_started_at: string
+          decision_result: Json | null
+          error_message: string | null
+          execution_result: Json | null
+          id: string
+          overall_status: string
+          scan_evm_result: Json | null
+          scan_solana_result: Json | null
+          trigger_type: string
+          wallet_check_result: Json | null
+        }
+        Insert: {
+          created_at?: string
+          cycle_finished_at?: string | null
+          cycle_started_at?: string
+          decision_result?: Json | null
+          error_message?: string | null
+          execution_result?: Json | null
+          id?: string
+          overall_status?: string
+          scan_evm_result?: Json | null
+          scan_solana_result?: Json | null
+          trigger_type?: string
+          wallet_check_result?: Json | null
+        }
+        Update: {
+          created_at?: string
+          cycle_finished_at?: string | null
+          cycle_started_at?: string
+          decision_result?: Json | null
+          error_message?: string | null
+          execution_result?: Json | null
+          id?: string
+          overall_status?: string
+          scan_evm_result?: Json | null
+          scan_solana_result?: Json | null
+          trigger_type?: string
+          wallet_check_result?: Json | null
+        }
+        Relationships: []
+      }
       daily_risk_limits: {
         Row: {
           chain: string

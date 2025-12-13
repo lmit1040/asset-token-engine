@@ -80,3 +80,12 @@ verify_jwt = false
 
 [functions.record-nda-signature]
 verify_jwt = false
+
+[functions.arb-auto-controller]
+verify_jwt = false
+
+[functions.arb-auto-execute]
+verify_jwt = false
+
+[functions.arb-cron-orchestrator]
+verify_jwt = false
