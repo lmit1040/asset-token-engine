@@ -89,3 +89,6 @@ verify_jwt = false
 
 [functions.arb-cron-orchestrator]
 verify_jwt = false
+
+[functions.execute-evm-flash-arbitrage]
+verify_jwt = false
