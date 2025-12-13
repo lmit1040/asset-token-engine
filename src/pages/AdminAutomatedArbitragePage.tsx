@@ -690,7 +690,7 @@ export default function AdminAutomatedArbitragePage() {
         </div>
 
         {/* PnL Trends Chart */}
-        <PnLTrendsChart runs={runs} />
+        <PnLTrendsChart runs={runs} strategies={strategies} />
 
         <Tabs defaultValue="opportunities" className="space-y-4">
           <TabsList className="flex-wrap">
