@@ -34,7 +34,9 @@ import {
   ChevronRight,
   Info,
   Loader2,
-  XCircle
+  XCircle,
+  Timer,
+  History
 } from 'lucide-react';
 
 interface SystemSettings {
@@ -100,6 +102,20 @@ interface WalletRefillRequest {
   created_at: string;
 }
 
+interface AutomationLog {
+  id: string;
+  cycle_started_at: string;
+  cycle_finished_at: string | null;
+  trigger_type: string;
+  overall_status: string;
+  error_message: string | null;
+  scan_solana_result: unknown;
+  scan_evm_result: unknown;
+  decision_result: unknown;
+  execution_result: unknown;
+  wallet_check_result: unknown;
+}
+
 const EXPLORER_URLS: Record<string, string> = {
   SOLANA: 'https://solscan.io/tx/',
   POLYGON: 'https://polygonscan.com/tx/',
@@ -119,8 +135,10 @@ export default function AdminAutomatedArbitragePage() {
   const [runs, setRuns] = useState<ArbitrageRun[]>([]);
   const [dailyLimits, setDailyLimits] = useState<DailyRiskLimit[]>([]);
   const [refillRequests, setRefillRequests] = useState<WalletRefillRequest[]>([]);
+  const [automationLogs, setAutomationLogs] = useState<AutomationLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
+  const [runningCycle, setRunningCycle] = useState(false);
   
   // New state for enhanced functionality
   const [scanning, setScanning] = useState(false);
@@ -197,6 +215,17 @@ export default function AdminAutomatedArbitragePage() {
       
       if (refillData) {
         setRefillRequests(refillData as WalletRefillRequest[]);
+      }
+
+      // Fetch automation logs
+      const { data: logsData } = await supabase
+        .from('automation_logs')
+        .select('*')
+        .order('cycle_started_at', { ascending: false })
+        .limit(20);
+      
+      if (logsData) {
+        setAutomationLogs(logsData as AutomationLog[]);
       }
 
     } catch (error) {
@@ -397,6 +426,35 @@ export default function AdminAutomatedArbitragePage() {
     }
   };
 
+  // Run full automated cycle via orchestrator (same as cron)
+  const runFullCycle = async () => {
+    setRunningCycle(true);
+    try {
+      toast.info('Running full automated cycle (Scan → Decide → Execute → Wallet Check)...');
+      
+      const { data, error } = await supabase.functions.invoke('arb-cron-orchestrator');
+      
+      if (error) throw error;
+      
+      const summary = data?.summary;
+      if (data?.status === 'SKIPPED') {
+        toast.info(data.message || 'Cycle skipped');
+      } else if (data?.status === 'SUCCESS') {
+        toast.success(`Cycle complete! Scanned: ${(summary?.solana_opportunities || 0) + (summary?.evm_opportunities || 0)}, Approved: ${summary?.approved || 0}, Executed: ${summary?.executed || 0}`);
+      } else {
+        toast.warning(`Cycle partially complete: ${data?.status}`);
+      }
+      
+      setLastScanTime(new Date());
+      fetchData();
+    } catch (error) {
+      console.error('Error running full cycle:', error);
+      toast.error('Failed to run full cycle');
+    } finally {
+      setRunningCycle(false);
+    }
+  };
+
   const toggleErrorExpanded = (runId: string) => {
     setExpandedErrors(prev => {
       const next = new Set(prev);
@@ -555,7 +613,7 @@ export default function AdminAutomatedArbitragePage() {
         )}
 
         {/* Section 1: Overview */}
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-5">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Auto Arbitrage</CardTitle>
@@ -572,6 +630,19 @@ export default function AdminAutomatedArbitragePage() {
                   disabled={updating}
                 />
               </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Cron Schedule</CardTitle>
+              <Timer className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">Every 5 min</div>
+              <p className="text-xs text-muted-foreground">
+                Last: {automationLogs[0] ? new Date(automationLogs[0].cycle_started_at).toLocaleTimeString() : 'N/A'}
+              </p>
             </CardContent>
           </Card>
 
@@ -618,7 +689,7 @@ export default function AdminAutomatedArbitragePage() {
         </div>
 
         <Tabs defaultValue="opportunities" className="space-y-4">
-          <TabsList>
+          <TabsList className="flex-wrap">
             <TabsTrigger value="opportunities">
               Opportunities ({simulatedRuns.length})
               {errorRuns.length > 0 && (
@@ -633,6 +704,10 @@ export default function AdminAutomatedArbitragePage() {
             </TabsTrigger>
             <TabsTrigger value="refills">
               Refill Requests ({refillRequests.length})
+            </TabsTrigger>
+            <TabsTrigger value="automation">
+              <History className="h-4 w-4 mr-1" />
+              Automation Logs ({automationLogs.length})
             </TabsTrigger>
           </TabsList>
 
@@ -1068,6 +1143,116 @@ export default function AdminAutomatedArbitragePage() {
                     )}
                   </TableBody>
                 </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Section 6: Automation Logs */}
+          <TabsContent value="automation">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <Timer className="h-5 w-5" />
+                      Automation Logs
+                    </CardTitle>
+                    <CardDescription>
+                      Cron job runs every 5 minutes: Scan → Decide → Execute → Wallet Check
+                    </CardDescription>
+                  </div>
+                  <Button onClick={runFullCycle} disabled={runningCycle}>
+                    {runningCycle ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Play className="h-4 w-4 mr-2" />}
+                    Run Full Cycle Now
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Started</TableHead>
+                      <TableHead>Trigger</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Solana</TableHead>
+                      <TableHead>EVM</TableHead>
+                      <TableHead>Approved</TableHead>
+                      <TableHead>Executed</TableHead>
+                      <TableHead>Duration</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {automationLogs.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={8} className="text-center text-muted-foreground">
+                          No automation cycles recorded yet
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      automationLogs.map((log) => {
+                        const scanSolana = log.scan_solana_result as { data?: { simulations?: unknown[] } } | null;
+                        const scanEvm = log.scan_evm_result as { data?: { simulations?: unknown[] } } | null;
+                        const decision = log.decision_result as { data?: { approved_count?: number } } | null;
+                        const execution = log.execution_result as { data?: { executed_count?: number } } | null;
+                        
+                        const durationMs = log.cycle_finished_at 
+                          ? new Date(log.cycle_finished_at).getTime() - new Date(log.cycle_started_at).getTime()
+                          : null;
+                        
+                        return (
+                          <TableRow key={log.id}>
+                            <TableCell className="text-muted-foreground">
+                              {new Date(log.cycle_started_at).toLocaleString()}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={log.trigger_type === 'cron' ? 'secondary' : 'outline'}>
+                                {log.trigger_type}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={
+                                log.overall_status === 'SUCCESS' ? 'default' :
+                                log.overall_status === 'PARTIAL' ? 'secondary' :
+                                log.overall_status === 'SKIPPED' ? 'outline' :
+                                log.overall_status === 'RUNNING' ? 'outline' :
+                                'destructive'
+                              }>
+                                {log.overall_status === 'SUCCESS' && <CheckCircle2 className="h-3 w-3 mr-1" />}
+                                {log.overall_status === 'FAILED' && <XCircle className="h-3 w-3 mr-1" />}
+                                {log.overall_status === 'RUNNING' && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
+                                {log.overall_status}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              {scanSolana?.data?.simulations?.length ?? '-'}
+                            </TableCell>
+                            <TableCell>
+                              {scanEvm?.data?.simulations?.length ?? '-'}
+                            </TableCell>
+                            <TableCell>
+                              {decision?.data?.approved_count ?? '-'}
+                            </TableCell>
+                            <TableCell>
+                              {execution?.data?.executed_count ?? '-'}
+                            </TableCell>
+                            <TableCell className="text-muted-foreground">
+                              {durationMs !== null ? `${(durationMs / 1000).toFixed(1)}s` : '-'}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
+                  </TableBody>
+                </Table>
+                {automationLogs.length > 0 && automationLogs[0].error_message && (
+                  <Alert className="mt-4" variant="destructive">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertTitle>Last Cycle Error</AlertTitle>
+                    <AlertDescription className="font-mono text-sm">
+                      {automationLogs[0].error_message}
+                    </AlertDescription>
+                  </Alert>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
