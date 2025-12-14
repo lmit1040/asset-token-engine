@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { Connection, PublicKey } from "https://esm.sh/@solana/web3.js@1.95.8";
+import { PublicKey } from "https://esm.sh/@solana/web3.js@1.95.8";
+import { getSolanaConnection } from "../_shared/solana-connection.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -41,9 +42,9 @@ serve(async (req) => {
       console.log(`Filtering for mints: ${mintAddresses.join(', ')}`);
     }
 
-    // Connect to Solana Devnet
-    const rpcUrl = Deno.env.get('SOLANA_DEVNET_RPC_URL') || 'https://api.devnet.solana.com';
-    const connection = new Connection(rpcUrl, 'confirmed');
+    // Get dynamic Solana connection (mainnet/devnet based on system settings)
+    const { connection, isMainnet, rpcUrl } = await getSolanaConnection();
+    console.log(`Connected to Solana RPC (${isMainnet ? 'MAINNET' : 'DEVNET'}): ${rpcUrl}`);
 
     let addressPubkey: PublicKey;
     try {

@@ -1,7 +1,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
-import { Connection, Keypair, PublicKey, SystemProgram, Transaction, sendAndConfirmTransaction, LAMPORTS_PER_SOL } from "https://esm.sh/@solana/web3.js@1.87.6";
+import { Keypair, PublicKey, SystemProgram, Transaction, sendAndConfirmTransaction, LAMPORTS_PER_SOL } from "https://esm.sh/@solana/web3.js@1.87.6";
 import { getOpsWalletKeypair } from "../_shared/ops-wallet.ts";
+import { getSolanaConnection } from "../_shared/solana-connection.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -11,7 +12,6 @@ const corsHeaders = {
 // Configuration (can be made configurable later)
 const MIN_BALANCE_THRESHOLD_SOL = 0.05; // Top up if balance below this
 const TOP_UP_AMOUNT_SOL = 0.2; // Amount to send when topping up
-const SOLANA_RPC_URL = Deno.env.get('SOLANA_DEVNET_RPC_URL') || 'https://api.devnet.solana.com';
 
 serve(async (req) => {
   // Handle CORS preflight
@@ -98,8 +98,9 @@ serve(async (req) => {
     const opsWalletPubkey = opsWallet.publicKey.toBase58();
     console.log(`[top-up-fee-payers] OPS wallet loaded: ${opsWalletPubkey}`);
 
-    // Connect to Solana
-    const connection = new Connection(SOLANA_RPC_URL, 'confirmed');
+    // Get dynamic Solana connection (mainnet/devnet based on system settings)
+    const { connection, isMainnet, rpcUrl } = await getSolanaConnection();
+    console.log(`[top-up-fee-payers] Connected to Solana RPC (${isMainnet ? 'MAINNET' : 'DEVNET'}): ${rpcUrl}`);
 
     // Check OPS wallet balance
     const opsBalance = await connection.getBalance(opsWallet.publicKey);

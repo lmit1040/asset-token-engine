@@ -91,10 +91,10 @@ serve(async (req) => {
       throw new Error("Token missing contract_address or treasury_account");
     }
 
-    // Get Solana connection
-    const rpcUrl =
-      Deno.env.get("SOLANA_DEVNET_RPC_URL") || "https://api.devnet.solana.com";
-    const connection = new Connection(rpcUrl, "confirmed");
+    // Get dynamic Solana connection (mainnet/devnet based on system settings)
+    const { getSolanaConnection, getExplorerUrl } = await import("../_shared/solana-connection.ts");
+    const { connection, isMainnet, rpcUrl } = await getSolanaConnection();
+    console.log(`Connecting to Solana RPC (${isMainnet ? 'MAINNET' : 'DEVNET'}):`, rpcUrl);
 
     // Parse addresses
     const mintPubkey = new PublicKey(token.contract_address);
@@ -231,7 +231,7 @@ serve(async (req) => {
 
     console.log("Transaction confirmed:", txSignature);
 
-    const explorerUrl = `https://solscan.io/tx/${txSignature}?cluster=devnet`;
+    const explorerUrl = getExplorerUrl(txSignature, isMainnet);
 
     return new Response(
       JSON.stringify({

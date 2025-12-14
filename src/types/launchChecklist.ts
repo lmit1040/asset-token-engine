@@ -22,6 +22,7 @@ export const AUTO_DETECTABLE_ITEMS = [
   'verify-resend-api-production',
   'verify-pinata-production',
   'mainnet-0x-api',
+  'mainnet-rpc-solana',
   // Wallet Funding
   'generate-mainnet-solana-fee-payers',
   'generate-mainnet-evm-fee-payers',

@@ -267,10 +267,10 @@ serve(async (req) => {
       });
     }
 
-    // Connect to Solana
-    const rpcUrl = Deno.env.get('SOLANA_DEVNET_RPC_URL') || 'https://api.devnet.solana.com';
-    const connection = new Connection(rpcUrl, 'confirmed');
-    console.log('[execute-arbitrage] Connected to Solana RPC:', rpcUrl);
+    // Get dynamic Solana connection (mainnet/devnet based on system settings)
+    const { getSolanaConnection, getExplorerUrl } = await import("../_shared/solana-connection.ts");
+    const { connection, isMainnet, rpcUrl } = await getSolanaConnection();
+    console.log(`[execute-arbitrage] Connected to Solana RPC (${isMainnet ? 'MAINNET' : 'DEVNET'}):`, rpcUrl);
 
     const startedAt = new Date().toISOString();
     let txSignature: string | null = null;

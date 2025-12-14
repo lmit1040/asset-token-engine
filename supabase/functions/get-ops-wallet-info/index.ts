@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { Connection, Keypair, LAMPORTS_PER_SOL } from "https://esm.sh/@solana/web3.js@1.87.6";
+import { Keypair, LAMPORTS_PER_SOL } from "https://esm.sh/@solana/web3.js@1.87.6";
+import { getSolanaConnection } from "../_shared/solana-connection.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -77,9 +78,9 @@ serve(async (req) => {
 
     const publicKey = opsKeypair.publicKey.toBase58();
 
-    // Fetch balance from Solana Devnet
-    const rpcUrl = Deno.env.get('SOLANA_DEVNET_RPC_URL') || 'https://api.devnet.solana.com';
-    const connection = new Connection(rpcUrl, 'confirmed');
+    // Get dynamic Solana connection (mainnet/devnet based on system settings)
+    const { connection, isMainnet, rpcUrl } = await getSolanaConnection();
+    console.log(`[get-ops-wallet-info] Connected to Solana RPC (${isMainnet ? 'MAINNET' : 'DEVNET'}): ${rpcUrl}`);
     
     let balanceSol = 0;
     try {

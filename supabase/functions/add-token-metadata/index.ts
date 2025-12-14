@@ -214,10 +214,10 @@ const handler = async (req: Request): Promise<Response> => {
       );
     }
 
-    // Connect to Solana Devnet
-    const rpcUrl = Deno.env.get('SOLANA_DEVNET_RPC_URL') || 'https://api.devnet.solana.com';
-    console.log('Connecting to Solana RPC:', rpcUrl);
-    const connection = new Connection(rpcUrl, 'confirmed');
+    // Get dynamic Solana connection (mainnet/devnet based on system settings)
+    const { getSolanaConnection } = await import("../_shared/solana-connection.ts");
+    const { connection, isMainnet, rpcUrl } = await getSolanaConnection();
+    console.log(`Connecting to Solana RPC (${isMainnet ? 'MAINNET' : 'DEVNET'}):`, rpcUrl);
 
     // Test connection
     try {
