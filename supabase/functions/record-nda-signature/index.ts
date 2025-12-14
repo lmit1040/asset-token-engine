@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { Connection, Keypair, Transaction, TransactionInstruction, PublicKey } from "https://esm.sh/@solana/web3.js@1.87.6";
 import { checkRateLimit, rateLimitResponse } from "../_shared/rate-limiter.ts";
+import { getSolanaConnection, getExplorerUrl } from "../_shared/solana-connection.ts";
 import { logEdgeFunctionActivity } from "../_shared/activity-logger.ts";
 
 const corsHeaders = {
@@ -76,10 +77,13 @@ serve(async (req) => {
     // Record to Solana blockchain
     let blockchainTxSignature: string | null = null;
     let blockchainRecordedAt: string | null = null;
+    let isMainnetMode = false;
 
     try {
-      const rpcUrl = Deno.env.get('SOLANA_DEVNET_RPC_URL') || 'https://api.devnet.solana.com';
-      const connection = new Connection(rpcUrl, 'confirmed');
+      // Get dynamic Solana connection (mainnet/devnet based on system settings)
+      const { connection, isMainnet, rpcUrl } = await getSolanaConnection();
+      isMainnetMode = isMainnet;
+      console.log(`[record-nda-signature] Connected to Solana RPC (${isMainnet ? 'MAINNET' : 'DEVNET'}): ${rpcUrl}`);
 
       // Get fee payer
       const feePayerSecretKey = Deno.env.get('SOLANA_FEE_PAYER_SECRET_KEY');
@@ -175,7 +179,7 @@ serve(async (req) => {
       blockchainTxSignature,
       blockchainRecordedAt,
       explorerUrl: blockchainTxSignature 
-        ? `https://solscan.io/tx/${blockchainTxSignature}?cluster=devnet`
+        ? getExplorerUrl(blockchainTxSignature, isMainnetMode)
         : null,
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

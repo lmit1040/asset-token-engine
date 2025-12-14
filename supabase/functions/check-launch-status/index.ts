@@ -65,6 +65,7 @@ Deno.serve(async (req) => {
       { itemId: 'verify-resend-api-production', secret: 'RESEND_API_KEY' },
       { itemId: 'verify-pinata-production', secret: 'PINATA_JWT' },
       { itemId: 'mainnet-0x-api', secret: 'ZEROX_API_KEY' },
+      { itemId: 'mainnet-rpc-solana', secret: 'SOLANA_MAINNET_RPC_URL' },
     ];
 
     for (const check of secretChecks) {

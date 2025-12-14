@@ -47,9 +47,16 @@ interface ChecklistItem {
 const CHECKLIST_ITEMS: ChecklistItem[] = [
   // ========== MAINNET API & INFRASTRUCTURE ==========
   {
-    id: 'mainnet-solana-rpc',
+    id: 'mainnet-rpc-solana',
     title: 'Configure Solana mainnet RPC endpoint',
-    description: 'Replace Devnet RPC with production endpoint (Helius, QuickNode, or Triton). Update SOLANA_DEVNET_RPC_URL env variable.',
+    description: 'Replace Devnet RPC with production endpoint (Helius, QuickNode, or Triton). Set SOLANA_MAINNET_RPC_URL secret.',
+    priority: 'critical',
+    category: 'Mainnet API & Infrastructure',
+  },
+  {
+    id: 'mainnet-solana-rpc',
+    title: 'Fund Solana mainnet RPC provider',
+    description: 'Ensure your RPC provider (Helius, QuickNode, Triton) has sufficient credits/quota for production traffic.',
     priority: 'critical',
     category: 'Mainnet API & Infrastructure',
   },

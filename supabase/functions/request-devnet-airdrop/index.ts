@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { Connection, Keypair, LAMPORTS_PER_SOL } from "https://esm.sh/@solana/web3.js@1.87.6";
+import { getSolanaConnection } from "../_shared/solana-connection.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -77,10 +78,19 @@ serve(async (req) => {
 
     const publicKey = opsKeypair.publicKey;
 
-    // Connect to Solana Devnet and request airdrop
-    const rpcUrl = Deno.env.get('SOLANA_DEVNET_RPC_URL') || 'https://api.devnet.solana.com';
-    const connection = new Connection(rpcUrl, 'confirmed');
+    // Check if we're in mainnet mode - airdrops only work on devnet
+    const { connection, isMainnet, rpcUrl } = await getSolanaConnection();
     
+    if (isMainnet) {
+      return new Response(JSON.stringify({ 
+        error: 'Airdrops are only available on Devnet. The system is currently in Mainnet mode.' 
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    
+    console.log(`[request-devnet-airdrop] Connected to Solana RPC (DEVNET): ${rpcUrl}`);
     console.log(`[request-devnet-airdrop] Requesting 1 SOL airdrop for ${publicKey.toBase58()}`);
 
     // Request 1 SOL airdrop (max allowed per request on devnet)
