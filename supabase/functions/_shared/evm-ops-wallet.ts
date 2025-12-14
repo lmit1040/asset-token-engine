@@ -4,10 +4,9 @@
 
 import { ethers } from "https://esm.sh/ethers@6.13.2";
 
-// Network RPC URLs (using public free RPCs)
-// Includes both mainnets and testnets
-const NETWORK_RPC_URLS: Record<string, string> = {
-  // Mainnets
+// Public fallback RPC URLs (rate-limited, use custom RPC for production)
+const DEFAULT_RPC_URLS: Record<string, string> = {
+  // Mainnets (public fallbacks)
   POLYGON: "https://polygon-rpc.com",
   ETHEREUM: "https://eth.llamarpc.com",
   ARBITRUM: "https://arb1.arbitrum.io/rpc",
@@ -17,6 +16,14 @@ const NETWORK_RPC_URLS: Record<string, string> = {
   SEPOLIA: "https://ethereum-sepolia-rpc.publicnode.com",
   ARBITRUM_SEPOLIA: "https://sepolia-rollup.arbitrum.io/rpc",
   BSC_TESTNET: "https://data-seed-prebsc-1-s1.binance.org:8545",
+};
+
+// Environment variable names for custom RPC URLs (Alchemy, Infura, QuickNode)
+const RPC_ENV_VARS: Record<string, string> = {
+  POLYGON: "EVM_POLYGON_RPC_URL",
+  ETHEREUM: "EVM_ETHEREUM_RPC_URL",
+  ARBITRUM: "EVM_ARBITRUM_RPC_URL",
+  BSC: "EVM_BSC_RPC_URL",
 };
 
 // Chain IDs for network validation
@@ -32,6 +39,32 @@ const CHAIN_IDS: Record<string, number> = {
   ARBITRUM_SEPOLIA: 421614,
   BSC_TESTNET: 97,
 };
+
+/**
+ * Get the RPC URL for a network, preferring custom env vars over public fallbacks
+ */
+export function getEvmRpcUrl(network: string): string {
+  const normalizedNetwork = network.toUpperCase();
+  
+  // Check for custom RPC URL from environment variable
+  const envVar = RPC_ENV_VARS[normalizedNetwork];
+  if (envVar) {
+    const customUrl = Deno.env.get(envVar);
+    if (customUrl) {
+      console.log(`[evm-ops-wallet] Using custom RPC for ${normalizedNetwork} from ${envVar}`);
+      return customUrl;
+    }
+  }
+  
+  // Fall back to default public RPC
+  const defaultUrl = DEFAULT_RPC_URLS[normalizedNetwork];
+  if (!defaultUrl) {
+    throw new Error(`[evm-ops-wallet] Unsupported network: ${normalizedNetwork}`);
+  }
+  
+  console.log(`[evm-ops-wallet] Using public RPC fallback for ${normalizedNetwork}`);
+  return defaultUrl;
+}
 
 export interface EvmOpsWallet {
   wallet: ethers.Wallet;
@@ -62,12 +95,12 @@ export function getEvmOpsWallet(network: string = "POLYGON"): EvmOpsWallet {
     throw new Error("[evm-ops-wallet] EVM_OPS_PRIVATE_KEY not configured");
   }
 
-  const rpcUrl = NETWORK_RPC_URLS[normalizedNetwork];
-  if (!rpcUrl) {
-    throw new Error(`[evm-ops-wallet] Unsupported network: ${normalizedNetwork}. Supported: ${Object.keys(NETWORK_RPC_URLS).join(", ")}`);
+  const chainId = CHAIN_IDS[normalizedNetwork];
+  if (!chainId) {
+    throw new Error(`[evm-ops-wallet] Unsupported network: ${normalizedNetwork}. Supported: ${Object.keys(CHAIN_IDS).join(", ")}`);
   }
 
-  const chainId = CHAIN_IDS[normalizedNetwork];
+  const rpcUrl = getEvmRpcUrl(normalizedNetwork);
 
   console.log(`[evm-ops-wallet] Initializing wallet for ${normalizedNetwork} (chainId: ${chainId})`);
 
@@ -114,12 +147,23 @@ export async function getEvmOpsBalance(network: string = "POLYGON"): Promise<str
  * Check if a network is supported
  */
 export function isSupportedEvmNetwork(network: string): boolean {
-  return network.toUpperCase() in NETWORK_RPC_URLS;
+  return network.toUpperCase() in CHAIN_IDS;
 }
 
 /**
  * Get list of supported networks
  */
 export function getSupportedEvmNetworks(): string[] {
-  return Object.keys(NETWORK_RPC_URLS);
+  return Object.keys(CHAIN_IDS);
+}
+
+/**
+ * Check which mainnet RPC URLs are configured via environment variables
+ */
+export function getConfiguredEvmRpcStatus(): Record<string, boolean> {
+  const status: Record<string, boolean> = {};
+  for (const [network, envVar] of Object.entries(RPC_ENV_VARS)) {
+    status[network] = !!Deno.env.get(envVar);
+  }
+  return status;
 }
