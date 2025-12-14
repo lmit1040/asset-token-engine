@@ -553,22 +553,46 @@ export default function AdminAutomatedArbitragePage() {
   return (
     <DashboardLayout title="Automated Arbitrage" subtitle="Internal cost optimization & fee payer management">
       <div className="space-y-6">
-        {/* Real Trading Status */}
-        <Alert className="border-primary/50 bg-primary/5">
-          <Zap className="h-4 w-4 text-primary" />
-          <AlertTitle>Real Testnet Trading Enabled</AlertTitle>
-          <AlertDescription className="space-y-2">
-            <p>
-              <strong>EVM (Real Trades):</strong> Uses 0x API for real DEX trades on Polygon, Ethereum, Arbitrum, BSC (mainnets & testnets).
-              Trades execute with actual transactions using OPS wallet or fee payers.
+        {/* Testnet Mock Mode Banner */}
+        <Alert className="border-amber-500/50 bg-amber-500/10">
+          <AlertTriangle className="h-4 w-4 text-amber-500" />
+          <AlertTitle className="text-amber-600 dark:text-amber-400 flex items-center gap-2">
+            <Badge variant="outline" className="border-amber-500 text-amber-600 dark:text-amber-400 font-bold">
+              TESTNET MOCK MODE
+            </Badge>
+            Simulation Environment Active
+          </AlertTitle>
+          <AlertDescription className="space-y-3 mt-2">
+            <p className="text-muted-foreground">
+              <strong>No real blockchain transactions occur.</strong> All arbitrage profits and balances shown are simulated 
+              for testing purposes only. OPS wallet balances reflect actual on-chain values but will not change from mock trades.
             </p>
-            <p>
-              <strong>Solana (Mock Only):</strong> Jupiter API has DNS issues in edge functions. Solana scans use mock prices.
-              Real Solana trades require mainnet Jupiter which isn't accessible from edge functions.
-            </p>
-            <div className="mt-2 flex gap-2">
-              <Badge variant="default">EVM: Real Trades</Badge>
-              <Badge variant="secondary">Solana: Mock Prices</Badge>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div className="flex items-start gap-2 p-2 rounded bg-background/50">
+                <Info className="h-4 w-4 text-muted-foreground mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium">EVM Chains</p>
+                  <p className="text-xs text-muted-foreground">0x API testnets - simulated quotes, no actual swaps</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-2 p-2 rounded bg-background/50">
+                <Info className="h-4 w-4 text-muted-foreground mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium">Solana</p>
+                  <p className="text-xs text-muted-foreground">Mock prices only - Jupiter API unavailable in edge functions</p>
+                </div>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2 pt-1">
+              <Badge variant="secondary" className="bg-amber-500/20 text-amber-700 dark:text-amber-300">
+                Profits: Simulated Only
+              </Badge>
+              <Badge variant="secondary" className="bg-amber-500/20 text-amber-700 dark:text-amber-300">
+                Transactions: None Executed
+              </Badge>
+              <Badge variant="secondary" className="bg-amber-500/20 text-amber-700 dark:text-amber-300">
+                Wallet Balances: Read-Only
+              </Badge>
             </div>
           </AlertDescription>
         </Alert>
