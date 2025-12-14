@@ -21,6 +21,8 @@ import {
   Edit2,
   Check,
   AlertTriangle,
+  ShieldCheck,
+  ShieldX,
 } from 'lucide-react';
 
 interface FlashLoanProvider {
@@ -36,6 +38,8 @@ interface FlashLoanProvider {
   is_active: boolean;
   supported_tokens: string[];
   created_at: string;
+  is_verified: boolean;
+  verified_at: string | null;
 }
 
 interface SepoliaTestResult {
@@ -215,6 +219,37 @@ export default function AdminFlashLoanProvidersPage() {
   const activeCount = providers.filter(p => p.is_active).length;
   const evmCount = providers.filter(p => p.chain !== 'SOLANA').length;
   const solanaCount = providers.filter(p => p.chain === 'SOLANA').length;
+  const verifiedCount = providers.filter(p => p.is_verified && p.receiver_contract_address).length;
+
+  const markAsVerified = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('flash_loan_providers')
+        .update({ is_verified: true, verified_at: new Date().toISOString() })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      setProviders(providers.map(p => 
+        p.id === id ? { ...p, is_verified: true, verified_at: new Date().toISOString() } : p
+      ));
+      toast.success('Contract marked as verified');
+    } catch (error) {
+      console.error('Error marking verified:', error);
+      toast.error('Failed to update verification status');
+    }
+  };
+
+  const getVerificationUrl = (chain: string, address: string) => {
+    const baseUrls: Record<string, string> = {
+      POLYGON: 'https://polygonscan.com/verifyContract?a=',
+      ETHEREUM: 'https://etherscan.io/verifyContract?a=',
+      ARBITRUM: 'https://arbiscan.io/verifyContract?a=',
+      BSC: 'https://bscscan.com/verifyContract?a=',
+      SEPOLIA: 'https://sepolia.etherscan.io/verifyContract?a=',
+    };
+    return baseUrls[chain] ? `${baseUrls[chain]}${address}` : null;
+  };
 
   if (authLoading || loading) {
     return (
@@ -263,11 +298,14 @@ export default function AdminFlashLoanProvidersPage() {
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Solana Providers</CardTitle>
-              <Badge variant="secondary">Coming Soon</Badge>
+              <CardTitle className="text-sm font-medium">Verified Contracts</CardTitle>
+              <ShieldCheck className="h-4 w-4 text-green-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-muted-foreground">{solanaCount}</div>
+              <div className="text-2xl font-bold text-green-500">{verifiedCount}</div>
+              <p className="text-xs text-muted-foreground mt-1">
+                {providers.filter(p => p.receiver_contract_address).length} with receiver
+              </p>
             </CardContent>
           </Card>
         </div>
@@ -309,13 +347,14 @@ export default function AdminFlashLoanProvidersPage() {
                   <TableHead>Tokens</TableHead>
                   <TableHead>Pool Contract</TableHead>
                   <TableHead>Receiver Contract</TableHead>
+                  <TableHead>Verified</TableHead>
                   <TableHead>Active</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredProviders.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground">
+                    <TableCell colSpan={8} className="text-center text-muted-foreground">
                       No providers found
                     </TableCell>
                   </TableRow>
@@ -395,6 +434,54 @@ export default function AdminFlashLoanProvidersPage() {
                             <AlertTriangle className="h-3 w-3 mr-1 text-amber-500" />
                             Set Receiver
                           </Button>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {provider.receiver_contract_address ? (
+                          provider.is_verified ? (
+                            <div className="flex items-center gap-2">
+                              <Badge variant="default" className="bg-green-500 hover:bg-green-600">
+                                <ShieldCheck className="h-3 w-3 mr-1" />
+                                Verified
+                              </Badge>
+                              {provider.verified_at && (
+                                <span className="text-xs text-muted-foreground">
+                                  {new Date(provider.verified_at).toLocaleDateString()}
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 text-xs"
+                                onClick={() => markAsVerified(provider.id)}
+                              >
+                                <ShieldX className="h-3 w-3 mr-1 text-amber-500" />
+                                Mark Verified
+                              </Button>
+                              {getVerificationUrl(provider.chain, provider.receiver_contract_address!) && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7"
+                                  asChild
+                                >
+                                  <a
+                                    href={getVerificationUrl(provider.chain, provider.receiver_contract_address!)!}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    title="Verify on Explorer"
+                                  >
+                                    <ExternalLink className="h-3 w-3" />
+                                  </a>
+                                </Button>
+                              )}
+                            </div>
+                          )
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
                         )}
                       </TableCell>
                       <TableCell>
