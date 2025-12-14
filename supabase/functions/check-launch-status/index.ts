@@ -77,6 +77,28 @@ Deno.serve(async (req) => {
       });
     }
 
+    // ========== CHECK EVM RPC ENDPOINTS ==========
+    const evmRpcChecks = [
+      { network: 'POLYGON', envVar: 'EVM_POLYGON_RPC_URL' },
+      { network: 'ETHEREUM', envVar: 'EVM_ETHEREUM_RPC_URL' },
+      { network: 'ARBITRUM', envVar: 'EVM_ARBITRUM_RPC_URL' },
+      { network: 'BSC', envVar: 'EVM_BSC_RPC_URL' },
+    ];
+
+    const configuredEvmRpcs = evmRpcChecks.filter(c => !!Deno.env.get(c.envVar));
+    const evmRpcDetails = evmRpcChecks.map(c => 
+      `${c.network}: ${Deno.env.get(c.envVar) ? '✓' : '✗'}`
+    ).join(', ');
+
+    results.push({
+      itemId: 'mainnet-rpc-evm',
+      isComplete: configuredEvmRpcs.length === evmRpcChecks.length,
+      reason: configuredEvmRpcs.length === evmRpcChecks.length
+        ? 'All EVM mainnet RPCs configured'
+        : `${configuredEvmRpcs.length}/${evmRpcChecks.length} EVM RPCs configured (${evmRpcDetails})`,
+      detectedValue: `${configuredEvmRpcs.length}/${evmRpcChecks.length}`,
+    });
+
     // Check EVM_OPS_PRIVATE_KEY separately (part of new-ops-wallet-keys)
     const evmOpsKey = Deno.env.get('EVM_OPS_PRIVATE_KEY');
     const opsWalletResult = results.find(r => r.itemId === 'new-ops-wallet-keys');

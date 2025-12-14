@@ -61,9 +61,9 @@ const CHECKLIST_ITEMS: ChecklistItem[] = [
     category: 'Mainnet API & Infrastructure',
   },
   {
-    id: 'mainnet-evm-rpc',
+    id: 'mainnet-rpc-evm',
     title: 'Configure EVM mainnet RPC endpoints',
-    description: 'Set up mainnet RPC URLs for Polygon, Ethereum, Arbitrum, BSC in evm-ops-wallet.ts (Alchemy, Infura, or QuickNode).',
+    description: 'Set up production RPC URLs via secrets: EVM_POLYGON_RPC_URL, EVM_ETHEREUM_RPC_URL, EVM_ARBITRUM_RPC_URL, EVM_BSC_RPC_URL (Alchemy, Infura, or QuickNode).',
     priority: 'critical',
     category: 'Mainnet API & Infrastructure',
   },
