@@ -19,6 +19,7 @@ import AdminAssignPage from "./pages/AdminAssignPage";
 import AdminTransferPage from "./pages/AdminTransferPage";
 import AdminActivityPage from "./pages/AdminActivityPage";
 import AdminDeliverPage from "./pages/AdminDeliverPage";
+import AdminTokenOperationsPage from "./pages/AdminTokenOperationsPage";
 import AdminAttestationsPage from "./pages/AdminAttestationsPage";
 import AdminFeePayersPage from "./pages/AdminFeePayersPage";
 import AdminEvmFeePayersPage from "./pages/AdminEvmFeePayersPage";
@@ -73,6 +74,7 @@ const App = () => (
               <Route path="/admin/assign" element={<AdminAssignPage />} />
               <Route path="/admin/transfer" element={<AdminTransferPage />} />
               <Route path="/admin/deliver" element={<AdminDeliverPage />} />
+              <Route path="/admin/token-operations" element={<AdminTokenOperationsPage />} />
               <Route path="/admin/attestations" element={<AdminAttestationsPage />} />
               <Route path="/admin/submissions" element={<AdminSubmissionsPage />} />
               <Route path="/admin/token-proposals" element={<AdminTokenProposalsPage />} />
