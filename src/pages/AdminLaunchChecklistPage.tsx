@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
@@ -6,6 +6,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { supabase } from '@/integrations/supabase/client';
 import { 
   AlertTriangle, 
   CheckCircle2, 
@@ -19,8 +22,18 @@ import {
   Zap,
   Key,
   FileCheck,
-  Scale
+  Scale,
+  RefreshCw,
+  Info,
+  Loader2
 } from 'lucide-react';
+import { 
+  AutoDetectionResult, 
+  LaunchStatusResponse, 
+  AUTO_DETECTABLE_ITEMS,
+  DetectionStatus 
+} from '@/types/launchChecklist';
+import { toast } from 'sonner';
 
 interface ChecklistItem {
   id: string;
@@ -151,8 +164,8 @@ const CHECKLIST_ITEMS: ChecklistItem[] = [
   // ========== ARBITRAGE & FLASH LOANS ==========
   {
     id: 'remove-mock-mode',
-    title: 'Remove TESTNET_MOCK_MODE from execute-evm-arbitrage',
-    description: 'Disable mock mode in edge function to enable real trade execution. Only after all other mainnet items complete.',
+    title: 'Enable mainnet mode for arbitrage',
+    description: 'Enable is_mainnet_mode in system settings to switch from testnet mock mode to real trade execution.',
     priority: 'critical',
     category: 'Arbitrage & Flash Loans',
   },
@@ -381,6 +394,9 @@ export default function AdminLaunchChecklistPage() {
   const { isAdmin, isLoading } = useAuth();
   const navigate = useNavigate();
   const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set());
+  const [autoDetectedItems, setAutoDetectedItems] = useState<Map<string, AutoDetectionResult>>(new Map());
+  const [isDetecting, setIsDetecting] = useState(false);
+  const [lastCheckedAt, setLastCheckedAt] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isLoading && !isAdmin) {
@@ -395,6 +411,49 @@ export default function AdminLaunchChecklistPage() {
     }
   }, []);
 
+  const runAutoDetection = useCallback(async () => {
+    setIsDetecting(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session) {
+        toast.error('Not authenticated');
+        return;
+      }
+
+      const { data, error } = await supabase.functions.invoke<LaunchStatusResponse>('check-launch-status');
+
+      if (error) {
+        console.error('Auto-detection error:', error);
+        toast.error('Failed to run auto-detection');
+        return;
+      }
+
+      if (data?.results) {
+        const newMap = new Map<string, AutoDetectionResult>();
+        for (const result of data.results) {
+          newMap.set(result.itemId, result);
+        }
+        setAutoDetectedItems(newMap);
+        setLastCheckedAt(data.checkedAt);
+        
+        const autoVerifiedCount = data.results.filter(r => r.isComplete).length;
+        toast.success(`Auto-detection complete: ${autoVerifiedCount} items verified`);
+      }
+    } catch (err) {
+      console.error('Auto-detection failed:', err);
+      toast.error('Auto-detection failed');
+    } finally {
+      setIsDetecting(false);
+    }
+  }, []);
+
+  // Run auto-detection on mount
+  useEffect(() => {
+    if (isAdmin && !isLoading) {
+      runAutoDetection();
+    }
+  }, [isAdmin, isLoading, runAutoDetection]);
+
   const toggleItem = (id: string) => {
     const newChecked = new Set(checkedItems);
     if (newChecked.has(id)) {
@@ -406,16 +465,41 @@ export default function AdminLaunchChecklistPage() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify([...newChecked]));
   };
 
+  const getItemStatus = (itemId: string): DetectionStatus => {
+    if (isDetecting && AUTO_DETECTABLE_ITEMS.includes(itemId)) {
+      return 'loading';
+    }
+    const autoResult = autoDetectedItems.get(itemId);
+    if (autoResult) {
+      return autoResult.isComplete ? 'auto-verified' : 'auto-incomplete';
+    }
+    if (AUTO_DETECTABLE_ITEMS.includes(itemId)) {
+      return 'loading';
+    }
+    return 'manual-required';
+  };
+
+  const isItemComplete = (itemId: string): boolean => {
+    // Auto-verified items are always complete
+    const autoResult = autoDetectedItems.get(itemId);
+    if (autoResult?.isComplete) return true;
+    // Otherwise check manual checkbox
+    return checkedItems.has(itemId);
+  };
+
   const categories = CATEGORY_ORDER.filter(cat => 
     CHECKLIST_ITEMS.some(item => item.category === cat)
   );
-  const completedCount = checkedItems.size;
+  
+  const completedCount = CHECKLIST_ITEMS.filter(item => isItemComplete(item.id)).length;
   const totalCount = CHECKLIST_ITEMS.length;
   const progress = Math.round((completedCount / totalCount) * 100);
 
   const criticalRemaining = CHECKLIST_ITEMS.filter(
-    item => item.priority === 'critical' && !checkedItems.has(item.id)
+    item => item.priority === 'critical' && !isItemComplete(item.id)
   ).length;
+
+  const autoVerifiedCount = Array.from(autoDetectedItems.values()).filter(r => r.isComplete).length;
 
   const getPriorityBadge = (priority: string) => {
     switch (priority) {
@@ -425,6 +509,69 @@ export default function AdminLaunchChecklistPage() {
         return <Badge variant="default" className="bg-amber-500 hover:bg-amber-600">High</Badge>;
       default:
         return <Badge variant="secondary">Medium</Badge>;
+    }
+  };
+
+  const getStatusBadge = (itemId: string) => {
+    const status = getItemStatus(itemId);
+    const autoResult = autoDetectedItems.get(itemId);
+
+    switch (status) {
+      case 'loading':
+        return (
+          <Badge variant="outline" className="gap-1">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            Checking
+          </Badge>
+        );
+      case 'auto-verified':
+        return (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge variant="default" className="bg-green-600 hover:bg-green-700 gap-1">
+                  <Zap className="h-3 w-3" />
+                  Auto-verified
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent side="left" className="max-w-xs">
+                <p className="font-medium">{autoResult?.reason}</p>
+                {autoResult?.detectedValue !== undefined && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Value: {autoResult.detectedValue}
+                  </p>
+                )}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        );
+      case 'auto-incomplete':
+        return (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge variant="outline" className="border-amber-500 text-amber-600 gap-1">
+                  <Info className="h-3 w-3" />
+                  Not configured
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent side="left" className="max-w-xs">
+                <p className="font-medium">{autoResult?.reason}</p>
+                {autoResult?.detectedValue !== undefined && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Current: {autoResult.detectedValue}
+                  </p>
+                )}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        );
+      default:
+        return (
+          <Badge variant="outline" className="text-muted-foreground">
+            Manual check
+          </Badge>
+        );
     }
   };
 
@@ -469,21 +616,35 @@ export default function AdminLaunchChecklistPage() {
               {totalCount} tasks across {categories.length} categories for production deployment
             </p>
           </div>
-          {criticalRemaining > 0 ? (
-            <div className="flex items-center gap-2 text-destructive">
-              <AlertTriangle className="h-5 w-5" />
-              <span className="font-medium">{criticalRemaining} critical items remaining</span>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 text-green-600">
-              <CheckCircle2 className="h-5 w-5" />
-              <span className="font-medium">All critical items complete!</span>
-            </div>
-          )}
+          <div className="flex items-center gap-4">
+            <Button 
+              variant="outline" 
+              onClick={runAutoDetection}
+              disabled={isDetecting}
+            >
+              {isDetecting ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <RefreshCw className="h-4 w-4 mr-2" />
+              )}
+              Refresh Status
+            </Button>
+            {criticalRemaining > 0 ? (
+              <div className="flex items-center gap-2 text-destructive">
+                <AlertTriangle className="h-5 w-5" />
+                <span className="font-medium">{criticalRemaining} critical items remaining</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-green-600">
+                <CheckCircle2 className="h-5 w-5" />
+                <span className="font-medium">All critical items complete!</span>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Progress Summary */}
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-5">
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">Overall Progress</CardTitle>
@@ -492,6 +653,17 @@ export default function AdminLaunchChecklistPage() {
               <div className="text-2xl font-bold">{progress}%</div>
               <Progress value={progress} className="h-2 mt-2" />
               <p className="text-xs text-muted-foreground mt-1">{completedCount} of {totalCount} tasks</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Auto-Verified</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-green-600">{autoVerifiedCount}</div>
+              <p className="text-xs text-muted-foreground mt-1">
+                {AUTO_DETECTABLE_ITEMS.length} detectable items
+              </p>
             </CardContent>
           </Card>
           <Card>
@@ -511,7 +683,7 @@ export default function AdminLaunchChecklistPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-amber-500">
-                {CHECKLIST_ITEMS.filter(i => i.priority === 'high' && !checkedItems.has(i.id)).length}
+                {CHECKLIST_ITEMS.filter(i => i.priority === 'high' && !isItemComplete(i.id)).length}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
                 {CHECKLIST_ITEMS.filter(i => i.priority === 'high').length} total high
@@ -533,12 +705,19 @@ export default function AdminLaunchChecklistPage() {
           </Card>
         </div>
 
+        {/* Last checked timestamp */}
+        {lastCheckedAt && (
+          <p className="text-xs text-muted-foreground">
+            Last auto-check: {new Date(lastCheckedAt).toLocaleString()}
+          </p>
+        )}
+
         {/* Category Cards */}
         <div className="grid gap-6">
           {categories.map(category => {
             const categoryItems = CHECKLIST_ITEMS.filter(item => item.category === category);
-            const categoryCompleted = categoryItems.filter(item => checkedItems.has(item.id)).length;
-            const categoryCritical = categoryItems.filter(i => i.priority === 'critical' && !checkedItems.has(i.id)).length;
+            const categoryCompleted = categoryItems.filter(item => isItemComplete(item.id)).length;
+            const categoryCritical = categoryItems.filter(i => i.priority === 'critical' && !isItemComplete(i.id)).length;
             
             return (
               <Card key={category}>
@@ -557,46 +736,58 @@ export default function AdminLaunchChecklistPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  {categoryItems.map(item => (
-                    <div
-                      key={item.id}
-                      className={`flex items-start gap-3 p-3 rounded-lg border transition-colors ${
-                        checkedItems.has(item.id) 
-                          ? 'bg-muted/50 border-muted' 
-                          : 'bg-background border-border hover:bg-muted/30'
-                      }`}
-                    >
-                      <Checkbox
-                        id={item.id}
-                        checked={checkedItems.has(item.id)}
-                        onCheckedChange={() => toggleItem(item.id)}
-                        className="mt-1"
-                      />
-                      <div className="flex-1 space-y-1">
-                        <div className="flex items-center gap-2">
-                          <label
-                            htmlFor={item.id}
-                            className={`font-medium cursor-pointer ${
-                              checkedItems.has(item.id) ? 'line-through text-muted-foreground' : ''
-                            }`}
-                          >
-                            {item.title}
-                          </label>
-                          {item.link && (
-                            <a 
-                              href={item.link} 
-                              className="text-xs text-primary hover:underline"
-                              onClick={(e) => e.stopPropagation()}
+                  {categoryItems.map(item => {
+                    const isComplete = isItemComplete(item.id);
+                    const autoResult = autoDetectedItems.get(item.id);
+                    const isAutoVerified = autoResult?.isComplete === true;
+
+                    return (
+                      <div
+                        key={item.id}
+                        className={`flex items-start gap-3 p-3 rounded-lg border transition-colors ${
+                          isComplete
+                            ? isAutoVerified 
+                              ? 'bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-900' 
+                              : 'bg-muted/50 border-muted'
+                            : 'bg-background border-border hover:bg-muted/30'
+                        }`}
+                      >
+                        <Checkbox
+                          id={item.id}
+                          checked={isComplete}
+                          onCheckedChange={() => toggleItem(item.id)}
+                          className="mt-1"
+                          disabled={isAutoVerified}
+                        />
+                        <div className="flex-1 space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <label
+                              htmlFor={item.id}
+                              className={`font-medium cursor-pointer ${
+                                isComplete ? 'line-through text-muted-foreground' : ''
+                              }`}
                             >
-                              Open →
-                            </a>
-                          )}
+                              {item.title}
+                            </label>
+                            {item.link && (
+                              <a 
+                                href={item.link} 
+                                className="text-xs text-primary hover:underline"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                Open →
+                              </a>
+                            )}
+                          </div>
+                          <p className="text-sm text-muted-foreground">{item.description}</p>
                         </div>
-                        <p className="text-sm text-muted-foreground">{item.description}</p>
+                        <div className="flex flex-col items-end gap-1">
+                          {getPriorityBadge(item.priority)}
+                          {getStatusBadge(item.id)}
+                        </div>
                       </div>
-                      {getPriorityBadge(item.priority)}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </CardContent>
               </Card>
             );
