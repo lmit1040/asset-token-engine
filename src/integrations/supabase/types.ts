@@ -995,6 +995,33 @@ export type Database = {
           },
         ]
       }
+      rate_limit_tracking: {
+        Row: {
+          created_at: string
+          endpoint: string
+          id: string
+          ip_address: string
+          request_count: number
+          window_start: string
+        }
+        Insert: {
+          created_at?: string
+          endpoint: string
+          id?: string
+          ip_address: string
+          request_count?: number
+          window_start?: string
+        }
+        Update: {
+          created_at?: string
+          endpoint?: string
+          id?: string
+          ip_address?: string
+          request_count?: number
+          window_start?: string
+        }
+        Relationships: []
+      }
       rss_feed_sources: {
         Row: {
           category: string | null
@@ -1073,9 +1100,15 @@ export type Database = {
         Row: {
           auto_arbitrage_enabled: boolean
           auto_flash_loans_enabled: boolean
+          evm_fee_payer_top_up_native: number
+          evm_min_fee_payer_balance_native: number
           flash_loan_cooldown_seconds: number | null
           flash_loan_profit_threshold_bps: number | null
           id: string
+          is_mainnet_mode: boolean
+          mainnet_fee_payer_top_up_sol: number
+          mainnet_min_fee_payer_balance_sol: number
+          mainnet_min_profit_to_gas_ratio: number
           max_flash_loan_amount_native: number | null
           max_global_daily_loss_native: number
           max_global_trades_per_day: number
@@ -1088,9 +1121,15 @@ export type Database = {
         Insert: {
           auto_arbitrage_enabled?: boolean
           auto_flash_loans_enabled?: boolean
+          evm_fee_payer_top_up_native?: number
+          evm_min_fee_payer_balance_native?: number
           flash_loan_cooldown_seconds?: number | null
           flash_loan_profit_threshold_bps?: number | null
           id?: string
+          is_mainnet_mode?: boolean
+          mainnet_fee_payer_top_up_sol?: number
+          mainnet_min_fee_payer_balance_sol?: number
+          mainnet_min_profit_to_gas_ratio?: number
           max_flash_loan_amount_native?: number | null
           max_global_daily_loss_native?: number
           max_global_trades_per_day?: number
@@ -1103,9 +1142,15 @@ export type Database = {
         Update: {
           auto_arbitrage_enabled?: boolean
           auto_flash_loans_enabled?: boolean
+          evm_fee_payer_top_up_native?: number
+          evm_min_fee_payer_balance_native?: number
           flash_loan_cooldown_seconds?: number | null
           flash_loan_profit_threshold_bps?: number | null
           id?: string
+          is_mainnet_mode?: boolean
+          mainnet_fee_payer_top_up_sol?: number
+          mainnet_min_fee_payer_balance_sol?: number
+          mainnet_min_profit_to_gas_ratio?: number
           max_flash_loan_amount_native?: number | null
           max_global_daily_loss_native?: number
           max_global_trades_per_day?: number
@@ -1556,14 +1601,21 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      cleanup_old_rate_limits: { Args: never; Returns: undefined }
       get_system_settings: {
         Args: never
         Returns: {
           auto_arbitrage_enabled: boolean
           auto_flash_loans_enabled: boolean
+          evm_fee_payer_top_up_native: number
+          evm_min_fee_payer_balance_native: number
           flash_loan_cooldown_seconds: number | null
           flash_loan_profit_threshold_bps: number | null
           id: string
+          is_mainnet_mode: boolean
+          mainnet_fee_payer_top_up_sol: number
+          mainnet_min_fee_payer_balance_sol: number
+          mainnet_min_profit_to_gas_ratio: number
           max_flash_loan_amount_native: number | null
           max_global_daily_loss_native: number
           max_global_trades_per_day: number

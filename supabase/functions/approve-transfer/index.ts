@@ -1,5 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { checkRateLimit, rateLimitResponse } from "../_shared/rate-limiter.ts";
+import { logEdgeFunctionActivity } from "../_shared/activity-logger.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -9,6 +11,12 @@ const corsHeaders = {
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Rate limiting
+  const rateLimit = await checkRateLimit(req, 'approve-transfer');
+  if (!rateLimit.allowed) {
+    return rateLimitResponse(rateLimit, corsHeaders);
   }
 
   try {
@@ -215,6 +223,20 @@ serve(async (req) => {
     }
 
     console.log(`Transfer ${requestId} approved successfully`);
+
+    // Log the activity
+    await logEdgeFunctionActivity(req, {
+      actionType: 'transfer_approved',
+      entityType: 'transfer_request',
+      entityId: requestId,
+      userId: user.id,
+      details: {
+        from_user_id: request.from_user_id,
+        to_user_id: request.to_user_id,
+        token_definition_id: request.token_definition_id,
+        amount: request.amount,
+      },
+    });
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
