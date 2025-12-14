@@ -16,6 +16,8 @@ import {
   TOKEN_PROGRAM_ID,
   ASSOCIATED_TOKEN_PROGRAM_ID
 } from "https://esm.sh/@solana/spl-token@0.4.9?deps=@solana/web3.js@1.98.0";
+import { checkRateLimit, rateLimitResponse } from "../_shared/rate-limiter.ts";
+import { logEdgeFunctionActivity } from "../_shared/activity-logger.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -30,6 +32,12 @@ interface TransferTokenRequest {
 const handler = async (req: Request): Promise<Response> => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Rate limiting
+  const rateLimit = await checkRateLimit(req, 'transfer-solana-token');
+  if (!rateLimit.allowed) {
+    return rateLimitResponse(rateLimit, corsHeaders);
   }
 
   console.log('Transfer Solana Token function called');

@@ -442,8 +442,21 @@ serve(async (req) => {
     const network = strategy.evm_network || 'POLYGON';
     const isTestnet = isTestnetNetwork(network);
 
-    if (isTestnet) {
-      console.log(`[execute-evm-arbitrage] Testnet detected (${network}) - 0x API not available, using simulated execution`);
+    // Check if mainnet mode is enabled in system settings
+    const { data: systemSettings } = await supabase
+      .from('system_settings')
+      .select('is_mainnet_mode, mainnet_min_profit_to_gas_ratio, evm_min_fee_payer_balance_native')
+      .limit(1)
+      .maybeSingle();
+
+    const isMainnetMode = systemSettings?.is_mainnet_mode === true;
+    const shouldSimulate = isTestnet || !isMainnetMode;
+
+    if (shouldSimulate) {
+      const reason = isTestnet ? `Testnet network (${network})` : 'Mainnet mode disabled';
+      console.log(`[execute-evm-arbitrage] Running in simulation mode: ${reason}`);
+    } else {
+      console.log(`[execute-evm-arbitrage] MAINNET MODE: Real trades will be executed`);
     }
 
     // Try to get a fee payer from the rotation pool first, fall back to OPS wallet
@@ -511,9 +524,12 @@ serve(async (req) => {
     // Use 0.01 ETH equivalent for real execution (smaller for safety)
     const inputWei = '10000000000000000'; // 0.01 ETH
 
-    // ============ TESTNET SIMULATED EXECUTION ============
-    if (isTestnet) {
-      console.log(`[execute-evm-arbitrage] Running simulated execution for testnet ${network}...`);
+    // ============ SIMULATED EXECUTION (testnet OR mainnet mode disabled) ============
+    if (shouldSimulate) {
+      const simulationReason = isTestnet 
+        ? `Testnet simulation (${network}) - 0x API not available on testnets`
+        : 'Mainnet mode is disabled in system settings - simulation only';
+      console.log(`[execute-evm-arbitrage] Running simulated execution: ${simulationReason}`);
       
       // Generate mock quotes
       const mockQuoteA = getMockQuote(inputWei);
@@ -538,7 +554,7 @@ serve(async (req) => {
           finished_at: finishedAt,
           status: 'SIMULATED',
           estimated_profit_lamports: Number(simulatedProfit / 1_000_000_000n),
-          error_message: `Testnet simulation (${network}) - 0x API not available on testnets`,
+          error_message: simulationReason,
         })
         .select()
         .maybeSingle();

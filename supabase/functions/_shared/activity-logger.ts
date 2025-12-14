@@ -1,5 +1,4 @@
-import { supabase } from '@/integrations/supabase/client';
-import { Json } from '@/integrations/supabase/types';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 export type ActionType =
   // Asset actions
@@ -74,7 +73,8 @@ interface LogActivityParams {
   entityType: EntityType;
   entityId?: string;
   entityName?: string;
-  details?: Json;
+  performedBy?: string;
+  details?: Record<string, unknown>;
 }
 
 export async function logActivity({
@@ -82,20 +82,43 @@ export async function logActivity({
   entityType,
   entityId,
   entityName,
+  performedBy,
   details,
 }: LogActivityParams): Promise<void> {
   try {
-    const { data: { user } } = await supabase.auth.getUser();
-    
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
     await supabase.from('activity_logs').insert([{
       action_type: actionType,
       entity_type: entityType,
       entity_id: entityId,
       entity_name: entityName,
-      performed_by: user?.id,
+      performed_by: performedBy,
       details: details || null,
     }]);
   } catch (error) {
     console.error('Failed to log activity:', error);
   }
+}
+
+// Helper for edge functions to log with request context
+export async function logEdgeFunctionActivity(
+  req: Request,
+  params: Omit<LogActivityParams, 'performedBy'> & { userId?: string }
+): Promise<void> {
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() 
+    || req.headers.get('x-real-ip') 
+    || 'unknown';
+
+  await logActivity({
+    ...params,
+    performedBy: params.userId,
+    details: {
+      ...params.details,
+      ip_address: ip,
+      user_agent: req.headers.get('user-agent') || 'unknown',
+    },
+  });
 }

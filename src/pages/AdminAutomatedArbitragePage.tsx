@@ -52,6 +52,13 @@ interface SystemSettings {
   max_flash_loan_amount_native: number | null;
   flash_loan_cooldown_seconds: number | null;
   flash_loan_profit_threshold_bps: number | null;
+  // New mainnet configuration fields
+  is_mainnet_mode: boolean;
+  mainnet_min_fee_payer_balance_sol: number;
+  mainnet_fee_payer_top_up_sol: number;
+  mainnet_min_profit_to_gas_ratio: number;
+  evm_min_fee_payer_balance_native: number;
+  evm_fee_payer_top_up_native: number;
 }
 
 interface FlashLoanProvider {
@@ -553,49 +560,122 @@ export default function AdminAutomatedArbitragePage() {
   return (
     <DashboardLayout title="Automated Arbitrage" subtitle="Internal cost optimization & fee payer management">
       <div className="space-y-6">
-        {/* Testnet Mock Mode Banner */}
-        <Alert className="border-amber-500/50 bg-amber-500/10">
-          <AlertTriangle className="h-4 w-4 text-amber-500" />
-          <AlertTitle className="text-amber-600 dark:text-amber-400 flex items-center gap-2">
-            <Badge variant="outline" className="border-amber-500 text-amber-600 dark:text-amber-400 font-bold">
-              TESTNET MOCK MODE
-            </Badge>
-            Simulation Environment Active
-          </AlertTitle>
-          <AlertDescription className="space-y-3 mt-2">
-            <p className="text-muted-foreground">
-              <strong>No real blockchain transactions occur.</strong> All arbitrage profits and balances shown are simulated 
-              for testing purposes only. OPS wallet balances reflect actual on-chain values but will not change from mock trades.
-            </p>
-            <div className="grid gap-2 sm:grid-cols-2">
-              <div className="flex items-start gap-2 p-2 rounded bg-background/50">
-                <Info className="h-4 w-4 text-muted-foreground mt-0.5" />
-                <div>
-                  <p className="text-sm font-medium">EVM Chains</p>
-                  <p className="text-xs text-muted-foreground">0x API testnets - simulated quotes, no actual swaps</p>
+        {/* Mainnet/Testnet Mode Banner */}
+        {settings?.is_mainnet_mode ? (
+          <Alert className="border-destructive/50 bg-destructive/10">
+            <ShieldAlert className="h-4 w-4 text-destructive" />
+            <AlertTitle className="text-destructive flex items-center gap-2">
+              <Badge variant="destructive" className="font-bold">
+                MAINNET MODE ACTIVE
+              </Badge>
+              Live Trading Enabled
+            </AlertTitle>
+            <AlertDescription className="space-y-3 mt-2">
+              <p className="text-muted-foreground">
+                <strong>Real blockchain transactions are being executed.</strong> All arbitrage trades use real funds 
+                and incur real gas costs. Proceed with caution.
+              </p>
+              <div className="grid gap-2 sm:grid-cols-3">
+                <div className="flex items-start gap-2 p-2 rounded bg-background/50">
+                  <Wallet className="h-4 w-4 text-destructive mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium">Min Fee Payer (SOL)</p>
+                    <p className="text-xs text-muted-foreground">{settings.mainnet_min_fee_payer_balance_sol} SOL</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2 p-2 rounded bg-background/50">
+                  <Wallet className="h-4 w-4 text-destructive mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium">Min Fee Payer (EVM)</p>
+                    <p className="text-xs text-muted-foreground">{settings.evm_min_fee_payer_balance_native} native</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2 p-2 rounded bg-background/50">
+                  <TrendingUp className="h-4 w-4 text-destructive mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium">Min Profit/Gas Ratio</p>
+                    <p className="text-xs text-muted-foreground">{settings.mainnet_min_profit_to_gas_ratio}x</p>
+                  </div>
                 </div>
               </div>
-              <div className="flex items-start gap-2 p-2 rounded bg-background/50">
-                <Info className="h-4 w-4 text-muted-foreground mt-0.5" />
-                <div>
-                  <p className="text-sm font-medium">Solana</p>
-                  <p className="text-xs text-muted-foreground">Mock prices only - Jupiter API unavailable in edge functions</p>
+              <div className="flex items-center justify-between pt-2">
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant="destructive">Live Trades</Badge>
+                  <Badge variant="destructive">Real Gas Costs</Badge>
+                  <Badge variant="destructive">Real PnL</Badge>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (confirm('Are you sure you want to switch to testnet mode? This will stop all live trading.')) {
+                      updateSystemSetting('is_mainnet_mode', false);
+                    }
+                  }}
+                  disabled={updating}
+                >
+                  Switch to Testnet
+                </Button>
+              </div>
+            </AlertDescription>
+          </Alert>
+        ) : (
+          <Alert className="border-amber-500/50 bg-amber-500/10">
+            <AlertTriangle className="h-4 w-4 text-amber-500" />
+            <AlertTitle className="text-amber-600 dark:text-amber-400 flex items-center gap-2">
+              <Badge variant="outline" className="border-amber-500 text-amber-600 dark:text-amber-400 font-bold">
+                TESTNET MOCK MODE
+              </Badge>
+              Simulation Environment Active
+            </AlertTitle>
+            <AlertDescription className="space-y-3 mt-2">
+              <p className="text-muted-foreground">
+                <strong>No real blockchain transactions occur.</strong> All arbitrage profits and balances shown are simulated 
+                for testing purposes only. OPS wallet balances reflect actual on-chain values but will not change from mock trades.
+              </p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <div className="flex items-start gap-2 p-2 rounded bg-background/50">
+                  <Info className="h-4 w-4 text-muted-foreground mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium">EVM Chains</p>
+                    <p className="text-xs text-muted-foreground">0x API testnets - simulated quotes, no actual swaps</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2 p-2 rounded bg-background/50">
+                  <Info className="h-4 w-4 text-muted-foreground mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium">Solana</p>
+                    <p className="text-xs text-muted-foreground">Mock prices only - Jupiter API unavailable in edge functions</p>
+                  </div>
                 </div>
               </div>
-            </div>
-            <div className="flex flex-wrap gap-2 pt-1">
-              <Badge variant="secondary" className="bg-amber-500/20 text-amber-700 dark:text-amber-300">
-                Profits: Simulated Only
-              </Badge>
-              <Badge variant="secondary" className="bg-amber-500/20 text-amber-700 dark:text-amber-300">
-                Transactions: None Executed
-              </Badge>
-              <Badge variant="secondary" className="bg-amber-500/20 text-amber-700 dark:text-amber-300">
-                Wallet Balances: Read-Only
-              </Badge>
-            </div>
-          </AlertDescription>
-        </Alert>
+              <div className="flex items-center justify-between pt-2">
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant="secondary" className="bg-amber-500/20 text-amber-700 dark:text-amber-300">
+                    Profits: Simulated Only
+                  </Badge>
+                  <Badge variant="secondary" className="bg-amber-500/20 text-amber-700 dark:text-amber-300">
+                    Transactions: None Executed
+                  </Badge>
+                </div>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => {
+                    if (confirm('⚠️ WARNING: Enabling mainnet mode will execute REAL trades with REAL funds. Are you absolutely sure?')) {
+                      if (confirm('This is your final confirmation. Mainnet mode will:\n\n• Execute real blockchain transactions\n• Use real funds from OPS wallets\n• Incur real gas costs\n\nProceed?')) {
+                        updateSystemSetting('is_mainnet_mode', true);
+                      }
+                    }
+                  }}
+                  disabled={updating}
+                >
+                  Enable Mainnet Mode
+                </Button>
+              </div>
+            </AlertDescription>
+          </Alert>
+        )}
 
         {/* Action Buttons */}
         <div className="flex flex-wrap justify-between gap-4">
@@ -802,6 +882,82 @@ export default function AdminAutomatedArbitragePage() {
                     )}
                   </div>
                 ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Mainnet Threshold Configuration (only shown in mainnet mode) */}
+        {settings?.is_mainnet_mode && (
+          <Card className="border-destructive/30">
+            <CardHeader>
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <Settings className="h-4 w-4" />
+                Mainnet Threshold Configuration
+              </CardTitle>
+              <CardDescription>Configure risk parameters for live trading</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground">Min SOL Fee Payer Balance</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={settings.mainnet_min_fee_payer_balance_sol}
+                    onChange={(e) => updateSystemSetting('mainnet_min_fee_payer_balance_sol', parseFloat(e.target.value) || 0.1)}
+                    className="h-8"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground">SOL Top-Up Amount</Label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    value={settings.mainnet_fee_payer_top_up_sol}
+                    onChange={(e) => updateSystemSetting('mainnet_fee_payer_top_up_sol', parseFloat(e.target.value) || 0.5)}
+                    className="h-8"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground">Min EVM Fee Payer Balance</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={settings.evm_min_fee_payer_balance_native}
+                    onChange={(e) => updateSystemSetting('evm_min_fee_payer_balance_native', parseFloat(e.target.value) || 0.05)}
+                    className="h-8"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground">EVM Top-Up Amount</Label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    value={settings.evm_fee_payer_top_up_native}
+                    onChange={(e) => updateSystemSetting('evm_fee_payer_top_up_native', parseFloat(e.target.value) || 0.2)}
+                    className="h-8"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground">Min Profit/Gas Ratio</Label>
+                  <Input
+                    type="number"
+                    step="0.5"
+                    value={settings.mainnet_min_profit_to_gas_ratio}
+                    onChange={(e) => updateSystemSetting('mainnet_min_profit_to_gas_ratio', parseFloat(e.target.value) || 3.0)}
+                    className="h-8"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground">Max Daily Loss (native)</Label>
+                  <Input
+                    type="number"
+                    value={settings.max_global_daily_loss_native}
+                    onChange={(e) => updateSystemSetting('max_global_daily_loss_native', parseInt(e.target.value) || 0)}
+                    className="h-8"
+                  />
+                </div>
               </div>
             </CardContent>
           </Card>

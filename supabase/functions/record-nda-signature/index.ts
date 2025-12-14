@@ -1,6 +1,8 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { Connection, Keypair, Transaction, TransactionInstruction, PublicKey } from "https://esm.sh/@solana/web3.js@1.87.6";
+import { checkRateLimit, rateLimitResponse } from "../_shared/rate-limiter.ts";
+import { logEdgeFunctionActivity } from "../_shared/activity-logger.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -36,6 +38,12 @@ async function confirmTransaction(connection: Connection, signature: string, max
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Rate limiting
+  const rateLimit = await checkRateLimit(req, 'record-nda-signature');
+  if (!rateLimit.allowed) {
+    return rateLimitResponse(rateLimit, corsHeaders);
   }
 
   try {
