@@ -1,5 +1,8 @@
 project_id = "hqohcfwahmkxtpfbhcku"
 
+[functions.check-launch-status]
+verify_jwt = false
+
 [functions.generate-evm-fee-payer]
 verify_jwt = false
 
