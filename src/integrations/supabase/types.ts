@@ -574,12 +574,14 @@ export type Database = {
           fee_bps: number
           id: string
           is_active: boolean | null
+          is_verified: boolean | null
           max_loan_amount_native: number | null
           name: string
           pool_address: string | null
           receiver_contract_address: string | null
           supported_tokens: string[] | null
           updated_at: string | null
+          verified_at: string | null
         }
         Insert: {
           chain: string
@@ -589,12 +591,14 @@ export type Database = {
           fee_bps?: number
           id?: string
           is_active?: boolean | null
+          is_verified?: boolean | null
           max_loan_amount_native?: number | null
           name: string
           pool_address?: string | null
           receiver_contract_address?: string | null
           supported_tokens?: string[] | null
           updated_at?: string | null
+          verified_at?: string | null
         }
         Update: {
           chain?: string
@@ -604,12 +608,14 @@ export type Database = {
           fee_bps?: number
           id?: string
           is_active?: boolean | null
+          is_verified?: boolean | null
           max_loan_amount_native?: number | null
           name?: string
           pool_address?: string | null
           receiver_contract_address?: string | null
           supported_tokens?: string[] | null
           updated_at?: string | null
+          verified_at?: string | null
         }
         Relationships: []
       }
