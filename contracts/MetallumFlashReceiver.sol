@@ -3,9 +3,10 @@ pragma solidity ^0.8.20;
 
 import "@aave/core-v3/contracts/flashloan/base/FlashLoanSimpleReceiverBase.sol";
 import "@aave/core-v3/contracts/interfaces/IPoolAddressesProvider.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+// Use OpenZeppelin v4.9.3 for compatibility with Aave V3 dependencies
+import "@openzeppelin/contracts@4.9.3/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts@4.9.3/access/Ownable.sol";
+import "@openzeppelin/contracts@4.9.3/security/ReentrancyGuard.sol";
 
 /**
  * @title MetallumFlashReceiver
@@ -58,7 +59,8 @@ contract MetallumFlashReceiver is FlashLoanSimpleReceiverBase, Ownable, Reentran
     
     constructor(
         IPoolAddressesProvider _addressesProvider
-    ) FlashLoanSimpleReceiverBase(_addressesProvider) Ownable(msg.sender) {
+    ) FlashLoanSimpleReceiverBase(_addressesProvider) Ownable() {
+        // OpenZeppelin v4.x Ownable() sets msg.sender as owner automatically
         // Whitelist common DEX routers by default
         // 0x Exchange Proxy (same on all EVM chains)
         whitelistedRouters[0xDef1C0ded9bec7F1a1670819833240f027b25EfF] = true;
