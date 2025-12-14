@@ -1,5 +1,5 @@
 import { NavLink as RouterNavLink, useLocation } from "react-router-dom";
-import { LayoutDashboard, Coins, User, Users, Shield, Activity, RefreshCw, Send, LogOut, Award, Vote, ArrowRightLeft, FileCheck, Wallet, Globe, FileUp, FolderOpen, ClipboardList, Archive, Zap, ShieldCheck, Bot, Newspaper, FileText, Package, Rocket, Sparkles, BarChart3, FileSignature } from "lucide-react";
+import { LayoutDashboard, Coins, User, Users, Activity, LogOut, Award, Vote, ArrowRightLeft, FileCheck, Wallet, Globe, FileUp, FolderOpen, ClipboardList, Archive, Zap, ShieldCheck, Bot, Newspaper, FileText, Package, Rocket, Sparkles, BarChart3, FileSignature, Layers } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 const navigation = [{
@@ -52,17 +52,9 @@ const adminNavigation = [{
   href: "/admin/token-proposals",
   icon: FileText
 }, {
-  name: "Assign Tokens",
-  href: "/admin/assign",
-  icon: Shield
-}, {
-  name: "Transfer Tokens",
-  href: "/admin/transfer",
-  icon: RefreshCw
-}, {
-  name: "On-Chain Delivery",
-  href: "/admin/deliver",
-  icon: Send
+  name: "Token Operations",
+  href: "/admin/token-operations",
+  icon: Layers
 }, {
   name: "Attestations",
   href: "/admin/attestations",
