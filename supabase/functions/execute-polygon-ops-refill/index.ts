@@ -12,13 +12,13 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Environment gates
+// Environment gates - USDC values in BASE UNITS (6 decimals)
 const ARB_ENV = Deno.env.get('ARB_ENV') || 'testnet';
 const ARB_EXECUTION_ENABLED = Deno.env.get('ARB_EXECUTION_ENABLED') === 'true';
-const MIN_NET_PROFIT_WEI = BigInt(Deno.env.get('MIN_NET_PROFIT_WEI') || '100000'); // 0.1 USDC
-const MIN_PROFIT_BPS = parseInt(Deno.env.get('MIN_PROFIT_BPS') || '5', 10);
-const MAX_NOTIONAL_WEI = BigInt(Deno.env.get('MAX_NOTIONAL_WEI') || OPS_REFILL_CONFIG.MAX_NOTIONAL_USDC.toString());
-const DEFAULT_SLIPPAGE_BPS = parseInt(Deno.env.get('SLIPPAGE_BPS') || '30', 10);
+const MIN_NET_PROFIT_USDC = BigInt(Deno.env.get('MIN_NET_PROFIT_USDC') || OPS_REFILL_CONFIG.MIN_NET_PROFIT_USDC_BASE_UNITS.toString());
+const MIN_PROFIT_BPS = parseInt(Deno.env.get('MIN_PROFIT_BPS') || OPS_REFILL_CONFIG.MIN_PROFIT_BPS.toString(), 10);
+const MAX_NOTIONAL_USDC = BigInt(Deno.env.get('MAX_NOTIONAL_USDC') || OPS_REFILL_CONFIG.MAX_NOTIONAL_USDC_BASE_UNITS.toString());
+const DEFAULT_SLIPPAGE_BPS = parseInt(Deno.env.get('SLIPPAGE_BPS') || OPS_REFILL_CONFIG.DEFAULT_SLIPPAGE_BPS.toString(), 10);
 
 // PnL Alert thresholds
 const PNL_ALERT_MIN_RATIO = parseFloat(Deno.env.get('PNL_ALERT_MIN_RATIO') || '0.70');
@@ -104,12 +104,13 @@ serve(async (req) => {
     }
 
     // ============ PARSE REQUEST ============
-    let notionalIn = OPS_REFILL_CONFIG.DEFAULT_NOTIONAL_USDC;
+    // All USDC amounts in BASE UNITS (6 decimals)
+    let notionalIn = OPS_REFILL_CONFIG.DEFAULT_NOTIONAL_USDC_BASE_UNITS;
     try {
       const body = await req.json();
       if (body.notionalUSDC) {
         const requested = BigInt(body.notionalUSDC);
-        notionalIn = requested > MAX_NOTIONAL_WEI ? MAX_NOTIONAL_WEI : requested;
+        notionalIn = requested > MAX_NOTIONAL_USDC ? MAX_NOTIONAL_USDC : requested;
       }
     } catch {
       // Use default
@@ -186,10 +187,10 @@ serve(async (req) => {
 
     console.log(`[execute-polygon-ops-refill] Expected net profit: ${formatUSDC(expectedNetProfit)} (${profitBps} bps)`);
 
-    // ============ GATE 5: Profit threshold check ============
-    if (expectedNetProfit < MIN_NET_PROFIT_WEI) {
+    // ============ GATE 5: Profit threshold check (USDC base units) ============
+    if (expectedNetProfit < MIN_NET_PROFIT_USDC) {
       await recordEvent(supabase, 'REJECTED', notionalIn.toString(), grossProfit.toString(), expectedNetProfit.toString(), null, null, 
-        `Net profit ${formatUSDC(expectedNetProfit)} below threshold ${formatUSDC(MIN_NET_PROFIT_WEI)}`);
+        `Net profit ${formatUSDC(expectedNetProfit)} below threshold ${formatUSDC(MIN_NET_PROFIT_USDC)}`);
       return errorResponse(`Net profit ${formatUSDC(expectedNetProfit)} below threshold`, 400);
     }
 

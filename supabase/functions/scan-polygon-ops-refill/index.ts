@@ -11,11 +11,11 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Environment thresholds (can be overridden via secrets)
-const MIN_NET_PROFIT_WEI = BigInt(Deno.env.get('MIN_NET_PROFIT_WEI') || '0');
-const MIN_PROFIT_BPS = parseInt(Deno.env.get('MIN_PROFIT_BPS') || '5', 10);
-const MAX_NOTIONAL_WEI = BigInt(Deno.env.get('MAX_NOTIONAL_WEI') || OPS_REFILL_CONFIG.MAX_NOTIONAL_USDC.toString());
-const DEFAULT_SLIPPAGE_BPS = parseInt(Deno.env.get('SLIPPAGE_BPS') || '30', 10);
+// Environment thresholds (USDC values in BASE UNITS - 6 decimals)
+const MIN_NET_PROFIT_USDC = BigInt(Deno.env.get('MIN_NET_PROFIT_USDC') || OPS_REFILL_CONFIG.MIN_NET_PROFIT_USDC_BASE_UNITS.toString());
+const MIN_PROFIT_BPS = parseInt(Deno.env.get('MIN_PROFIT_BPS') || OPS_REFILL_CONFIG.MIN_PROFIT_BPS.toString(), 10);
+const MAX_NOTIONAL_USDC = BigInt(Deno.env.get('MAX_NOTIONAL_USDC') || OPS_REFILL_CONFIG.MAX_NOTIONAL_USDC_BASE_UNITS.toString());
+const DEFAULT_SLIPPAGE_BPS = parseInt(Deno.env.get('SLIPPAGE_BPS') || OPS_REFILL_CONFIG.DEFAULT_SLIPPAGE_BPS.toString(), 10);
 
 interface ScanResult {
   success: boolean;
@@ -58,11 +58,12 @@ serve(async (req) => {
     }
 
     // Determine notional: min(requested or default, MAX_NOTIONAL)
+    // All USDC amounts in BASE UNITS (6 decimals)
     const notionalIn = requestedNotional 
-      ? (requestedNotional > MAX_NOTIONAL_WEI ? MAX_NOTIONAL_WEI : requestedNotional)
-      : (OPS_REFILL_CONFIG.DEFAULT_NOTIONAL_USDC > MAX_NOTIONAL_WEI 
-          ? MAX_NOTIONAL_WEI 
-          : OPS_REFILL_CONFIG.DEFAULT_NOTIONAL_USDC);
+      ? (requestedNotional > MAX_NOTIONAL_USDC ? MAX_NOTIONAL_USDC : requestedNotional)
+      : (OPS_REFILL_CONFIG.DEFAULT_NOTIONAL_USDC_BASE_UNITS > MAX_NOTIONAL_USDC 
+          ? MAX_NOTIONAL_USDC 
+          : OPS_REFILL_CONFIG.DEFAULT_NOTIONAL_USDC_BASE_UNITS);
 
     console.log(`[scan-polygon-ops-refill] Notional: ${formatUSDC(notionalIn)}`);
     console.log(`[scan-polygon-ops-refill] Tokens: USDC.e (${POLYGON_TOKENS.USDC_E.address}) -> WETH (${POLYGON_TOKENS.WETH.address})`);
@@ -154,7 +155,7 @@ serve(async (req) => {
       ? Number((netProfit * 10000n) / notionalIn)
       : 0;
 
-    const meetsThreshold = netProfit > MIN_NET_PROFIT_WEI && profitBps >= MIN_PROFIT_BPS;
+    const meetsThreshold = netProfit > MIN_NET_PROFIT_USDC && profitBps >= MIN_PROFIT_BPS;
     const isProfitable = netProfit > 0n;
 
     console.log(`[scan-polygon-ops-refill] === PROFIT WATERFALL ===`);
