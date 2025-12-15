@@ -77,7 +77,7 @@ const CHECKLIST_ITEMS: ChecklistItem[] = [
   {
     id: 'deploy-flash-receiver-mainnet',
     title: 'Deploy MetallumFlashReceiver to Polygon mainnet',
-    description: 'Deploy flash loan receiver contract to Polygon mainnet via Remix. Requires mainnet MATIC for gas.',
+    description: 'Deploy flash loan receiver contract to Polygon mainnet via Remix. Requires mainnet POL for gas.',
     priority: 'critical',
     category: 'Mainnet API & Infrastructure',
   },
@@ -108,7 +108,7 @@ const CHECKLIST_ITEMS: ChecklistItem[] = [
   {
     id: 'fund-evm-ops',
     title: 'Fund EVM_OPS wallet with mainnet tokens',
-    description: 'Transfer ETH, MATIC, and other native tokens to EVM OPS wallet for multi-chain operations.',
+    description: 'Transfer ETH, POL, and other native tokens to EVM OPS wallet for multi-chain operations.',
     priority: 'critical',
     category: 'Wallet Funding',
   },

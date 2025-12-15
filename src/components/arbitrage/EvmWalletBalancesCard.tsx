@@ -42,7 +42,7 @@ const NETWORK_EXPLORERS: Record<string, string> = {
 };
 
 const NETWORK_SYMBOLS: Record<string, string> = {
-  POLYGON: 'MATIC',
+  POLYGON: 'POL',
   ETHEREUM: 'ETH',
   ARBITRUM: 'ETH',
   BSC: 'BNB',

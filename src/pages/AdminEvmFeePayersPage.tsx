@@ -45,13 +45,13 @@ interface EvmFeePayerTopup {
 
 const EVM_NETWORKS = [
   // Mainnets
-  { id: 'POLYGON', name: 'Polygon', symbol: 'MATIC', explorer: 'https://polygonscan.com', isTestnet: false, faucet: null },
+  { id: 'POLYGON', name: 'Polygon', symbol: 'POL', explorer: 'https://polygonscan.com', isTestnet: false, faucet: null },
   { id: 'ETHEREUM', name: 'Ethereum', symbol: 'ETH', explorer: 'https://etherscan.io', isTestnet: false, faucet: null },
   { id: 'ARBITRUM', name: 'Arbitrum', symbol: 'ETH', explorer: 'https://arbiscan.io', isTestnet: false, faucet: null },
   { id: 'BSC', name: 'BSC', symbol: 'BNB', explorer: 'https://bscscan.com', isTestnet: false, faucet: null },
   // Testnets
   { id: 'SEPOLIA', name: 'Sepolia', symbol: 'ETH', explorer: 'https://sepolia.etherscan.io', isTestnet: true, faucet: 'https://www.alchemy.com/faucets/ethereum-sepolia' },
-  { id: 'POLYGON_AMOY', name: 'Polygon Amoy', symbol: 'MATIC', explorer: 'https://amoy.polygonscan.com', isTestnet: true, faucet: 'https://faucet.polygon.technology' },
+  { id: 'POLYGON_AMOY', name: 'Polygon Amoy', symbol: 'POL', explorer: 'https://amoy.polygonscan.com', isTestnet: true, faucet: 'https://faucet.polygon.technology' },
   { id: 'ARBITRUM_SEPOLIA', name: 'Arbitrum Sepolia', symbol: 'ETH', explorer: 'https://sepolia.arbiscan.io', isTestnet: true, faucet: 'https://www.alchemy.com/faucets/arbitrum-sepolia' },
   { id: 'BSC_TESTNET', name: 'BSC Testnet', symbol: 'tBNB', explorer: 'https://testnet.bscscan.com', isTestnet: true, faucet: 'https://testnet.bnbchain.org/faucet-smart' },
 ];

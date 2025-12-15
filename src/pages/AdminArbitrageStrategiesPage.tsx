@@ -152,12 +152,12 @@ interface OpsWalletInfo {
 }
 
 const EVM_NETWORK_OPTIONS = [
-  { value: 'POLYGON', label: 'Polygon', symbol: 'MATIC', isTestnet: false },
+  { value: 'POLYGON', label: 'Polygon', symbol: 'POL', isTestnet: false },
   { value: 'ETHEREUM', label: 'Ethereum', symbol: 'ETH', isTestnet: false },
   { value: 'ARBITRUM', label: 'Arbitrum', symbol: 'ETH', isTestnet: false },
   { value: 'BSC', label: 'BNB Chain', symbol: 'BNB', isTestnet: false },
   { value: 'SEPOLIA', label: 'Sepolia', symbol: 'ETH', isTestnet: true },
-  { value: 'POLYGON_AMOY', label: 'Polygon Amoy', symbol: 'MATIC', isTestnet: true },
+  { value: 'POLYGON_AMOY', label: 'Polygon Amoy', symbol: 'POL', isTestnet: true },
   { value: 'ARBITRUM_SEPOLIA', label: 'Arbitrum Sepolia', symbol: 'ETH', isTestnet: true },
   { value: 'BSC_TESTNET', label: 'BSC Testnet', symbol: 'BNB', isTestnet: true },
 ];
