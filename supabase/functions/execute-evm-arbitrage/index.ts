@@ -333,7 +333,7 @@ async function approveTokenIfNeeded(
   tokenAddress: string,
   spender: string,
   amount: string
-): Promise<boolean> {
+): Promise<{ success: boolean; error?: string }> {
   const erc20Abi = [
     "function allowance(address owner, address spender) view returns (uint256)",
     "function approve(address spender, uint256 amount) returns (bool)",
@@ -345,17 +345,28 @@ async function approveTokenIfNeeded(
     
     if (BigInt(currentAllowance.toString()) >= BigInt(amount)) {
       console.log(`[execute-evm-arbitrage] Sufficient allowance exists`);
-      return true;
+      return { success: true };
     }
 
     console.log(`[execute-evm-arbitrage] Approving token spend...`);
     const approveTx = await token.approve(spender, ethers.MaxUint256);
     await approveTx.wait();
     console.log(`[execute-evm-arbitrage] Approval confirmed: ${approveTx.hash}`);
-    return true;
+    return { success: true };
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`[execute-evm-arbitrage] Approval failed:`, error);
-    return false;
+    
+    // Provide actionable error messages
+    if (errorMessage.includes('insufficient funds')) {
+      const walletAddress = wallet.address;
+      return { 
+        success: false, 
+        error: `Insufficient gas balance in wallet ${walletAddress}. Please fund the wallet with native tokens (ETH/MATIC/BNB) to pay for gas fees.`
+      };
+    }
+    
+    return { success: false, error: `Token approval failed: ${errorMessage}` };
   }
 }
 
@@ -464,6 +475,9 @@ serve(async (req) => {
     let walletAddress: string;
     let usedFeePayer: { feePayerId: string } | null = null;
 
+    // Minimum gas balance required (in native token - ETH/MATIC/etc)
+    const MIN_GAS_BALANCE = 0.005; // 0.005 native token minimum for gas
+
     if (!use_ops_wallet) {
       const feePayer = await getEvmFeePayerWithRotation(supabase, network);
       if (feePayer) {
@@ -518,6 +532,49 @@ serve(async (req) => {
           status: 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
+      }
+    }
+
+    // Check wallet balance BEFORE attempting any transactions (only for real execution)
+    if (!shouldSimulate) {
+      try {
+        const balanceWei = await executionWallet.provider?.getBalance(walletAddress);
+        const balanceNative = balanceWei ? parseFloat(ethers.formatEther(balanceWei)) : 0;
+        
+        console.log(`[execute-evm-arbitrage] Wallet ${walletAddress} balance: ${balanceNative} native tokens`);
+        
+        if (balanceNative < MIN_GAS_BALANCE) {
+          const nativeSymbol = network === 'POLYGON' ? 'MATIC' : network === 'BSC' ? 'BNB' : 'ETH';
+          const errorMsg = `Insufficient gas balance: Wallet ${walletAddress} has ${balanceNative.toFixed(6)} ${nativeSymbol}, but needs at least ${MIN_GAS_BALANCE} ${nativeSymbol} for gas. Please fund the wallet before executing trades.`;
+          
+          console.error(`[execute-evm-arbitrage] ${errorMsg}`);
+          
+          await supabase.from('arbitrage_runs').insert({
+            strategy_id: strategy.id,
+            started_at: startedAt,
+            finished_at: new Date().toISOString(),
+            status: 'FAILED',
+            error_message: errorMsg,
+            run_type: 'EXECUTE',
+            purpose: 'MANUAL',
+          });
+
+          return new Response(JSON.stringify({ 
+            error: 'Insufficient gas balance',
+            details: errorMsg,
+            wallet_address: walletAddress,
+            current_balance: balanceNative,
+            required_balance: MIN_GAS_BALANCE,
+            native_symbol: nativeSymbol,
+            network: network,
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+      } catch (balanceError) {
+        console.warn(`[execute-evm-arbitrage] Could not check balance:`, balanceError);
+        // Continue anyway - the transaction will fail with a clear error if balance is insufficient
       }
     }
 
@@ -691,15 +748,15 @@ serve(async (req) => {
     const isNativeToken = strategy.token_in_mint.toLowerCase() === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
     
     if (!isNativeToken) {
-      const approved = await approveTokenIfNeeded(
+      const approvalResult = await approveTokenIfNeeded(
         executionWallet,
         strategy.token_in_mint,
         PERMIT2_ADDRESS,
         inputWei
       );
       
-      if (!approved) {
-        const errorMsg = 'Token approval failed';
+      if (!approvalResult.success) {
+        const errorMsg = approvalResult.error || 'Token approval failed';
         await supabase.from('arbitrage_runs').insert({
           strategy_id: strategy.id,
           started_at: startedAt,
@@ -707,9 +764,16 @@ serve(async (req) => {
           status: 'FAILED',
           estimated_profit_lamports: Number(estimatedProfit / 1_000_000_000n),
           error_message: errorMsg,
+          run_type: 'EXECUTE',
+          purpose: 'MANUAL',
         });
-        return new Response(JSON.stringify({ error: errorMsg }), {
-          status: 500,
+        return new Response(JSON.stringify({ 
+          error: 'Token approval failed',
+          details: errorMsg,
+          wallet_address: walletAddress,
+          network: network,
+        }), {
+          status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
@@ -779,12 +843,16 @@ serve(async (req) => {
     // Approve leg B token if needed
     const isLegBNative = strategy.token_out_mint.toLowerCase() === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
     if (!isLegBNative) {
-      await approveTokenIfNeeded(
+      const legBApproval = await approveTokenIfNeeded(
         executionWallet,
         strategy.token_out_mint,
         PERMIT2_ADDRESS,
         quoteA.buyAmount
       );
+      if (!legBApproval.success) {
+        console.warn(`[execute-evm-arbitrage] Leg B approval warning: ${legBApproval.error}`);
+        // Continue anyway since leg A is already executed - we need to try leg B
+      }
     }
 
     // Step 7: Execute leg B swap
