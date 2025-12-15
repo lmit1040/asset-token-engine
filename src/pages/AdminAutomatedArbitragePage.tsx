@@ -1577,7 +1577,7 @@ export default function AdminAutomatedArbitragePage() {
                       Automation Logs
                     </CardTitle>
                     <CardDescription>
-                      Cron job runs every 5 minutes: Scan → Decide → Execute → Wallet Check
+                      Cron job runs every 1 minute: Scan → Decide → Execute → Wallet Check
                     </CardDescription>
                   </div>
                   <Button onClick={runFullCycle} disabled={runningCycle}>
