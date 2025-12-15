@@ -2,17 +2,28 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import {
   getJupiterQuote,
-  calculateArbitrageProfit,
+  calculateArbitrageNetProfit,
   isValidSolanaAddress,
   setMockMode,
+  isMockModeEnabled,
+  areQuotesExecutable,
+  getMinNetProfitLamports,
+  getMinProfitBps,
+  getMaxNotionalLamports,
   JupiterQuoteResponse,
   JupiterApiError,
+  JupiterQuoteOptions,
+  NetProfitResult,
 } from "../_shared/jupiter-client.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+// Environment config
+const ARB_ENV = Deno.env.get('ARB_ENV') || 'devnet';
+const DEFAULT_TRADE_AMOUNT_LAMPORTS = BigInt(Deno.env.get('DEFAULT_TRADE_AMOUNT') || '100000000'); // 0.1 SOL
 
 // Supported DEXs by Jupiter Aggregator
 const SUPPORTED_DEXS = new Set([
@@ -56,6 +67,8 @@ const SUPPORTED_DEXS = new Set([
 
 // Validate DEX name
 function isValidDexName(dexName: string): { valid: boolean; suggestion?: string } {
+  if (!dexName) return { valid: true }; // Allow null/undefined for no constraint
+  
   const normalizedInput = dexName.toLowerCase().trim();
   
   for (const dex of SUPPORTED_DEXS) {
@@ -82,6 +95,12 @@ function getPrimaryDex(quote: JupiterQuoteResponse): string {
   if (!quote.routePlan || quote.routePlan.length === 0) return 'Unknown';
   const sortedRoutes = [...quote.routePlan].sort((a, b) => b.percent - a.percent);
   return sortedRoutes[0]?.swapInfo?.label || 'Unknown';
+}
+
+// Get all DEXes used in a route
+function getAllRouteDexes(quote: JupiterQuoteResponse): string[] {
+  if (!quote.routePlan) return [];
+  return quote.routePlan.map(r => r.swapInfo.label).filter(Boolean);
 }
 
 serve(async (req) => {
@@ -112,7 +131,11 @@ serve(async (req) => {
       ? 'MOCK PRICES (simulated for testing)'
       : 'REAL DEX prices (with mock fallback on DNS errors)';
 
-    console.log(`[scan-arbitrage] Starting arbitrage simulation scan with ${priceSourceLabel}...`);
+    console.log(`[scan-arbitrage] Starting arbitrage scan...`);
+    console.log(`[scan-arbitrage] Environment: ${ARB_ENV}`);
+    console.log(`[scan-arbitrage] Price source: ${priceSourceLabel}`);
+    console.log(`[scan-arbitrage] Min net profit: ${getMinNetProfitLamports()} lamports`);
+    console.log(`[scan-arbitrage] Min profit bps: ${getMinProfitBps()}`);
 
     // Get authorization header and extract JWT token
     const authHeader = req.headers.get('Authorization');
@@ -158,7 +181,7 @@ serve(async (req) => {
       });
     }
 
-    console.log('[scan-arbitrage] Admin verified, fetching enabled strategies...');
+    console.log('[scan-arbitrage] Admin verified, fetching enabled Solana strategies...');
 
     // Fetch enabled SOLANA strategies only
     const { data: strategies, error: stratError } = await supabase
@@ -175,12 +198,15 @@ serve(async (req) => {
     console.log(`[scan-arbitrage] Found ${strategies?.length || 0} enabled Solana strategies`);
 
     const results = [];
+    const maxNotional = getMaxNotionalLamports();
 
     for (const strategy of strategies || []) {
       const startedAt = new Date().toISOString();
-      console.log(`[scan-arbitrage] Simulating strategy: ${strategy.name}`);
-      console.log(`[scan-arbitrage] Token In: ${strategy.token_in_mint}, Token Out: ${strategy.token_out_mint}`);
-      console.log(`[scan-arbitrage] DEX A: ${strategy.dex_a}, DEX B: ${strategy.dex_b}`);
+      console.log(`\n[scan-arbitrage] ========== Strategy: ${strategy.name} ==========`);
+      console.log(`[scan-arbitrage] Token In: ${strategy.token_in_mint}`);
+      console.log(`[scan-arbitrage] Token Out: ${strategy.token_out_mint}`);
+      console.log(`[scan-arbitrage] DEX A constraint: ${strategy.dex_a || 'None (any DEX)'}`);
+      console.log(`[scan-arbitrage] DEX B constraint: ${strategy.dex_b || 'None (any DEX)'}`);
 
       // Validate token mint addresses and DEX names
       const validationErrors: string[] = [];
@@ -191,15 +217,20 @@ serve(async (req) => {
         validationErrors.push(`Invalid token_out_mint address: ${strategy.token_out_mint}`);
       }
       
-      const dexAValidation = isValidDexName(strategy.dex_a);
-      if (!dexAValidation.valid) {
-        const suggestion = dexAValidation.suggestion ? ` (did you mean "${dexAValidation.suggestion}"?)` : '';
-        validationErrors.push(`Unsupported DEX A: "${strategy.dex_a}"${suggestion}`);
+      // Only validate DEX names if they're specified (null means no constraint)
+      if (strategy.dex_a) {
+        const dexAValidation = isValidDexName(strategy.dex_a);
+        if (!dexAValidation.valid) {
+          const suggestion = dexAValidation.suggestion ? ` (did you mean "${dexAValidation.suggestion}"?)` : '';
+          validationErrors.push(`Unsupported DEX A: "${strategy.dex_a}"${suggestion}`);
+        }
       }
-      const dexBValidation = isValidDexName(strategy.dex_b);
-      if (!dexBValidation.valid) {
-        const suggestion = dexBValidation.suggestion ? ` (did you mean "${dexBValidation.suggestion}"?)` : '';
-        validationErrors.push(`Unsupported DEX B: "${strategy.dex_b}"${suggestion}`);
+      if (strategy.dex_b) {
+        const dexBValidation = isValidDexName(strategy.dex_b);
+        if (!dexBValidation.valid) {
+          const suggestion = dexBValidation.suggestion ? ` (did you mean "${dexBValidation.suggestion}"?)` : '';
+          validationErrors.push(`Unsupported DEX B: "${strategy.dex_b}"${suggestion}`);
+        }
       }
 
       if (validationErrors.length > 0) {
@@ -216,24 +247,34 @@ serve(async (req) => {
             actual_profit_lamports: null,
             tx_signature: null,
             error_message: `Validation failed: ${validationErrors.join('; ')}`,
+            run_type: 'SCAN',
+            purpose: strategy.is_for_fee_payer_refill ? 'FEE_PAYER_REFILL' : 
+                     strategy.is_for_ops_refill ? 'OPS_REFILL' : 'MANUAL',
           });
 
         results.push({
           strategy_id: strategy.id,
           strategy_name: strategy.name,
-          dex_a: strategy.dex_a,
-          dex_b: strategy.dex_b,
+          dex_a_constraint: strategy.dex_a,
+          dex_b_constraint: strategy.dex_b,
           dex_used_a: null,
           dex_used_b: null,
+          route_a_dexes: [],
+          route_b_dexes: [],
           token_in_mint: strategy.token_in_mint,
           token_out_mint: strategy.token_out_mint,
           input_lamports: 0,
           output_leg_a: 0,
           output_leg_b: 0,
-          estimated_profit_lamports: 0,
-          estimated_profit_sol: 0,
-          meets_min_threshold: false,
+          gross_profit_lamports: 0,
+          net_profit_lamports: 0,
+          net_profit_bps: 0,
+          fee_breakdown: null,
+          meets_threshold: false,
+          is_profitable: false,
+          is_executable: false,
           price_source: null,
+          is_mock: false,
           run_id: null,
           error: `Validation failed: ${validationErrors.join('; ')}`,
           validation_errors: validationErrors,
@@ -241,57 +282,80 @@ serve(async (req) => {
         continue;
       }
 
-      console.log(`[scan-arbitrage] Token addresses validated successfully`);
+      console.log(`[scan-arbitrage] Token addresses and DEX names validated`);
 
-      // Use 0.1 SOL worth as test input (100 million lamports = 0.1 SOL)
-      const inputLamports = BigInt(100_000_000);
+      // Determine trade amount (respect max notional cap)
+      let inputLamports = DEFAULT_TRADE_AMOUNT_LAMPORTS;
+      if (strategy.max_trade_value_native && BigInt(strategy.max_trade_value_native) > 0) {
+        inputLamports = BigInt(strategy.max_trade_value_native);
+      }
+      if (inputLamports > maxNotional) {
+        console.log(`[scan-arbitrage] Capping trade to max notional: ${maxNotional}`);
+        inputLamports = maxNotional;
+      }
       
-      let estimatedProfitLamports = BigInt(0);
-      let dexUsedA = strategy.dex_a;
-      let dexUsedB = strategy.dex_b;
+      let quoteA: JupiterQuoteResponse | null = null;
+      let quoteB: JupiterQuoteResponse | null = null;
+      let netProfitResult: NetProfitResult | null = null;
       let quoteError: string | null = null;
-      let outAmountA = BigInt(0);
-      let outAmountB = BigInt(0);
-      let isMockData = false;
+      let dexUsedA = strategy.dex_a || 'Any';
+      let dexUsedB = strategy.dex_b || 'Any';
+      let routeADexes: string[] = [];
+      let routeBDexes: string[] = [];
 
       try {
-        // Step 1: Get quote for token_in -> token_out (leg A) using jupiter-client
-        const quoteA = await getJupiterQuote(
+        // Step 1: Get quote for token_in -> token_out (leg A) with DEX constraint
+        const optionsA: JupiterQuoteOptions = {
+          slippageBps: 50, // 0.5% slippage
+        };
+        if (strategy.dex_a) {
+          optionsA.allowedDexes = [strategy.dex_a];
+        }
+        
+        console.log(`[scan-arbitrage] Fetching Leg A quote...`);
+        quoteA = await getJupiterQuote(
           strategy.token_in_mint,
           strategy.token_out_mint,
           inputLamports,
-          50 // 0.5% slippage
+          optionsA
         );
 
         if (quoteA) {
-          outAmountA = BigInt(quoteA.outAmount);
           dexUsedA = getPrimaryDex(quoteA);
-          if (quoteA.isMock) isMockData = true;
-          console.log(`[scan-arbitrage] Leg A: ${inputLamports} -> ${outAmountA} via ${dexUsedA}${quoteA.isMock ? ' (MOCK)' : ''}`);
+          routeADexes = getAllRouteDexes(quoteA);
+          console.log(`[scan-arbitrage] Leg A: ${inputLamports} -> ${quoteA.outAmount} via ${routeADexes.join(' -> ')}${quoteA.isMock ? ' (MOCK)' : ''}`);
 
-          // Step 2: Get quote for token_out -> token_in (leg B - round trip)
-          const quoteB = await getJupiterQuote(
+          // Step 2: Get quote for token_out -> token_in (leg B) with DEX constraint
+          const optionsB: JupiterQuoteOptions = {
+            slippageBps: 50,
+          };
+          if (strategy.dex_b) {
+            optionsB.allowedDexes = [strategy.dex_b];
+          }
+          
+          console.log(`[scan-arbitrage] Fetching Leg B quote...`);
+          quoteB = await getJupiterQuote(
             strategy.token_out_mint,
             strategy.token_in_mint,
-            outAmountA,
-            50
+            BigInt(quoteA.outAmount),
+            optionsB
           );
 
           if (quoteB) {
-            outAmountB = BigInt(quoteB.outAmount);
             dexUsedB = getPrimaryDex(quoteB);
-            if (quoteB.isMock) isMockData = true;
-            console.log(`[scan-arbitrage] Leg B: ${outAmountA} -> ${outAmountB} via ${dexUsedB}${quoteB.isMock ? ' (MOCK)' : ''}`);
+            routeBDexes = getAllRouteDexes(quoteB);
+            console.log(`[scan-arbitrage] Leg B: ${quoteA.outAmount} -> ${quoteB.outAmount} via ${routeBDexes.join(' -> ')}${quoteB.isMock ? ' (MOCK)' : ''}`);
 
-            // Calculate round-trip profit using helper
-            estimatedProfitLamports = calculateArbitrageProfit(inputLamports, quoteA, quoteB);
-            console.log(`[scan-arbitrage] Round-trip profit: ${estimatedProfitLamports} lamports`);
+            // Calculate net profit using the profit waterfall
+            netProfitResult = calculateArbitrageNetProfit(inputLamports, quoteA, quoteB);
+            console.log(`[scan-arbitrage] Net profit: ${netProfitResult.netProfitLamports} lamports (${netProfitResult.netProfitBps} bps)`);
+            console.log(`[scan-arbitrage] Meets thresholds: ${netProfitResult.meetsThresholds}`);
           } else {
-            quoteError = 'No route found for return leg';
+            quoteError = 'No route found for return leg (B)';
             console.warn(`[scan-arbitrage] ${quoteError}`);
           }
         } else {
-          quoteError = 'No route found for initial leg';
+          quoteError = 'No route found for initial leg (A)';
           console.warn(`[scan-arbitrage] ${quoteError}`);
         }
       } catch (error) {
@@ -304,46 +368,76 @@ serve(async (req) => {
       }
 
       const finishedAt = new Date().toISOString();
+      
+      // Check if quotes are executable (not mock)
+      const isMockData = quoteA?.isMock || quoteB?.isMock || false;
+      const executableCheck = quoteA && quoteB ? areQuotesExecutable(quoteA, quoteB) : { executable: false, reason: 'Missing quotes' };
+      
+      // Determine if this is a profitable, executable opportunity
+      const isProfitable = netProfitResult?.isProfitable || false;
+      const meetsThreshold = netProfitResult?.meetsThresholds || false;
+      const isExecutable = executableCheck.executable && meetsThreshold;
 
-      // Create arbitrage_runs record
+      // Create arbitrage_runs record with detailed data
+      const runInsert = {
+        strategy_id: strategy.id,
+        started_at: startedAt,
+        finished_at: finishedAt,
+        status: 'SIMULATED' as const,
+        estimated_profit_lamports: Number(netProfitResult?.netProfitLamports || 0),
+        estimated_gas_cost_native: Number(netProfitResult?.feeBreakdown.totalFeesLamports || 0),
+        actual_profit_lamports: null,
+        tx_signature: null,
+        error_message: quoteError || (isMockData && !executableCheck.executable ? executableCheck.reason : null),
+        run_type: 'SCAN',
+        purpose: strategy.is_for_fee_payer_refill ? 'FEE_PAYER_REFILL' : 
+                 strategy.is_for_ops_refill ? 'OPS_REFILL' : 'MANUAL',
+        approved_for_auto_execution: isExecutable && strategy.is_auto_enabled,
+      };
+
       const { data: runData, error: runError } = await supabase
         .from('arbitrage_runs')
-        .insert({
-          strategy_id: strategy.id,
-          started_at: startedAt,
-          finished_at: finishedAt,
-          status: 'SIMULATED',
-          estimated_profit_lamports: Number(estimatedProfitLamports),
-          actual_profit_lamports: null,
-          tx_signature: null,
-          error_message: quoteError,
-        })
+        .insert(runInsert)
         .select()
         .single();
 
       if (runError) {
         console.error(`[scan-arbitrage] Failed to insert run for ${strategy.name}:`, runError);
       } else {
-        console.log(`[scan-arbitrage] Created run ${runData.id} for ${strategy.name}, profit: ${estimatedProfitLamports} lamports`);
+        console.log(`[scan-arbitrage] Created run ${runData.id} - net profit: ${netProfitResult?.netProfitLamports || 0} lamports, executable: ${isExecutable}`);
       }
       
       results.push({
         strategy_id: strategy.id,
         strategy_name: strategy.name,
-        dex_a: strategy.dex_a,
-        dex_b: strategy.dex_b,
+        dex_a_constraint: strategy.dex_a,
+        dex_b_constraint: strategy.dex_b,
         dex_used_a: dexUsedA,
         dex_used_b: dexUsedB,
+        route_a_dexes: routeADexes,
+        route_b_dexes: routeBDexes,
         token_in_mint: strategy.token_in_mint,
         token_out_mint: strategy.token_out_mint,
         input_lamports: Number(inputLamports),
-        output_leg_a: Number(outAmountA),
-        output_leg_b: Number(outAmountB),
-        estimated_profit_lamports: Number(estimatedProfitLamports),
-        estimated_profit_sol: Number(estimatedProfitLamports) / 1_000_000_000,
-        meets_min_threshold: Number(estimatedProfitLamports) >= strategy.min_profit_lamports,
-        price_source: isMockData ? 'Mock Prices (simulated)' : 'Jupiter Aggregator (Real DEX Prices)',
+        output_leg_a: Number(quoteA?.outAmount || 0),
+        output_leg_b: Number(quoteB?.outAmount || 0),
+        gross_profit_lamports: Number(netProfitResult?.grossProfitLamports || 0),
+        net_profit_lamports: Number(netProfitResult?.netProfitLamports || 0),
+        net_profit_bps: netProfitResult?.netProfitBps || 0,
+        net_profit_sol: Number(netProfitResult?.netProfitLamports || 0) / 1_000_000_000,
+        fee_breakdown: netProfitResult ? {
+          route_fees: Number(netProfitResult.feeBreakdown.routeFeesLamports),
+          priority_fees: Number(netProfitResult.feeBreakdown.priorityFeeLamports),
+          compute_budget: Number(netProfitResult.feeBreakdown.computeBudgetLamports),
+          slippage_buffer: Number(netProfitResult.feeBreakdown.slippageBufferLamports),
+          total_fees: Number(netProfitResult.feeBreakdown.totalFeesLamports),
+        } : null,
+        meets_threshold: meetsThreshold,
+        is_profitable: isProfitable,
+        is_executable: isExecutable,
         is_mock: isMockData,
+        mock_blocked_reason: isMockData ? executableCheck.reason : null,
+        price_source: isMockData ? 'Mock Prices (NOT EXECUTABLE)' : 'Jupiter Aggregator (Real DEX Prices)',
         run_id: runData?.id || null,
         error: quoteError,
       });
@@ -353,20 +447,36 @@ serve(async (req) => {
     setMockMode(false);
 
     const mockCount = results.filter(r => r.is_mock).length;
-    console.log(`[scan-arbitrage] Scan complete. ${results.length} strategies simulated. ${mockCount} used mock data.`);
+    const profitableCount = results.filter(r => r.is_profitable && !r.is_mock).length;
+    const executableCount = results.filter(r => r.is_executable).length;
+    
+    console.log(`\n[scan-arbitrage] ========== SCAN COMPLETE ==========`);
+    console.log(`[scan-arbitrage] Total strategies: ${results.length}`);
+    console.log(`[scan-arbitrage] Profitable (real): ${profitableCount}`);
+    console.log(`[scan-arbitrage] Executable: ${executableCount}`);
+    console.log(`[scan-arbitrage] Mock data (blocked): ${mockCount}`);
 
     return new Response(JSON.stringify({
       success: true,
-      message: `Arbitrage simulation scan complete`,
+      message: `Arbitrage scan complete`,
+      environment: ARB_ENV,
+      thresholds: {
+        min_net_profit_lamports: getMinNetProfitLamports(),
+        min_profit_bps: getMinProfitBps(),
+        max_notional_lamports: Number(getMaxNotionalLamports()),
+      },
       price_source: mockCount > 0 
         ? `Mixed: ${results.length - mockCount} real, ${mockCount} mock (Jupiter API DNS issues)` 
         : 'Jupiter Aggregator API (v6) - Real DEX prices',
       supported_dexs: getSupportedDexList(),
       simulations: results,
-      total_strategies: results.length,
-      profitable_count: results.filter(r => r.meets_min_threshold && r.estimated_profit_lamports > 0).length,
-      mock_count: mockCount,
-      validation_failed_count: results.filter(r => (r.validation_errors?.length ?? 0) > 0).length,
+      summary: {
+        total_strategies: results.length,
+        profitable_count: profitableCount,
+        executable_count: executableCount,
+        mock_count: mockCount,
+        validation_failed_count: results.filter(r => (r.validation_errors?.length ?? 0) > 0).length,
+      },
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
