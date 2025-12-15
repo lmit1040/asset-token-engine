@@ -95,3 +95,6 @@ verify_jwt = false
 
 [functions.execute-evm-flash-arbitrage]
 verify_jwt = false
+
+[functions.scan-new-pools]
+verify_jwt = false
