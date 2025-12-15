@@ -1,5 +1,5 @@
 import { NavLink as RouterNavLink, useLocation } from "react-router-dom";
-import { LayoutDashboard, Coins, User, Users, Activity, LogOut, Award, Vote, ArrowRightLeft, FileCheck, Wallet, Globe, FileUp, FolderOpen, ClipboardList, Archive, Zap, ShieldCheck, Bot, Newspaper, FileText, Package, Rocket, Sparkles, BarChart3, FileSignature, Layers, Radar } from "lucide-react";
+import { LayoutDashboard, Coins, User, Users, Activity, LogOut, Award, Vote, ArrowRightLeft, FileCheck, Wallet, Globe, FileUp, FolderOpen, ClipboardList, Archive, Zap, ShieldCheck, Bot, Newspaper, FileText, Package, Rocket, Sparkles, BarChart3, FileSignature, Layers, Radar, MonitorDot } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 const navigation = [{
@@ -87,6 +87,10 @@ const adminNavigation = [{
   name: "New Pool Detection",
   href: "/admin/arbitrage/new-pools",
   icon: Radar
+}, {
+  name: "OPS Events",
+  href: "/admin/arbitrage/ops-events",
+  icon: MonitorDot
 }, {
   name: "News",
   href: "/admin/news",

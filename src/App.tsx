@@ -41,6 +41,7 @@ import ProofOfReservePage from "./pages/ProofOfReservePage";
 import AdminLaunchChecklistPage from "./pages/AdminLaunchChecklistPage";
 import AdminFlashLoanAnalyticsPage from "./pages/AdminFlashLoanAnalyticsPage";
 import AdminNDASignaturesPage from "./pages/AdminNDASignaturesPage";
+import AdminOpsArbitrageEventsPage from "./pages/AdminOpsArbitrageEventsPage";
 import AdminNewPoolsPage from "./pages/AdminNewPoolsPage";
 import NotFound from "./pages/NotFound";
 
@@ -92,6 +93,7 @@ const App = () => (
               <Route path="/admin/launch-checklist" element={<AdminLaunchChecklistPage />} />
               <Route path="/admin/nda-signatures" element={<AdminNDASignaturesPage />} />
               <Route path="/admin/arbitrage/new-pools" element={<AdminNewPoolsPage />} />
+              <Route path="/admin/arbitrage/ops-events" element={<AdminOpsArbitrageEventsPage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </WalletProvider>
