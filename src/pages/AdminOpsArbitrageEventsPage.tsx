@@ -13,7 +13,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Activity, ExternalLink, AlertTriangle, RefreshCw, Shield, ShieldOff, Filter, Bell, Lock, Unlock, CheckCircle } from 'lucide-react';
+import { Activity, ExternalLink, AlertTriangle, RefreshCw, Shield, ShieldOff, Filter, Bell, Lock, Unlock, CheckCircle, Play, Search, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface OpsArbitrageEvent {
@@ -81,6 +81,11 @@ export default function AdminOpsArbitrageEventsPage() {
   const [executionLocked, setExecutionLocked] = useState(false);
   const [lockReason, setLockReason] = useState<string | null>(null);
   const [unlocking, setUnlocking] = useState(false);
+
+  // OPS Refill actions
+  const [scanningOpsRefill, setScanningOpsRefill] = useState(false);
+  const [executingOpsRefill, setExecutingOpsRefill] = useState(false);
+  const [lastScanResult, setLastScanResult] = useState<any | null>(null);
 
   const fetchEvents = async () => {
     setIsLoading(true);
@@ -269,6 +274,77 @@ export default function AdminOpsArbitrageEventsPage() {
     setDateTo('');
   };
 
+  // OPS Refill Handlers
+  const handleScanOpsRefill = async () => {
+    setScanningOpsRefill(true);
+    setLastScanResult(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('scan-polygon-ops-refill', {
+        body: { notionalUSDC: '1000000000' }, // 1000 USDC (6 decimals)
+      });
+
+      if (error) throw error;
+
+      setLastScanResult(data);
+      if (data.profitable) {
+        toast.success(`Profitable opportunity found: ${data.formatted?.netProfit || 'Check details'}`);
+      } else {
+        toast.info('Scan complete - no profitable opportunity at current prices');
+      }
+      fetchEvents();
+    } catch (err) {
+      console.error('Scan error:', err);
+      toast.error('Scan failed: ' + (err instanceof Error ? err.message : 'Unknown error'));
+    } finally {
+      setScanningOpsRefill(false);
+    }
+  };
+
+  const handleExecuteOpsRefill = async () => {
+    if (!arbExecutionEnabled || executionLocked || arbEnv !== 'mainnet') {
+      toast.error('Execution not allowed - check environment status');
+      return;
+    }
+
+    setExecutingOpsRefill(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast.error('Not authenticated');
+        return;
+      }
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/execute-polygon-ops-refill`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ notionalUSDC: '1000000000' }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Execution failed');
+      }
+
+      toast.success(`Execution complete! Realized profit: ${data.formatted?.realizedProfit || data.realizedProfit}`);
+      fetchEvents();
+      fetchAlerts();
+    } catch (err) {
+      console.error('Execute error:', err);
+      toast.error('Execution failed: ' + (err instanceof Error ? err.message : 'Unknown error'));
+    } finally {
+      setExecutingOpsRefill(false);
+    }
+  };
+
+  const canExecute = arbEnv === 'mainnet' && arbExecutionEnabled && !executionLocked;
+
   // Stats
   const stats = {
     total: events.length,
@@ -371,6 +447,92 @@ export default function AdminOpsArbitrageEventsPage() {
             </CardHeader>
           </Card>
         </div>
+
+        {/* Polygon OPS Refill Actions */}
+        <Card className="border-primary/30 bg-primary/5">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Activity className="h-5 w-5 text-primary" />
+              Polygon OPS Refill (USDC ↔ WETH)
+            </CardTitle>
+            <CardDescription>
+              Run USDC→WETH→USDC arbitrage cycle on Polygon Mainnet for OPS wallet refill
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex flex-wrap gap-3">
+              <Button
+                onClick={handleScanOpsRefill}
+                disabled={scanningOpsRefill}
+                variant="outline"
+                className="flex items-center gap-2"
+              >
+                {scanningOpsRefill ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Search className="h-4 w-4" />
+                )}
+                {scanningOpsRefill ? 'Scanning...' : 'Run Polygon OPS Refill (Scan Only)'}
+              </Button>
+
+              <Button
+                onClick={handleExecuteOpsRefill}
+                disabled={executingOpsRefill || !canExecute}
+                variant={canExecute ? 'default' : 'secondary'}
+                className="flex items-center gap-2"
+              >
+                {executingOpsRefill ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Play className="h-4 w-4" />
+                )}
+                {executingOpsRefill ? 'Executing...' : 'Run Polygon OPS Refill (Execute)'}
+              </Button>
+
+              {!canExecute && (
+                <span className="text-sm text-muted-foreground self-center">
+                  (Execution requires: mainnet mode + enabled + unlocked)
+                </span>
+              )}
+            </div>
+
+            {lastScanResult && (
+              <div className="p-3 bg-muted/50 rounded-lg text-sm font-mono space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Notional:</span>
+                  <span>{lastScanResult.formatted?.notionalIn || lastScanResult.notionalIn}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Leg 1 (USDC→WETH):</span>
+                  <span>{lastScanResult.formatted?.leg1Output || lastScanResult.leg1Output}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Leg 2 (WETH→USDC):</span>
+                  <span>{lastScanResult.formatted?.leg2Output || lastScanResult.leg2Output}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Gross Profit:</span>
+                  <span>{lastScanResult.formatted?.grossProfit || lastScanResult.grossProfit}</span>
+                </div>
+                <div className="flex justify-between font-semibold">
+                  <span className={lastScanResult.profitable ? 'text-green-600' : 'text-destructive'}>
+                    Net Profit:
+                  </span>
+                  <span className={lastScanResult.profitable ? 'text-green-600' : 'text-destructive'}>
+                    {lastScanResult.formatted?.netProfit || lastScanResult.netProfit}
+                    {' '}({lastScanResult.profitBps} bps)
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Meets Threshold:</span>
+                  <Badge variant={lastScanResult.meetsThreshold ? 'default' : 'destructive'}>
+                    {lastScanResult.meetsThreshold ? 'YES' : 'NO'}
+                  </Badge>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Tabs for Events and Alerts */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
