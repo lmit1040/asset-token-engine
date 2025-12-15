@@ -60,7 +60,7 @@ export default function AdminEvmFeePayersPage() {
   const [feePayers, setFeePayers] = useState<EvmFeePayerKey[]>([]);
   const [topups, setTopups] = useState<EvmFeePayerTopup[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedNetwork, setSelectedNetwork] = useState('SEPOLIA');
+  const [selectedNetwork, setSelectedNetwork] = useState('POLYGON');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [newFeePayer, setNewFeePayer] = useState({ label: '', public_key: '', network: 'POLYGON' });
