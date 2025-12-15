@@ -370,6 +370,98 @@ async function approveTokenIfNeeded(
   }
 }
 
+// ============ NET PROFIT WATERFALL CALCULATION ============
+interface NetProfitWaterfall {
+  grossProfit: bigint;
+  estimatedGasCost: bigint;
+  slippageBuffer: bigint;
+  protocolFees: bigint;
+  netProfit: bigint;
+  profitBps: number;
+}
+
+function calculateNetProfitWaterfall(params: {
+  initialAmountIn: bigint;
+  finalAmountOut: bigint;
+  gasEstimateLegA: bigint;
+  gasEstimateLegB: bigint;
+  effectiveGasPrice: bigint;
+  slippageBps?: number; // default 50 bps (0.5%)
+  protocolFeeBps?: number; // 0x fee, default 0
+}): NetProfitWaterfall {
+  const {
+    initialAmountIn,
+    finalAmountOut,
+    gasEstimateLegA,
+    gasEstimateLegB,
+    effectiveGasPrice,
+    slippageBps = 50,
+    protocolFeeBps = 0,
+  } = params;
+
+  const grossProfit = finalAmountOut - initialAmountIn;
+  const totalGasEstimate = gasEstimateLegA + gasEstimateLegB;
+  const estimatedGasCost = totalGasEstimate * effectiveGasPrice;
+  const slippageBuffer = (initialAmountIn * BigInt(slippageBps)) / 10000n;
+  const protocolFees = (initialAmountIn * BigInt(protocolFeeBps)) / 10000n;
+  const netProfit = grossProfit - estimatedGasCost - slippageBuffer - protocolFees;
+  const profitBps = initialAmountIn > 0n 
+    ? Number((netProfit * 10000n) / initialAmountIn) 
+    : 0;
+
+  return {
+    grossProfit,
+    estimatedGasCost,
+    slippageBuffer,
+    protocolFees,
+    netProfit,
+    profitBps,
+  };
+}
+
+// ============ BALANCE SNAPSHOT FOR REALIZED PROFIT ============
+interface BalanceSnapshot {
+  gasTokenBalance: bigint; // Native token (ETH/MATIC/BNB)
+  profitTokenBalance: bigint; // The token we're measuring profit in
+}
+
+async function captureBalanceSnapshot(
+  provider: ethers.Provider,
+  walletAddress: string,
+  profitTokenAddress: string
+): Promise<BalanceSnapshot> {
+  const erc20Abi = ["function balanceOf(address) view returns (uint256)"];
+  
+  // Get native gas token balance
+  const gasTokenBalance = await provider.getBalance(walletAddress);
+  
+  // Get profit token balance (handle native token case)
+  let profitTokenBalance = 0n;
+  const isNativeToken = profitTokenAddress.toLowerCase() === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+  
+  if (isNativeToken) {
+    profitTokenBalance = gasTokenBalance;
+  } else {
+    try {
+      const tokenContract = new ethers.Contract(profitTokenAddress, erc20Abi, provider);
+      profitTokenBalance = await tokenContract.balanceOf(walletAddress);
+    } catch (error) {
+      console.warn(`[execute-evm-arbitrage] Failed to get token balance:`, error);
+    }
+  }
+
+  return { gasTokenBalance, profitTokenBalance };
+}
+
+function calculateRealizedProfit(
+  preTx: BalanceSnapshot,
+  postTx: BalanceSnapshot
+): { realizedProfit: bigint; gasSpent: bigint } {
+  const realizedProfit = postTx.profitTokenBalance - preTx.profitTokenBalance;
+  const gasSpent = preTx.gasTokenBalance - postTx.gasTokenBalance;
+  return { realizedProfit, gasSpent };
+}
+
 // Helper to log ops arbitrage events
 async function logOpsArbitrageEvent(
   supabase: any,
@@ -386,7 +478,7 @@ async function logOpsArbitrageEvent(
     gas_used?: string;
     effective_gas_price?: string;
     tx_hash?: string;
-    status: string;
+    status: 'SIMULATED' | 'EXECUTED' | 'ABORTED' | 'REJECTED' | 'FAILED';
     error_message?: string;
   }
 ): Promise<void> {
@@ -774,8 +866,31 @@ serve(async (req) => {
     console.log(`[execute-evm-arbitrage] Chain: ${network}, ChainId: ${CHAIN_IDS[network.toUpperCase()]}`);
     console.log(`[execute-evm-arbitrage] ARB_ENV: ${arbEnv}, EXECUTION_ENABLED: ${arbExecutionEnabled}`);
 
+    // Validate notional against max limit
+    const inputBigInt = BigInt(inputWei);
+    const maxNotionalLimit = BigInt(Deno.env.get('MAX_NOTIONAL_WEI') || '50000000000000000000'); // 50 ETH default cap
+    
+    if (inputBigInt > maxNotionalLimit) {
+      const errorMsg = `Notional ${inputWei} wei exceeds MAX_NOTIONAL_WEI limit ${maxNotionalLimit}`;
+      console.error(`[execute-evm-arbitrage] ${errorMsg}`);
+      
+      await logOpsArbitrageEvent(supabase, {
+        network,
+        mode: 'OPS_REFILL',
+        strategy_id: strategy.id,
+        notional_in: inputWei,
+        status: 'ABORTED',
+        error_message: errorMsg,
+      });
+      
+      return new Response(JSON.stringify({ error: errorMsg, status: 'ABORTED' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // ============ MAINNET REAL EXECUTION ============
-    // Step 1: Get quote for leg A
+    // Step 1: Get quote for leg A with gas estimation
     console.log(`[execute-evm-arbitrage] Fetching leg A quote...`);
     const quoteA = await getZeroXQuote({
       network,
@@ -796,6 +911,26 @@ serve(async (req) => {
       });
       return new Response(JSON.stringify({ error: errorMsg }), {
         status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // MOCK QUOTE SAFETY CHECK
+    if ((quoteA as any).isMock) {
+      const errorMsg = 'Leg A quote is mock - execution aborted for safety';
+      console.error(`[execute-evm-arbitrage] ${errorMsg}`);
+      
+      await logOpsArbitrageEvent(supabase, {
+        network,
+        mode: 'OPS_REFILL',
+        strategy_id: strategy.id,
+        notional_in: inputWei,
+        status: 'ABORTED',
+        error_message: errorMsg,
+      });
+      
+      return new Response(JSON.stringify({ error: errorMsg, status: 'ABORTED' }), {
+        status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -826,14 +961,65 @@ serve(async (req) => {
       });
     }
 
-    const estimatedProfit = calculateArbitrageProfit(inputWei, quoteB.buyAmount);
-    console.log(`[execute-evm-arbitrage] Estimated profit: ${estimatedProfit} wei`);
+    // MOCK QUOTE SAFETY CHECK
+    if ((quoteB as any).isMock) {
+      const errorMsg = 'Leg B quote is mock - execution aborted for safety';
+      console.error(`[execute-evm-arbitrage] ${errorMsg}`);
+      
+      await logOpsArbitrageEvent(supabase, {
+        network,
+        mode: 'OPS_REFILL',
+        strategy_id: strategy.id,
+        notional_in: inputWei,
+        expected_gross_profit: (BigInt(quoteB.buyAmount) - inputBigInt).toString(),
+        status: 'ABORTED',
+        error_message: errorMsg,
+      });
+      
+      return new Response(JSON.stringify({ error: errorMsg, status: 'ABORTED' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
-    // Check profitability thresholds before executing
-    const profitBps = Number((estimatedProfit * 10000n) / BigInt(inputWei));
-    
-    if (estimatedProfit <= 0n) {
-      const errorMsg = `Unprofitable: ${estimatedProfit} wei`;
+    // Step 3: Get current gas price for accurate cost estimation
+    let effectiveGasPrice: bigint;
+    try {
+      const feeData = await executionWallet.provider?.getFeeData();
+      effectiveGasPrice = feeData?.gasPrice || ethers.parseUnits('50', 'gwei');
+      console.log(`[execute-evm-arbitrage] Current gas price: ${ethers.formatUnits(effectiveGasPrice, 'gwei')} gwei`);
+    } catch (gasPriceError) {
+      console.warn(`[execute-evm-arbitrage] Failed to get gas price, using default`);
+      effectiveGasPrice = ethers.parseUnits('50', 'gwei');
+    }
+
+    // Estimate gas for both legs (use higher estimates for safety)
+    const gasEstimateLegA = BigInt(500000); // Conservative estimate for DEX swap
+    const gasEstimateLegB = BigInt(500000);
+
+    // ============ NET PROFIT WATERFALL CALCULATION ============
+    const waterfall = calculateNetProfitWaterfall({
+      initialAmountIn: inputBigInt,
+      finalAmountOut: BigInt(quoteB.buyAmount),
+      gasEstimateLegA,
+      gasEstimateLegB,
+      effectiveGasPrice,
+      slippageBps: 50, // 0.5% slippage buffer
+      protocolFeeBps: 0, // 0x has no protocol fee for now
+    });
+
+    console.log(`[execute-evm-arbitrage] === NET PROFIT WATERFALL ===`);
+    console.log(`[execute-evm-arbitrage] Gross Profit: ${waterfall.grossProfit} wei (${Number(waterfall.grossProfit) / 1e18} ETH)`);
+    console.log(`[execute-evm-arbitrage] Est Gas Cost: ${waterfall.estimatedGasCost} wei (${Number(waterfall.estimatedGasCost) / 1e18} ETH)`);
+    console.log(`[execute-evm-arbitrage] Slippage Buffer: ${waterfall.slippageBuffer} wei`);
+    console.log(`[execute-evm-arbitrage] Protocol Fees: ${waterfall.protocolFees} wei`);
+    console.log(`[execute-evm-arbitrage] NET PROFIT: ${waterfall.netProfit} wei (${waterfall.profitBps} bps)`);
+    console.log(`[execute-evm-arbitrage] ===========================`);
+
+    // ============ STRICT EXECUTION GATES ============
+    // Gate 1: Must have positive net profit
+    if (waterfall.netProfit <= 0n) {
+      const errorMsg = `Unprofitable after costs: net=${waterfall.netProfit} wei (gross=${waterfall.grossProfit}, gas=${waterfall.estimatedGasCost})`;
       console.log(`[execute-evm-arbitrage] ${errorMsg}`);
       
       await supabase.from('arbitrage_runs').insert({
@@ -841,7 +1027,8 @@ serve(async (req) => {
         started_at: startedAt,
         finished_at: new Date().toISOString(),
         status: 'SIMULATED',
-        estimated_profit_lamports: Number(estimatedProfit / 1_000_000_000n),
+        estimated_profit_lamports: Number(waterfall.netProfit / 1_000_000_000n),
+        estimated_gas_cost_native: Number(waterfall.estimatedGasCost / 1_000_000_000n),
         error_message: errorMsg,
       });
 
@@ -850,24 +1037,28 @@ serve(async (req) => {
         mode: 'OPS_REFILL',
         strategy_id: strategy.id,
         notional_in: inputWei,
-        expected_gross_profit: estimatedProfit.toString(),
+        expected_gross_profit: waterfall.grossProfit.toString(),
+        expected_net_profit: waterfall.netProfit.toString(),
+        effective_gas_price: effectiveGasPrice.toString(),
         status: 'REJECTED',
         error_message: errorMsg,
       });
 
       return new Response(JSON.stringify({
         success: false,
-        message: 'Trade not profitable',
-        estimated_profit_wei: estimatedProfit.toString(),
-        status: 'SIMULATED',
+        message: 'Trade not profitable after costs',
+        gross_profit_wei: waterfall.grossProfit.toString(),
+        estimated_gas_cost_wei: waterfall.estimatedGasCost.toString(),
+        net_profit_wei: waterfall.netProfit.toString(),
+        status: 'REJECTED',
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // Check against minimum profit thresholds
-    if (estimatedProfit < minNetProfitWei) {
-      const errorMsg = `Profit ${estimatedProfit} wei below minimum ${minNetProfitWei} wei`;
+    // Gate 2: Net profit must exceed minimum threshold
+    if (waterfall.netProfit < minNetProfitWei) {
+      const errorMsg = `Net profit ${waterfall.netProfit} wei below minimum ${minNetProfitWei} wei`;
       console.log(`[execute-evm-arbitrage] ${errorMsg}`);
       
       await logOpsArbitrageEvent(supabase, {
@@ -875,7 +1066,9 @@ serve(async (req) => {
         mode: 'OPS_REFILL',
         strategy_id: strategy.id,
         notional_in: inputWei,
-        expected_gross_profit: estimatedProfit.toString(),
+        expected_gross_profit: waterfall.grossProfit.toString(),
+        expected_net_profit: waterfall.netProfit.toString(),
+        effective_gas_price: effectiveGasPrice.toString(),
         status: 'REJECTED',
         error_message: errorMsg,
       });
@@ -883,16 +1076,17 @@ serve(async (req) => {
       return new Response(JSON.stringify({
         success: false,
         message: errorMsg,
-        estimated_profit_wei: estimatedProfit.toString(),
+        net_profit_wei: waterfall.netProfit.toString(),
         min_required_wei: minNetProfitWei.toString(),
-        status: 'SIMULATED',
+        status: 'REJECTED',
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    if (profitBps < minProfitBps) {
-      const errorMsg = `Profit ${profitBps} bps below minimum ${minProfitBps} bps`;
+    // Gate 3: Profit BPS must exceed minimum
+    if (waterfall.profitBps < minProfitBps) {
+      const errorMsg = `Net profit ${waterfall.profitBps} bps below minimum ${minProfitBps} bps`;
       console.log(`[execute-evm-arbitrage] ${errorMsg}`);
       
       await logOpsArbitrageEvent(supabase, {
@@ -900,7 +1094,9 @@ serve(async (req) => {
         mode: 'OPS_REFILL',
         strategy_id: strategy.id,
         notional_in: inputWei,
-        expected_gross_profit: estimatedProfit.toString(),
+        expected_gross_profit: waterfall.grossProfit.toString(),
+        expected_net_profit: waterfall.netProfit.toString(),
+        effective_gas_price: effectiveGasPrice.toString(),
         status: 'REJECTED',
         error_message: errorMsg,
       });
@@ -908,17 +1104,32 @@ serve(async (req) => {
       return new Response(JSON.stringify({
         success: false,
         message: errorMsg,
-        profit_bps: profitBps,
+        profit_bps: waterfall.profitBps,
         min_required_bps: minProfitBps,
-        status: 'SIMULATED',
+        status: 'REJECTED',
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    console.log(`[execute-evm-arbitrage] Profit validation passed: ${estimatedProfit} wei (${profitBps} bps)`);
+    console.log(`[execute-evm-arbitrage] Profit validation passed: ${waterfall.netProfit} wei (${waterfall.profitBps} bps)`);
 
-    // Step 3: Get executable swap transaction for leg A
+    // ============ CAPTURE PRE-EXECUTION BALANCE SNAPSHOT ============
+    let preBalanceSnapshot: BalanceSnapshot | null = null;
+    try {
+      if (executionWallet.provider) {
+        preBalanceSnapshot = await captureBalanceSnapshot(
+          executionWallet.provider,
+          walletAddress,
+          strategy.token_in_mint
+        );
+        console.log(`[execute-evm-arbitrage] Pre-execution snapshot: gas=${preBalanceSnapshot.gasTokenBalance}, profit=${preBalanceSnapshot.profitTokenBalance}`);
+      }
+    } catch (snapshotError) {
+      console.warn(`[execute-evm-arbitrage] Failed to capture pre-execution snapshot:`, snapshotError);
+    }
+
+    // Step 4: Get executable swap transaction for leg A
     console.log(`[execute-evm-arbitrage] Getting swap transaction for leg A...`);
     const swapTxA = await getZeroXSwapTransaction({
       network,
@@ -935,7 +1146,8 @@ serve(async (req) => {
         started_at: startedAt,
         finished_at: new Date().toISOString(),
         status: 'FAILED',
-        estimated_profit_lamports: Number(estimatedProfit / 1_000_000_000n),
+        estimated_profit_lamports: Number(waterfall.netProfit / 1_000_000_000n),
+        estimated_gas_cost_native: Number(waterfall.estimatedGasCost / 1_000_000_000n),
         error_message: errorMsg,
       });
       return new Response(JSON.stringify({ error: errorMsg }), {
@@ -944,7 +1156,7 @@ serve(async (req) => {
       });
     }
 
-    // Step 4: Approve token if needed (for non-native tokens)
+    // Step 5: Approve token if needed (for non-native tokens)
     const PERMIT2_ADDRESS = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
     
     // Check if selling native token (ETH/MATIC)
@@ -965,7 +1177,8 @@ serve(async (req) => {
           started_at: startedAt,
           finished_at: new Date().toISOString(),
           status: 'FAILED',
-          estimated_profit_lamports: Number(estimatedProfit / 1_000_000_000n),
+          estimated_profit_lamports: Number(waterfall.netProfit / 1_000_000_000n),
+          estimated_gas_cost_native: Number(waterfall.estimatedGasCost / 1_000_000_000n),
           error_message: errorMsg,
           run_type: 'EXECUTE',
           purpose: 'MANUAL',
@@ -982,9 +1195,10 @@ serve(async (req) => {
       }
     }
 
-    // Step 5: Execute leg A swap
+    // Step 6: Execute leg A swap
     console.log(`[execute-evm-arbitrage] Executing leg A swap...`);
     let txHashA: string;
+    let gasUsedA = 0n;
     try {
       const txA = await executionWallet.sendTransaction({
         to: swapTxA.to,
@@ -996,7 +1210,8 @@ serve(async (req) => {
       console.log(`[execute-evm-arbitrage] Leg A tx sent: ${txA.hash}`);
       const receiptA = await txA.wait();
       txHashA = txA.hash;
-      console.log(`[execute-evm-arbitrage] Leg A confirmed in block ${receiptA?.blockNumber}`);
+      gasUsedA = receiptA?.gasUsed || 0n;
+      console.log(`[execute-evm-arbitrage] Leg A confirmed in block ${receiptA?.blockNumber}, gas used: ${gasUsedA}`);
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Leg A execution failed';
       console.error(`[execute-evm-arbitrage] ${errorMsg}`);
@@ -1006,8 +1221,21 @@ serve(async (req) => {
         started_at: startedAt,
         finished_at: new Date().toISOString(),
         status: 'FAILED',
-        estimated_profit_lamports: Number(estimatedProfit / 1_000_000_000n),
+        estimated_profit_lamports: Number(waterfall.netProfit / 1_000_000_000n),
+        estimated_gas_cost_native: Number(waterfall.estimatedGasCost / 1_000_000_000n),
         error_message: errorMsg,
+      });
+
+      await logOpsArbitrageEvent(supabase, {
+        network,
+        mode: 'OPS_REFILL',
+        strategy_id: strategy.id,
+        notional_in: inputWei,
+        expected_gross_profit: waterfall.grossProfit.toString(),
+        expected_net_profit: waterfall.netProfit.toString(),
+        effective_gas_price: effectiveGasPrice.toString(),
+        status: 'FAILED',
+        error_message: `Leg A execution failed: ${errorMsg}`,
       });
 
       return new Response(JSON.stringify({ error: errorMsg }), {
@@ -1016,7 +1244,7 @@ serve(async (req) => {
       });
     }
 
-    // Step 6: Get swap transaction for leg B
+    // Step 7: Get swap transaction for leg B
     console.log(`[execute-evm-arbitrage] Getting swap transaction for leg B...`);
     const swapTxB = await getZeroXSwapTransaction({
       network,
@@ -1034,7 +1262,8 @@ serve(async (req) => {
         finished_at: new Date().toISOString(),
         status: 'FAILED',
         tx_signature: txHashA,
-        estimated_profit_lamports: Number(estimatedProfit / 1_000_000_000n),
+        estimated_profit_lamports: Number(waterfall.netProfit / 1_000_000_000n),
+        estimated_gas_cost_native: Number(waterfall.estimatedGasCost / 1_000_000_000n),
         error_message: errorMsg,
       });
       return new Response(JSON.stringify({ error: errorMsg, leg_a_tx: txHashA }), {
@@ -1058,9 +1287,10 @@ serve(async (req) => {
       }
     }
 
-    // Step 7: Execute leg B swap
+    // Step 8: Execute leg B swap
     console.log(`[execute-evm-arbitrage] Executing leg B swap...`);
     let txHashB: string;
+    let gasUsedB = 0n;
     try {
       const txB = await executionWallet.sendTransaction({
         to: swapTxB.to,
@@ -1072,7 +1302,8 @@ serve(async (req) => {
       console.log(`[execute-evm-arbitrage] Leg B tx sent: ${txB.hash}`);
       const receiptB = await txB.wait();
       txHashB = txB.hash;
-      console.log(`[execute-evm-arbitrage] Leg B confirmed in block ${receiptB?.blockNumber}`);
+      gasUsedB = receiptB?.gasUsed || 0n;
+      console.log(`[execute-evm-arbitrage] Leg B confirmed in block ${receiptB?.blockNumber}, gas used: ${gasUsedB}`);
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Leg B execution failed';
       console.error(`[execute-evm-arbitrage] ${errorMsg}`);
@@ -1083,8 +1314,23 @@ serve(async (req) => {
         finished_at: new Date().toISOString(),
         status: 'FAILED',
         tx_signature: txHashA,
-        estimated_profit_lamports: Number(estimatedProfit / 1_000_000_000n),
+        estimated_profit_lamports: Number(waterfall.netProfit / 1_000_000_000n),
+        estimated_gas_cost_native: Number(waterfall.estimatedGasCost / 1_000_000_000n),
         error_message: `Leg B failed: ${errorMsg}`,
+      });
+
+      await logOpsArbitrageEvent(supabase, {
+        network,
+        mode: 'OPS_REFILL',
+        strategy_id: strategy.id,
+        notional_in: inputWei,
+        expected_gross_profit: waterfall.grossProfit.toString(),
+        expected_net_profit: waterfall.netProfit.toString(),
+        gas_used: gasUsedA.toString(),
+        effective_gas_price: effectiveGasPrice.toString(),
+        tx_hash: txHashA,
+        status: 'FAILED',
+        error_message: `Leg B execution failed: ${errorMsg}`,
       });
 
       return new Response(JSON.stringify({ 
@@ -1097,7 +1343,36 @@ serve(async (req) => {
       });
     }
 
-    // Success - record the execution
+    // ============ CAPTURE POST-EXECUTION BALANCE SNAPSHOT ============
+    let realizedProfit = waterfall.netProfit; // Default to expected if snapshot fails
+    let gasSpent = 0n;
+    const totalGasUsed = gasUsedA + gasUsedB;
+
+    try {
+      if (executionWallet.provider && preBalanceSnapshot) {
+        const postBalanceSnapshot = await captureBalanceSnapshot(
+          executionWallet.provider,
+          walletAddress,
+          strategy.token_in_mint
+        );
+        console.log(`[execute-evm-arbitrage] Post-execution snapshot: gas=${postBalanceSnapshot.gasTokenBalance}, profit=${postBalanceSnapshot.profitTokenBalance}`);
+
+        const realized = calculateRealizedProfit(preBalanceSnapshot, postBalanceSnapshot);
+        realizedProfit = realized.realizedProfit;
+        gasSpent = realized.gasSpent;
+
+        console.log(`[execute-evm-arbitrage] === REALIZED PROFIT ===`);
+        console.log(`[execute-evm-arbitrage] Expected Net Profit: ${waterfall.netProfit} wei`);
+        console.log(`[execute-evm-arbitrage] REALIZED Profit: ${realizedProfit} wei`);
+        console.log(`[execute-evm-arbitrage] Gas Spent: ${gasSpent} wei`);
+        console.log(`[execute-evm-arbitrage] Total Gas Used: ${totalGasUsed} units`);
+        console.log(`[execute-evm-arbitrage] =======================`);
+      }
+    } catch (snapshotError) {
+      console.warn(`[execute-evm-arbitrage] Failed to capture post-execution snapshot:`, snapshotError);
+    }
+
+    // Success - record the execution with REALIZED profit
     const finishedAt = new Date().toISOString();
     const { data: runData } = await supabase
       .from('arbitrage_runs')
@@ -1107,31 +1382,34 @@ serve(async (req) => {
         finished_at: finishedAt,
         status: 'EXECUTED',
         tx_signature: `${txHashA},${txHashB}`,
-        estimated_profit_lamports: Number(estimatedProfit / 1_000_000_000n),
-        actual_profit_lamports: Number(estimatedProfit / 1_000_000_000n),
+        estimated_profit_lamports: Number(waterfall.netProfit / 1_000_000_000n),
+        actual_profit_lamports: Number(realizedProfit / 1_000_000_000n),
+        estimated_gas_cost_native: Number(gasSpent / 1_000_000_000n),
       })
       .select()
       .maybeSingle();
 
     console.log(`[execute-evm-arbitrage] Arbitrage executed successfully!`);
 
-    // Log to ops_arbitrage_events with detailed info
+    // Log to ops_arbitrage_events with COMPLETE details
     await logOpsArbitrageEvent(supabase, {
       network,
       mode: 'OPS_REFILL',
       strategy_id: strategy.id,
       run_id: runData?.id,
       notional_in: inputWei,
-      expected_gross_profit: estimatedProfit.toString(),
-      expected_net_profit: estimatedProfit.toString(),
-      realized_profit: estimatedProfit.toString(),
+      expected_gross_profit: waterfall.grossProfit.toString(),
+      expected_net_profit: waterfall.netProfit.toString(),
+      realized_profit: realizedProfit.toString(),
+      gas_used: totalGasUsed.toString(),
+      effective_gas_price: effectiveGasPrice.toString(),
       tx_hash: `${txHashA},${txHashB}`,
       status: 'EXECUTED',
     });
 
-    // Trigger auto-refill if profit exceeds threshold
-    if (estimatedProfit >= AUTO_REFILL_PROFIT_THRESHOLD_WEI) {
-      console.log(`[execute-evm-arbitrage] Profit ${estimatedProfit} >= threshold, triggering auto-refill...`);
+    // Trigger auto-refill if REALIZED profit exceeds threshold
+    if (realizedProfit >= AUTO_REFILL_PROFIT_THRESHOLD_WEI) {
+      console.log(`[execute-evm-arbitrage] Realized profit ${realizedProfit} >= threshold, triggering auto-refill...`);
       EdgeRuntime.waitUntil(autoRefillEvmFeePayers(network));
     }
 
@@ -1146,12 +1424,18 @@ serve(async (req) => {
       used_fee_payer: !!usedFeePayer,
       leg_a_tx: txHashA,
       leg_b_tx: txHashB,
-      estimated_profit_wei: estimatedProfit.toString(),
-      estimated_profit_eth: Number(estimatedProfit) / 1e18,
-      profit_bps: profitBps,
+      // Profit waterfall details
+      gross_profit_wei: waterfall.grossProfit.toString(),
+      estimated_gas_cost_wei: waterfall.estimatedGasCost.toString(),
+      expected_net_profit_wei: waterfall.netProfit.toString(),
+      // Realized values
+      realized_profit_wei: realizedProfit.toString(),
+      gas_spent_wei: gasSpent.toString(),
+      total_gas_used: totalGasUsed.toString(),
+      profit_bps: waterfall.profitBps,
       run_id: runData?.id,
       status: 'EXECUTED',
-      auto_refill_triggered: estimatedProfit >= AUTO_REFILL_PROFIT_THRESHOLD_WEI,
+      auto_refill_triggered: realizedProfit >= AUTO_REFILL_PROFIT_THRESHOLD_WEI,
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
