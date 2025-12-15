@@ -1181,6 +1181,12 @@ export type Database = {
           max_flash_loan_amount_native: number | null
           max_global_daily_loss_native: number
           max_global_trades_per_day: number
+          rpc_arbitrum_url: string | null
+          rpc_bsc_url: string | null
+          rpc_ethereum_url: string | null
+          rpc_polygon_url: string | null
+          rpc_solana_devnet_url: string | null
+          rpc_solana_mainnet_url: string | null
           safe_mode_enabled: boolean
           safe_mode_reason: string | null
           safe_mode_triggered_at: string | null
@@ -1202,6 +1208,12 @@ export type Database = {
           max_flash_loan_amount_native?: number | null
           max_global_daily_loss_native?: number
           max_global_trades_per_day?: number
+          rpc_arbitrum_url?: string | null
+          rpc_bsc_url?: string | null
+          rpc_ethereum_url?: string | null
+          rpc_polygon_url?: string | null
+          rpc_solana_devnet_url?: string | null
+          rpc_solana_mainnet_url?: string | null
           safe_mode_enabled?: boolean
           safe_mode_reason?: string | null
           safe_mode_triggered_at?: string | null
@@ -1223,6 +1235,12 @@ export type Database = {
           max_flash_loan_amount_native?: number | null
           max_global_daily_loss_native?: number
           max_global_trades_per_day?: number
+          rpc_arbitrum_url?: string | null
+          rpc_bsc_url?: string | null
+          rpc_ethereum_url?: string | null
+          rpc_polygon_url?: string | null
+          rpc_solana_devnet_url?: string | null
+          rpc_solana_mainnet_url?: string | null
           safe_mode_enabled?: boolean
           safe_mode_reason?: string | null
           safe_mode_triggered_at?: string | null
@@ -1688,6 +1706,12 @@ export type Database = {
           max_flash_loan_amount_native: number | null
           max_global_daily_loss_native: number
           max_global_trades_per_day: number
+          rpc_arbitrum_url: string | null
+          rpc_bsc_url: string | null
+          rpc_ethereum_url: string | null
+          rpc_polygon_url: string | null
+          rpc_solana_devnet_url: string | null
+          rpc_solana_mainnet_url: string | null
           safe_mode_enabled: boolean
           safe_mode_reason: string | null
           safe_mode_triggered_at: string | null

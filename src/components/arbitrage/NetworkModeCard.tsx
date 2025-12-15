@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
@@ -6,7 +6,6 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { 
   AlertDialog, 
-  AlertDialogAction, 
   AlertDialogCancel, 
   AlertDialogContent, 
   AlertDialogDescription, 
@@ -21,13 +20,14 @@ import {
   CheckCircle2, 
   XCircle,
   Loader2,
-  RefreshCw,
   Wifi,
   WifiOff,
-  Clock
+  Clock,
+  Settings2
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { RpcConfigModal } from './RpcConfigModal';
 
 interface NetworkModeCardProps {
   isMainnetMode: boolean;
@@ -39,7 +39,7 @@ interface RpcTestResult {
   network: string;
   name: string;
   url: string;
-  isCustomRpc: boolean;
+  urlSource: 'secret' | 'database' | 'fallback';
   isMainnet: boolean;
   status: 'ok' | 'error' | 'timeout';
   latencyMs: number | null;
@@ -68,6 +68,7 @@ const NETWORK_DISPLAY_MAP: Record<string, { mainnet: string; testnet: string }> 
 
 export function NetworkModeCard({ isMainnetMode, onToggle, isUpdating }: NetworkModeCardProps) {
   const [showMainnetConfirm, setShowMainnetConfirm] = useState(false);
+  const [showRpcConfig, setShowRpcConfig] = useState(false);
   const [confirmStep, setConfirmStep] = useState(1);
   const [rpcResults, setRpcResults] = useState<RpcTestResult[]>([]);
   const [rpcSummary, setRpcSummary] = useState<RpcTestSummary | null>(null);
@@ -213,7 +214,16 @@ export function NetworkModeCard({ isMainnetMode, onToggle, isUpdating }: Network
               </div>
             </div>
             
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowRpcConfig(true)}
+              >
+                <Settings2 className="h-4 w-4 mr-2" />
+                Configure RPCs
+              </Button>
+              
               <Button
                 variant="outline"
                 size="sm"
@@ -325,12 +335,9 @@ export function NetworkModeCard({ isMainnetMode, onToggle, isUpdating }: Network
                         </div>
                       )}
                       <div className="text-[10px] text-muted-foreground/70">
-                        {result.isCustomRpc ? 'Alchemy RPC' : 'Public RPC'}
+                        {result.urlSource === 'secret' ? 'From Secret' : 
+                         result.urlSource === 'database' ? 'Custom RPC' : 'Public RPC'}
                       </div>
-                    </div>
-                  )}
-                  {!result && (
-                    <div className="text-[10px] text-muted-foreground/70 mt-2">
                       Click "Test RPCs"
                     </div>
                   )}
@@ -428,6 +435,13 @@ export function NetworkModeCard({ isMainnetMode, onToggle, isUpdating }: Network
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* RPC Configuration Modal */}
+      <RpcConfigModal
+        open={showRpcConfig}
+        onOpenChange={setShowRpcConfig}
+        onSaved={testRpcConnectivity}
+      />
     </>
   );
 }
