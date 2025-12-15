@@ -9,17 +9,19 @@ const corsHeaders = {
 interface RpcEndpointConfig {
   name: string;
   envVar: string | null;
+  dbField: string | null;
   fallback: string;
   testMethod: 'solana' | 'evm';
   chainId?: number;
   isMainnet: boolean;
 }
 
-// RPC endpoints configuration
+// RPC endpoints configuration with database field mapping
 const RPC_ENDPOINTS: Record<string, RpcEndpointConfig> = {
   SOLANA_MAINNET: {
     name: 'Solana Mainnet',
     envVar: 'SOLANA_MAINNET_RPC_URL',
+    dbField: 'rpc_solana_mainnet_url',
     fallback: 'https://api.mainnet-beta.solana.com',
     testMethod: 'solana',
     isMainnet: true,
@@ -27,6 +29,7 @@ const RPC_ENDPOINTS: Record<string, RpcEndpointConfig> = {
   SOLANA_DEVNET: {
     name: 'Solana Devnet',
     envVar: 'SOLANA_DEVNET_RPC_URL',
+    dbField: 'rpc_solana_devnet_url',
     fallback: 'https://api.devnet.solana.com',
     testMethod: 'solana',
     isMainnet: false,
@@ -34,6 +37,7 @@ const RPC_ENDPOINTS: Record<string, RpcEndpointConfig> = {
   POLYGON: {
     name: 'Polygon',
     envVar: 'EVM_POLYGON_RPC_URL',
+    dbField: 'rpc_polygon_url',
     fallback: 'https://polygon-rpc.com',
     testMethod: 'evm',
     chainId: 137,
@@ -42,6 +46,7 @@ const RPC_ENDPOINTS: Record<string, RpcEndpointConfig> = {
   POLYGON_AMOY: {
     name: 'Polygon Amoy',
     envVar: null,
+    dbField: null,
     fallback: 'https://rpc-amoy.polygon.technology',
     testMethod: 'evm',
     chainId: 80002,
@@ -50,6 +55,7 @@ const RPC_ENDPOINTS: Record<string, RpcEndpointConfig> = {
   ETHEREUM: {
     name: 'Ethereum',
     envVar: 'EVM_ETHEREUM_RPC_URL',
+    dbField: 'rpc_ethereum_url',
     fallback: 'https://eth.llamarpc.com',
     testMethod: 'evm',
     chainId: 1,
@@ -58,6 +64,7 @@ const RPC_ENDPOINTS: Record<string, RpcEndpointConfig> = {
   SEPOLIA: {
     name: 'Sepolia',
     envVar: null,
+    dbField: null,
     fallback: 'https://ethereum-sepolia-rpc.publicnode.com',
     testMethod: 'evm',
     chainId: 11155111,
@@ -66,6 +73,7 @@ const RPC_ENDPOINTS: Record<string, RpcEndpointConfig> = {
   ARBITRUM: {
     name: 'Arbitrum',
     envVar: 'EVM_ARBITRUM_RPC_URL',
+    dbField: 'rpc_arbitrum_url',
     fallback: 'https://arb1.arbitrum.io/rpc',
     testMethod: 'evm',
     chainId: 42161,
@@ -74,6 +82,7 @@ const RPC_ENDPOINTS: Record<string, RpcEndpointConfig> = {
   ARBITRUM_SEPOLIA: {
     name: 'Arbitrum Sepolia',
     envVar: null,
+    dbField: null,
     fallback: 'https://sepolia-rollup.arbitrum.io/rpc',
     testMethod: 'evm',
     chainId: 421614,
@@ -82,6 +91,7 @@ const RPC_ENDPOINTS: Record<string, RpcEndpointConfig> = {
   BSC: {
     name: 'BSC',
     envVar: 'EVM_BSC_RPC_URL',
+    dbField: 'rpc_bsc_url',
     fallback: 'https://bsc-dataseed1.binance.org',
     testMethod: 'evm',
     chainId: 56,
@@ -90,6 +100,7 @@ const RPC_ENDPOINTS: Record<string, RpcEndpointConfig> = {
   BSC_TESTNET: {
     name: 'BSC Testnet',
     envVar: null,
+    dbField: null,
     fallback: 'https://data-seed-prebsc-1-s1.binance.org:8545',
     testMethod: 'evm',
     chainId: 97,
@@ -101,12 +112,21 @@ interface RpcTestResult {
   network: string;
   name: string;
   url: string;
-  isCustomRpc: boolean;
+  urlSource: 'secret' | 'database' | 'fallback';
   isMainnet: boolean;
   status: 'ok' | 'error' | 'timeout';
   latencyMs: number | null;
   error?: string;
   blockNumber?: number | string;
+}
+
+interface DbRpcConfig {
+  rpc_solana_mainnet_url: string | null;
+  rpc_solana_devnet_url: string | null;
+  rpc_polygon_url: string | null;
+  rpc_ethereum_url: string | null;
+  rpc_arbitrum_url: string | null;
+  rpc_bsc_url: string | null;
 }
 
 async function testSolanaRpc(url: string, timeoutMs: number = 5000): Promise<{ latencyMs: number; slot: number }> {
@@ -158,7 +178,6 @@ async function testEvmRpc(url: string, expectedChainId: number, timeoutMs: numbe
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   
   try {
-    // First get block number
     const blockResponse = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -207,6 +226,24 @@ serve(async (req) => {
     console.log('[test-rpc-connectivity] Starting RPC connectivity tests...');
     console.log(`[test-rpc-connectivity] Test mainnet: ${testMainnet}, Test testnet: ${testTestnet}`);
     
+    // Fetch RPC configuration from database
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    
+    let dbConfig: DbRpcConfig | null = null;
+    try {
+      const { data } = await supabase
+        .from('system_settings')
+        .select('rpc_solana_mainnet_url, rpc_solana_devnet_url, rpc_polygon_url, rpc_ethereum_url, rpc_arbitrum_url, rpc_bsc_url')
+        .limit(1)
+        .single();
+      dbConfig = data;
+      console.log('[test-rpc-connectivity] Loaded RPC config from database');
+    } catch (err) {
+      console.log('[test-rpc-connectivity] Could not load RPC config from database, using defaults');
+    }
+    
     const results: RpcTestResult[] = [];
     const testPromises: Promise<void>[] = [];
     
@@ -216,14 +253,26 @@ serve(async (req) => {
       if (!config.isMainnet && !testTestnet) continue;
       
       testPromises.push((async () => {
-        const url = config.envVar ? (Deno.env.get(config.envVar) || config.fallback) : config.fallback;
-        const isCustomRpc = config.envVar ? !!Deno.env.get(config.envVar) : false;
+        // Priority: 1. Environment variable (secret), 2. Database config, 3. Fallback
+        let url = config.fallback;
+        let urlSource: 'secret' | 'database' | 'fallback' = 'fallback';
+        
+        if (config.envVar && Deno.env.get(config.envVar)) {
+          url = Deno.env.get(config.envVar)!;
+          urlSource = 'secret';
+        } else if (config.dbField && dbConfig) {
+          const dbUrl = dbConfig[config.dbField as keyof DbRpcConfig];
+          if (dbUrl) {
+            url = dbUrl;
+            urlSource = 'database';
+          }
+        }
         
         const result: RpcTestResult = {
           network: networkKey,
           name: config.name,
-          url: url.replace(/\/v2\/[a-zA-Z0-9]+/, '/v2/***'), // Mask API keys in URL
-          isCustomRpc,
+          url: url.replace(/\/v2\/[a-zA-Z0-9]+/, '/v2/***').replace(/apikey=[a-zA-Z0-9]+/, 'apikey=***'),
+          urlSource,
           isMainnet: config.isMainnet,
           status: 'error',
           latencyMs: null,
@@ -241,7 +290,7 @@ serve(async (req) => {
             result.latencyMs = latencyMs;
             result.blockNumber = blockNumber;
           }
-          console.log(`[test-rpc-connectivity] ${config.name}: OK (${result.latencyMs}ms)`);
+          console.log(`[test-rpc-connectivity] ${config.name}: OK (${result.latencyMs}ms, source: ${urlSource})`);
         } catch (err) {
           const error = err as Error;
           if (error.message === 'Timeout') {
