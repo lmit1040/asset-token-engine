@@ -958,6 +958,62 @@ export type Database = {
         }
         Relationships: []
       }
+      ops_arbitrage_alerts: {
+        Row: {
+          acknowledged_at: string | null
+          acknowledged_by: string | null
+          alert_type: string
+          chain: string
+          created_at: string
+          details_json: Json | null
+          expected_net_profit: string | null
+          gas_spent: string | null
+          id: string
+          network: string
+          realized_profit: string | null
+          run_id: string | null
+          severity: string
+        }
+        Insert: {
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
+          alert_type: string
+          chain?: string
+          created_at?: string
+          details_json?: Json | null
+          expected_net_profit?: string | null
+          gas_spent?: string | null
+          id?: string
+          network?: string
+          realized_profit?: string | null
+          run_id?: string | null
+          severity?: string
+        }
+        Update: {
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
+          alert_type?: string
+          chain?: string
+          created_at?: string
+          details_json?: Json | null
+          expected_net_profit?: string | null
+          gas_spent?: string | null
+          id?: string
+          network?: string
+          realized_profit?: string | null
+          run_id?: string | null
+          severity?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ops_arbitrage_alerts_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "ops_arbitrage_events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ops_arbitrage_events: {
         Row: {
           chain: string
@@ -1239,6 +1295,9 @@ export type Database = {
       }
       system_settings: {
         Row: {
+          arb_execution_locked: boolean
+          arb_execution_locked_at: string | null
+          arb_execution_locked_reason: string | null
           auto_arbitrage_enabled: boolean
           auto_flash_loans_enabled: boolean
           evm_fee_payer_top_up_native: number
@@ -1266,6 +1325,9 @@ export type Database = {
           updated_by: string | null
         }
         Insert: {
+          arb_execution_locked?: boolean
+          arb_execution_locked_at?: string | null
+          arb_execution_locked_reason?: string | null
           auto_arbitrage_enabled?: boolean
           auto_flash_loans_enabled?: boolean
           evm_fee_payer_top_up_native?: number
@@ -1293,6 +1355,9 @@ export type Database = {
           updated_by?: string | null
         }
         Update: {
+          arb_execution_locked?: boolean
+          arb_execution_locked_at?: string | null
+          arb_execution_locked_reason?: string | null
           auto_arbitrage_enabled?: boolean
           auto_flash_loans_enabled?: boolean
           evm_fee_payer_top_up_native?: number
@@ -1764,6 +1829,9 @@ export type Database = {
       get_system_settings: {
         Args: never
         Returns: {
+          arb_execution_locked: boolean
+          arb_execution_locked_at: string | null
+          arb_execution_locked_reason: string | null
           auto_arbitrage_enabled: boolean
           auto_flash_loans_enabled: boolean
           evm_fee_payer_top_up_native: number
