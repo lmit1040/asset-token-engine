@@ -129,7 +129,9 @@ serve(async (req) => {
 
     const priceSourceLabel = useMockMode || forceMock 
       ? 'MOCK PRICES (simulated for testing)'
-      : 'REAL DEX prices (with mock fallback on DNS errors)';
+      : ARB_ENV === 'mainnet' 
+        ? 'REAL DEX prices ONLY (no mock fallback)'
+        : 'REAL DEX prices (with mock fallback on DNS errors)';
 
     console.log(`[scan-arbitrage] Starting arbitrage scan...`);
     console.log(`[scan-arbitrage] Environment: ${ARB_ENV}`);
@@ -305,8 +307,11 @@ serve(async (req) => {
 
       try {
         // Step 1: Get quote for token_in -> token_out (leg A) with DEX constraint
+        // In production (ARB_ENV=mainnet), disable mock fallback to ensure only real quotes
+        const disableMockFallback = ARB_ENV === 'mainnet';
         const optionsA: JupiterQuoteOptions = {
           slippageBps: 50, // 0.5% slippage
+          useMockOnFailure: !disableMockFallback, // Only use mock fallback in devnet
         };
         if (strategy.dex_a) {
           optionsA.allowedDexes = [strategy.dex_a];
@@ -328,6 +333,7 @@ serve(async (req) => {
           // Step 2: Get quote for token_out -> token_in (leg B) with DEX constraint
           const optionsB: JupiterQuoteOptions = {
             slippageBps: 50,
+            useMockOnFailure: !disableMockFallback, // Only use mock fallback in devnet
           };
           if (strategy.dex_b) {
             optionsB.allowedDexes = [strategy.dex_b];
