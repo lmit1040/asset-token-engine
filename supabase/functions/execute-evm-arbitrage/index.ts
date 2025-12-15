@@ -370,6 +370,48 @@ async function approveTokenIfNeeded(
   }
 }
 
+// Helper to log ops arbitrage events
+async function logOpsArbitrageEvent(
+  supabase: any,
+  params: {
+    chain?: string;
+    network: string;
+    mode: 'SIMULATION' | 'OPS_REFILL';
+    strategy_id?: string;
+    run_id?: string;
+    notional_in?: string;
+    expected_gross_profit?: string;
+    expected_net_profit?: string;
+    realized_profit?: string;
+    gas_used?: string;
+    effective_gas_price?: string;
+    tx_hash?: string;
+    status: string;
+    error_message?: string;
+  }
+): Promise<void> {
+  try {
+    await supabase.from('ops_arbitrage_events').insert({
+      chain: params.chain || 'EVM',
+      network: params.network,
+      mode: params.mode,
+      strategy_id: params.strategy_id,
+      run_id: params.run_id,
+      notional_in: params.notional_in,
+      expected_gross_profit: params.expected_gross_profit,
+      expected_net_profit: params.expected_net_profit,
+      realized_profit: params.realized_profit,
+      gas_used: params.gas_used,
+      effective_gas_price: params.effective_gas_price,
+      tx_hash: params.tx_hash,
+      status: params.status,
+      error_message: params.error_message,
+    });
+  } catch (error) {
+    console.error('[execute-evm-arbitrage] Failed to log ops event:', error);
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -378,7 +420,44 @@ serve(async (req) => {
   try {
     console.log('[execute-evm-arbitrage] Starting EVM arbitrage execution...');
 
-    // Verify admin authentication
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // ============ ENVIRONMENT VALIDATION ============
+    const arbEnv = Deno.env.get('ARB_ENV') || 'devnet';
+    const arbExecutionEnabled = Deno.env.get('ARB_EXECUTION_ENABLED') === 'true';
+    const evmOpsPrivateKey = Deno.env.get('EVM_OPS_PRIVATE_KEY');
+    const evmRpcUrl = Deno.env.get('EVM_POLYGON_RPC_URL');
+    
+    console.log(`[execute-evm-arbitrage] ARB_ENV: ${arbEnv}, ARB_EXECUTION_ENABLED: ${arbExecutionEnabled}`);
+
+    // Kill switch check - if not enabled, always simulate
+    if (!arbExecutionEnabled) {
+      console.log('[execute-evm-arbitrage] ARB_EXECUTION_ENABLED=false, forcing simulation mode');
+    }
+
+    // Mainnet requires EVM_OPS_PRIVATE_KEY and EVM_RPC_URL
+    if (arbEnv === 'mainnet') {
+      if (!evmOpsPrivateKey) {
+        const errorMsg = 'EVM_OPS_PRIVATE_KEY is required for mainnet execution';
+        console.error(`[execute-evm-arbitrage] ${errorMsg}`);
+        return new Response(JSON.stringify({ error: errorMsg }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      if (!evmRpcUrl) {
+        const errorMsg = 'EVM_POLYGON_RPC_URL is required for mainnet execution';
+        console.error(`[execute-evm-arbitrage] ${errorMsg}`);
+        return new Response(JSON.stringify({ error: errorMsg }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
+    // ============ ADMIN AUTHENTICATION ============
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
       return new Response(JSON.stringify({ error: 'Missing authorization' }), {
@@ -387,11 +466,6 @@ serve(async (req) => {
       });
     }
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
-    // Verify user is admin
     const token = authHeader.replace('Bearer ', '');
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     
@@ -416,7 +490,7 @@ serve(async (req) => {
       });
     }
 
-    // Parse request body
+    // ============ PARSE REQUEST ============
     const { strategy_id, use_ops_wallet } = await req.json();
     if (!strategy_id) {
       return new Response(JSON.stringify({ error: 'strategy_id required' }), {
@@ -453,6 +527,26 @@ serve(async (req) => {
     const network = strategy.evm_network || 'POLYGON';
     const isTestnet = isTestnetNetwork(network);
 
+    // ============ MAINNET CHAIN ID VALIDATION ============
+    if (arbEnv === 'mainnet' && !isTestnet) {
+      const expectedChainId = CHAIN_IDS[network.toUpperCase()];
+      if (network.toUpperCase() === 'POLYGON' && expectedChainId !== 137) {
+        const errorMsg = `Invalid chain configuration: Expected Polygon mainnet (137), got ${expectedChainId}`;
+        console.error(`[execute-evm-arbitrage] ${errorMsg}`);
+        await logOpsArbitrageEvent(supabase, {
+          network,
+          mode: 'SIMULATION',
+          strategy_id: strategy.id,
+          status: 'FAILED',
+          error_message: errorMsg,
+        });
+        return new Response(JSON.stringify({ error: errorMsg }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
     // Check if mainnet mode is enabled in system settings
     const { data: systemSettings } = await supabase
       .from('system_settings')
@@ -461,7 +555,16 @@ serve(async (req) => {
       .maybeSingle();
 
     const isMainnetMode = systemSettings?.is_mainnet_mode === true;
-    const shouldSimulate = isTestnet || !isMainnetMode;
+    
+    // Determine execution mode based on multiple gates
+    // Must pass ALL gates to execute real swaps:
+    // 1. ARB_ENV == mainnet
+    // 2. ARB_EXECUTION_ENABLED == true
+    // 3. is_mainnet_mode == true in system_settings
+    // 4. Not a testnet network
+    const canExecuteReal = arbEnv === 'mainnet' && arbExecutionEnabled && isMainnetMode && !isTestnet;
+    const shouldSimulate = !canExecuteReal;
+    const executionMode = canExecuteReal ? 'OPS_REFILL' : 'SIMULATION';
 
     if (shouldSimulate) {
       const reason = isTestnet ? `Testnet network (${network})` : 'Mainnet mode disabled';
@@ -578,14 +681,27 @@ serve(async (req) => {
       }
     }
 
-    // Use 0.01 ETH equivalent for real execution (smaller for safety)
-    const inputWei = '10000000000000000'; // 0.01 ETH
+    // Get trade size from env or use default
+    const maxNotionalWei = Deno.env.get('MAX_NOTIONAL_WEI') || '10000000000000000'; // 0.01 ETH default
+    const minNetProfitWei = BigInt(Deno.env.get('MIN_NET_PROFIT_WEI') || '100000000000000'); // 0.0001 ETH default
+    const minProfitBps = parseInt(Deno.env.get('MIN_PROFIT_BPS') || '10', 10); // 10 bps default
+    
+    const inputWei = maxNotionalWei;
+    console.log(`[execute-evm-arbitrage] Trade size: ${inputWei} wei, Min profit: ${minNetProfitWei} wei (${minProfitBps} bps)`);
 
-    // ============ SIMULATED EXECUTION (testnet OR mainnet mode disabled) ============
+    // ============ SIMULATED EXECUTION ============
     if (shouldSimulate) {
-      const simulationReason = isTestnet 
-        ? `Testnet simulation (${network}) - 0x API not available on testnets`
-        : 'Mainnet mode is disabled in system settings - simulation only';
+      let simulationReason = 'Unknown';
+      if (isTestnet) {
+        simulationReason = `Testnet network (${network}) - 0x API not available`;
+      } else if (!arbExecutionEnabled) {
+        simulationReason = 'ARB_EXECUTION_ENABLED=false (kill switch active)';
+      } else if (arbEnv !== 'mainnet') {
+        simulationReason = `ARB_ENV=${arbEnv} (not mainnet)`;
+      } else if (!isMainnetMode) {
+        simulationReason = 'is_mainnet_mode=false in system settings';
+      }
+      
       console.log(`[execute-evm-arbitrage] Running simulated execution: ${simulationReason}`);
       
       // Generate mock quotes
@@ -616,13 +732,30 @@ serve(async (req) => {
         .select()
         .maybeSingle();
 
+      // Log to ops_arbitrage_events
+      await logOpsArbitrageEvent(supabase, {
+        network,
+        mode: 'SIMULATION',
+        strategy_id: strategy.id,
+        run_id: runData?.id,
+        notional_in: inputWei,
+        expected_gross_profit: simulatedProfit.toString(),
+        expected_net_profit: simulatedProfit.toString(),
+        status: 'SIMULATED',
+        error_message: simulationReason,
+      });
+
       return new Response(JSON.stringify({
         success: true,
-        message: `Testnet simulated execution (0x API not available on ${network})`,
+        message: `Simulation mode: ${simulationReason}`,
         strategy_name: strategy.name,
         network,
         wallet_used: walletAddress,
-        is_testnet: true,
+        execution_mode: executionMode,
+        arb_env: arbEnv,
+        arb_execution_enabled: arbExecutionEnabled,
+        is_mainnet_mode: isMainnetMode,
+        is_testnet: isTestnet,
         simulated: true,
         leg_a_output: mockQuoteA.buyAmount,
         leg_b_output: mockQuoteB.buyAmount,
@@ -630,11 +763,16 @@ serve(async (req) => {
         estimated_profit_eth: Number(simulatedProfit) / 1e18,
         run_id: runData?.id,
         status: 'SIMULATED',
-        note: '0x API does not support testnet networks. This is a simulation only.',
+        note: simulationReason,
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+    
+    // ============ MAINNET EXECUTION GATE LOG ============
+    console.log(`[execute-evm-arbitrage] MAINNET OPS_REFILL MODE: Real trades will be executed`);
+    console.log(`[execute-evm-arbitrage] Chain: ${network}, ChainId: ${CHAIN_IDS[network.toUpperCase()]}`);
+    console.log(`[execute-evm-arbitrage] ARB_ENV: ${arbEnv}, EXECUTION_ENABLED: ${arbExecutionEnabled}`);
 
     // ============ MAINNET REAL EXECUTION ============
     // Step 1: Get quote for leg A
@@ -691,7 +829,9 @@ serve(async (req) => {
     const estimatedProfit = calculateArbitrageProfit(inputWei, quoteB.buyAmount);
     console.log(`[execute-evm-arbitrage] Estimated profit: ${estimatedProfit} wei`);
 
-    // Check if profitable before executing
+    // Check profitability thresholds before executing
+    const profitBps = Number((estimatedProfit * 10000n) / BigInt(inputWei));
+    
     if (estimatedProfit <= 0n) {
       const errorMsg = `Unprofitable: ${estimatedProfit} wei`;
       console.log(`[execute-evm-arbitrage] ${errorMsg}`);
@@ -705,6 +845,16 @@ serve(async (req) => {
         error_message: errorMsg,
       });
 
+      await logOpsArbitrageEvent(supabase, {
+        network,
+        mode: 'OPS_REFILL',
+        strategy_id: strategy.id,
+        notional_in: inputWei,
+        expected_gross_profit: estimatedProfit.toString(),
+        status: 'REJECTED',
+        error_message: errorMsg,
+      });
+
       return new Response(JSON.stringify({
         success: false,
         message: 'Trade not profitable',
@@ -714,6 +864,59 @@ serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+
+    // Check against minimum profit thresholds
+    if (estimatedProfit < minNetProfitWei) {
+      const errorMsg = `Profit ${estimatedProfit} wei below minimum ${minNetProfitWei} wei`;
+      console.log(`[execute-evm-arbitrage] ${errorMsg}`);
+      
+      await logOpsArbitrageEvent(supabase, {
+        network,
+        mode: 'OPS_REFILL',
+        strategy_id: strategy.id,
+        notional_in: inputWei,
+        expected_gross_profit: estimatedProfit.toString(),
+        status: 'REJECTED',
+        error_message: errorMsg,
+      });
+
+      return new Response(JSON.stringify({
+        success: false,
+        message: errorMsg,
+        estimated_profit_wei: estimatedProfit.toString(),
+        min_required_wei: minNetProfitWei.toString(),
+        status: 'SIMULATED',
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (profitBps < minProfitBps) {
+      const errorMsg = `Profit ${profitBps} bps below minimum ${minProfitBps} bps`;
+      console.log(`[execute-evm-arbitrage] ${errorMsg}`);
+      
+      await logOpsArbitrageEvent(supabase, {
+        network,
+        mode: 'OPS_REFILL',
+        strategy_id: strategy.id,
+        notional_in: inputWei,
+        expected_gross_profit: estimatedProfit.toString(),
+        status: 'REJECTED',
+        error_message: errorMsg,
+      });
+
+      return new Response(JSON.stringify({
+        success: false,
+        message: errorMsg,
+        profit_bps: profitBps,
+        min_required_bps: minProfitBps,
+        status: 'SIMULATED',
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    console.log(`[execute-evm-arbitrage] Profit validation passed: ${estimatedProfit} wei (${profitBps} bps)`);
 
     // Step 3: Get executable swap transaction for leg A
     console.log(`[execute-evm-arbitrage] Getting swap transaction for leg A...`);
@@ -912,6 +1115,20 @@ serve(async (req) => {
 
     console.log(`[execute-evm-arbitrage] Arbitrage executed successfully!`);
 
+    // Log to ops_arbitrage_events with detailed info
+    await logOpsArbitrageEvent(supabase, {
+      network,
+      mode: 'OPS_REFILL',
+      strategy_id: strategy.id,
+      run_id: runData?.id,
+      notional_in: inputWei,
+      expected_gross_profit: estimatedProfit.toString(),
+      expected_net_profit: estimatedProfit.toString(),
+      realized_profit: estimatedProfit.toString(),
+      tx_hash: `${txHashA},${txHashB}`,
+      status: 'EXECUTED',
+    });
+
     // Trigger auto-refill if profit exceeds threshold
     if (estimatedProfit >= AUTO_REFILL_PROFIT_THRESHOLD_WEI) {
       console.log(`[execute-evm-arbitrage] Profit ${estimatedProfit} >= threshold, triggering auto-refill...`);
@@ -920,15 +1137,18 @@ serve(async (req) => {
 
     return new Response(JSON.stringify({
       success: true,
-      message: 'EVM arbitrage executed successfully',
+      message: 'EVM OPS_REFILL arbitrage executed successfully',
       strategy_name: strategy.name,
       network,
+      execution_mode: 'OPS_REFILL',
+      arb_env: arbEnv,
       wallet_used: walletAddress,
       used_fee_payer: !!usedFeePayer,
       leg_a_tx: txHashA,
       leg_b_tx: txHashB,
       estimated_profit_wei: estimatedProfit.toString(),
       estimated_profit_eth: Number(estimatedProfit) / 1e18,
+      profit_bps: profitBps,
       run_id: runData?.id,
       status: 'EXECUTED',
       auto_refill_triggered: estimatedProfit >= AUTO_REFILL_PROFIT_THRESHOLD_WEI,

@@ -958,6 +958,78 @@ export type Database = {
         }
         Relationships: []
       }
+      ops_arbitrage_events: {
+        Row: {
+          chain: string
+          created_at: string
+          effective_gas_price: string | null
+          error_message: string | null
+          expected_gross_profit: string | null
+          expected_net_profit: string | null
+          gas_used: string | null
+          id: string
+          mode: string
+          network: string
+          notional_in: string | null
+          realized_profit: string | null
+          run_id: string | null
+          status: string
+          strategy_id: string | null
+          tx_hash: string | null
+        }
+        Insert: {
+          chain?: string
+          created_at?: string
+          effective_gas_price?: string | null
+          error_message?: string | null
+          expected_gross_profit?: string | null
+          expected_net_profit?: string | null
+          gas_used?: string | null
+          id?: string
+          mode?: string
+          network?: string
+          notional_in?: string | null
+          realized_profit?: string | null
+          run_id?: string | null
+          status?: string
+          strategy_id?: string | null
+          tx_hash?: string | null
+        }
+        Update: {
+          chain?: string
+          created_at?: string
+          effective_gas_price?: string | null
+          error_message?: string | null
+          expected_gross_profit?: string | null
+          expected_net_profit?: string | null
+          gas_used?: string | null
+          id?: string
+          mode?: string
+          network?: string
+          notional_in?: string | null
+          realized_profit?: string | null
+          run_id?: string | null
+          status?: string
+          strategy_id?: string | null
+          tx_hash?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ops_arbitrage_events_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "arbitrage_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ops_arbitrage_events_strategy_id_fkey"
+            columns: ["strategy_id"]
+            isOneToOne: false
+            referencedRelation: "arbitrage_strategies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           created_at: string
