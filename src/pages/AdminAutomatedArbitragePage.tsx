@@ -40,6 +40,7 @@ import {
 } from 'lucide-react';
 import { PnLTrendsChart } from '@/components/arbitrage/PnLTrendsChart';
 import { EvmWalletBalancesCard } from '@/components/arbitrage/EvmWalletBalancesCard';
+import { NetworkModeCard } from '@/components/arbitrage/NetworkModeCard';
 
 interface SystemSettings {
   id: string;
@@ -561,122 +562,14 @@ export default function AdminAutomatedArbitragePage() {
   return (
     <DashboardLayout title="Automated Arbitrage" subtitle="Internal cost optimization & fee payer management">
       <div className="space-y-6">
-        {/* Mainnet/Testnet Mode Banner */}
-        {settings?.is_mainnet_mode ? (
-          <Alert className="border-destructive/50 bg-destructive/10">
-            <ShieldAlert className="h-4 w-4 text-destructive" />
-            <AlertTitle className="text-destructive flex items-center gap-2">
-              <Badge variant="destructive" className="font-bold">
-                MAINNET MODE ACTIVE
-              </Badge>
-              Live Trading Enabled
-            </AlertTitle>
-            <AlertDescription className="space-y-3 mt-2">
-              <p className="text-muted-foreground">
-                <strong>Real blockchain transactions are being executed.</strong> All arbitrage trades use real funds 
-                and incur real gas costs. Proceed with caution.
-              </p>
-              <div className="grid gap-2 sm:grid-cols-3">
-                <div className="flex items-start gap-2 p-2 rounded bg-background/50">
-                  <Wallet className="h-4 w-4 text-destructive mt-0.5" />
-                  <div>
-                    <p className="text-sm font-medium">Min Fee Payer (SOL)</p>
-                    <p className="text-xs text-muted-foreground">{settings.mainnet_min_fee_payer_balance_sol} SOL</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-2 p-2 rounded bg-background/50">
-                  <Wallet className="h-4 w-4 text-destructive mt-0.5" />
-                  <div>
-                    <p className="text-sm font-medium">Min Fee Payer (EVM)</p>
-                    <p className="text-xs text-muted-foreground">{settings.evm_min_fee_payer_balance_native} native</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-2 p-2 rounded bg-background/50">
-                  <TrendingUp className="h-4 w-4 text-destructive mt-0.5" />
-                  <div>
-                    <p className="text-sm font-medium">Min Profit/Gas Ratio</p>
-                    <p className="text-xs text-muted-foreground">{settings.mainnet_min_profit_to_gas_ratio}x</p>
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center justify-between pt-2">
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant="destructive">Live Trades</Badge>
-                  <Badge variant="destructive">Real Gas Costs</Badge>
-                  <Badge variant="destructive">Real PnL</Badge>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    if (confirm('Are you sure you want to switch to testnet mode? This will stop all live trading.')) {
-                      updateSystemSetting('is_mainnet_mode', false);
-                    }
-                  }}
-                  disabled={updating}
-                >
-                  Switch to Testnet
-                </Button>
-              </div>
-            </AlertDescription>
-          </Alert>
-        ) : (
-          <Alert className="border-amber-500/50 bg-amber-500/10">
-            <AlertTriangle className="h-4 w-4 text-amber-500" />
-            <AlertTitle className="text-amber-600 dark:text-amber-400 flex items-center gap-2">
-              <Badge variant="outline" className="border-amber-500 text-amber-600 dark:text-amber-400 font-bold">
-                TESTNET MOCK MODE
-              </Badge>
-              Simulation Environment Active
-            </AlertTitle>
-            <AlertDescription className="space-y-3 mt-2">
-              <p className="text-muted-foreground">
-                <strong>No real blockchain transactions occur.</strong> All arbitrage profits and balances shown are simulated 
-                for testing purposes only. OPS wallet balances reflect actual on-chain values but will not change from mock trades.
-              </p>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <div className="flex items-start gap-2 p-2 rounded bg-background/50">
-                  <Info className="h-4 w-4 text-muted-foreground mt-0.5" />
-                  <div>
-                    <p className="text-sm font-medium">EVM Chains</p>
-                    <p className="text-xs text-muted-foreground">0x API testnets - simulated quotes, no actual swaps</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-2 p-2 rounded bg-background/50">
-                  <Info className="h-4 w-4 text-muted-foreground mt-0.5" />
-                  <div>
-                    <p className="text-sm font-medium">Solana</p>
-                    <p className="text-xs text-muted-foreground">Mock prices only - Jupiter API unavailable in edge functions</p>
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center justify-between pt-2">
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant="secondary" className="bg-amber-500/20 text-amber-700 dark:text-amber-300">
-                    Profits: Simulated Only
-                  </Badge>
-                  <Badge variant="secondary" className="bg-amber-500/20 text-amber-700 dark:text-amber-300">
-                    Transactions: None Executed
-                  </Badge>
-                </div>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => {
-                    if (confirm('⚠️ WARNING: Enabling mainnet mode will execute REAL trades with REAL funds. Are you absolutely sure?')) {
-                      if (confirm('This is your final confirmation. Mainnet mode will:\n\n• Execute real blockchain transactions\n• Use real funds from OPS wallets\n• Incur real gas costs\n\nProceed?')) {
-                        updateSystemSetting('is_mainnet_mode', true);
-                      }
-                    }
-                  }}
-                  disabled={updating}
-                >
-                  Enable Mainnet Mode
-                </Button>
-              </div>
-            </AlertDescription>
-          </Alert>
-        )}
+        {/* Unified Network Mode Toggle */}
+        <NetworkModeCard
+          isMainnetMode={settings?.is_mainnet_mode || false}
+          onToggle={async (enabled) => {
+            await updateSystemSetting('is_mainnet_mode', enabled);
+          }}
+          isUpdating={updating}
+        />
 
         {/* Action Buttons */}
         <div className="flex flex-wrap justify-between gap-4">
