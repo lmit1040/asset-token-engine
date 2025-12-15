@@ -462,6 +462,188 @@ function calculateRealizedProfit(
   return { realizedProfit, gasSpent };
 }
 
+// ============ PNL ALERT CONFIGURATION ============
+const PNL_ALERT_NEGATIVE_REALIZED = Deno.env.get('PNL_ALERT_NEGATIVE_REALIZED') !== 'false'; // Default true
+const PNL_ALERT_MAX_NEGATIVE_PROFIT_WEI = BigInt(Deno.env.get('PNL_ALERT_MAX_NEGATIVE_PROFIT_WEI') || '0');
+const PNL_ALERT_MIN_RATIO = parseFloat(Deno.env.get('PNL_ALERT_MIN_RATIO') || '0.50');
+const PNL_ALERT_MAX_GAS_MULTIPLIER = parseFloat(Deno.env.get('PNL_ALERT_MAX_GAS_MULTIPLIER') || '1.50');
+const PNL_FAIL_MAX_CONSECUTIVE = parseInt(Deno.env.get('PNL_FAIL_MAX_CONSECUTIVE') || '3', 10);
+const PNL_FAIL_WINDOW_MINUTES = parseInt(Deno.env.get('PNL_FAIL_WINDOW_MINUTES') || '60', 10);
+
+interface PnlDiscrepancy {
+  pnlDelta: bigint;
+  pnlRatio: number;
+  isAlert: boolean;
+  alertType: string | null;
+  severity: 'info' | 'warning' | 'critical';
+  reason: string | null;
+}
+
+// Evaluate PnL discrepancy after each run
+function evaluatePnlDiscrepancy(params: {
+  expectedNetProfit: bigint;
+  realizedProfit: bigint;
+  estimatedGasCost: bigint;
+  actualGasSpent: bigint;
+}): PnlDiscrepancy {
+  const { expectedNetProfit, realizedProfit, estimatedGasCost, actualGasSpent } = params;
+  
+  const pnlDelta = realizedProfit - expectedNetProfit;
+  const safeExpected = expectedNetProfit > 0n ? expectedNetProfit : 1n;
+  const pnlRatio = Number(realizedProfit) / Number(safeExpected);
+  
+  let isAlert = false;
+  let alertType: string | null = null;
+  let severity: 'info' | 'warning' | 'critical' = 'info';
+  let reason: string | null = null;
+
+  // Check for negative realized profit
+  if (PNL_ALERT_NEGATIVE_REALIZED && realizedProfit < PNL_ALERT_MAX_NEGATIVE_PROFIT_WEI) {
+    isAlert = true;
+    alertType = 'NEGATIVE_REALIZED_PROFIT';
+    severity = 'critical';
+    reason = `Realized profit ${realizedProfit} is below threshold ${PNL_ALERT_MAX_NEGATIVE_PROFIT_WEI}`;
+  }
+  
+  // Check for low ratio (realized < X% of expected)
+  else if (pnlRatio < PNL_ALERT_MIN_RATIO && expectedNetProfit > 0n) {
+    isAlert = true;
+    alertType = 'LOW_PROFIT_RATIO';
+    severity = 'warning';
+    reason = `Realized/Expected ratio ${pnlRatio.toFixed(2)} below minimum ${PNL_ALERT_MIN_RATIO}`;
+  }
+  
+  // Check for excessive gas spend
+  const gasRatio = estimatedGasCost > 0n ? Number(actualGasSpent) / Number(estimatedGasCost) : 0;
+  if (gasRatio > PNL_ALERT_MAX_GAS_MULTIPLIER) {
+    isAlert = true;
+    alertType = 'EXCESSIVE_GAS_SPEND';
+    severity = severity === 'critical' ? 'critical' : 'warning';
+    reason = `Gas multiplier ${gasRatio.toFixed(2)}x exceeds max ${PNL_ALERT_MAX_GAS_MULTIPLIER}x`;
+  }
+
+  return { pnlDelta, pnlRatio, isAlert, alertType, severity, reason };
+}
+
+// Log alert to ops_arbitrage_alerts table
+async function logPnlAlert(
+  supabase: any,
+  params: {
+    network: string;
+    chain?: string;
+    run_id?: string;
+    alert_type: string;
+    severity: string;
+    expected_net_profit: string;
+    realized_profit: string;
+    gas_spent: string;
+    details_json: Record<string, any>;
+  }
+): Promise<void> {
+  try {
+    await supabase.from('ops_arbitrage_alerts').insert({
+      network: params.network,
+      chain: params.chain || 'EVM',
+      run_id: params.run_id,
+      alert_type: params.alert_type,
+      severity: params.severity,
+      expected_net_profit: params.expected_net_profit,
+      realized_profit: params.realized_profit,
+      gas_spent: params.gas_spent,
+      details_json: params.details_json,
+    });
+    console.log(`[execute-evm-arbitrage] Logged PnL alert: ${params.alert_type} (${params.severity})`);
+  } catch (error) {
+    console.error('[execute-evm-arbitrage] Failed to log PnL alert:', error);
+  }
+}
+
+// Check consecutive failures and auto-lock if needed
+async function checkAndAutoLock(supabase: any, network: string): Promise<boolean> {
+  try {
+    const windowStart = new Date(Date.now() - PNL_FAIL_WINDOW_MINUTES * 60 * 1000).toISOString();
+    
+    // Count recent critical/warning alerts
+    const { data: recentAlerts, error } = await supabase
+      .from('ops_arbitrage_alerts')
+      .select('id, alert_type, severity')
+      .eq('network', network.toLowerCase())
+      .gte('created_at', windowStart)
+      .in('severity', ['critical', 'warning'])
+      .is('acknowledged_at', null)
+      .order('created_at', { ascending: false })
+      .limit(PNL_FAIL_MAX_CONSECUTIVE + 1);
+
+    if (error) {
+      console.error('[execute-evm-arbitrage] Failed to check recent alerts:', error);
+      return false;
+    }
+
+    // Check if we hit the consecutive failure threshold
+    if (recentAlerts && recentAlerts.length >= PNL_FAIL_MAX_CONSECUTIVE) {
+      console.warn(`[execute-evm-arbitrage] CONSECUTIVE FAILURE THRESHOLD HIT: ${recentAlerts.length} alerts in last ${PNL_FAIL_WINDOW_MINUTES} minutes`);
+      
+      // Auto-lock execution
+      const { error: lockError } = await supabase
+        .from('system_settings')
+        .update({
+          arb_execution_locked: true,
+          arb_execution_locked_at: new Date().toISOString(),
+          arb_execution_locked_reason: `Auto-locked: ${recentAlerts.length} consecutive alerts in ${PNL_FAIL_WINDOW_MINUTES} min window`,
+        })
+        .eq('id', (await supabase.from('system_settings').select('id').limit(1).single()).data?.id);
+
+      if (lockError) {
+        console.error('[execute-evm-arbitrage] Failed to auto-lock:', lockError);
+        return false;
+      }
+
+      console.warn('[execute-evm-arbitrage] EXECUTION AUTO-LOCKED');
+      
+      // Log a critical alert for the lock event
+      await logPnlAlert(supabase, {
+        network,
+        alert_type: 'EXECUTION_AUTO_LOCKED',
+        severity: 'critical',
+        expected_net_profit: '0',
+        realized_profit: '0',
+        gas_spent: '0',
+        details_json: {
+          consecutive_alerts: recentAlerts.length,
+          window_minutes: PNL_FAIL_WINDOW_MINUTES,
+          threshold: PNL_FAIL_MAX_CONSECUTIVE,
+          reason: 'Too many consecutive failures triggered auto-lock',
+        },
+      });
+
+      return true;
+    }
+
+    return false;
+  } catch (error) {
+    console.error('[execute-evm-arbitrage] checkAndAutoLock error:', error);
+    return false;
+  }
+}
+
+// Check if execution is locked
+async function isExecutionLocked(supabase: any): Promise<{ locked: boolean; reason: string | null }> {
+  try {
+    const { data } = await supabase
+      .from('system_settings')
+      .select('arb_execution_locked, arb_execution_locked_reason')
+      .limit(1)
+      .single();
+    
+    return {
+      locked: data?.arb_execution_locked === true,
+      reason: data?.arb_execution_locked_reason || null,
+    };
+  } catch {
+    return { locked: false, reason: null };
+  }
+}
+
 // Helper to log ops arbitrage events
 async function logOpsArbitrageEvent(
   supabase: any,
@@ -481,9 +663,9 @@ async function logOpsArbitrageEvent(
     status: 'SIMULATED' | 'EXECUTED' | 'ABORTED' | 'REJECTED' | 'FAILED';
     error_message?: string;
   }
-): Promise<void> {
+): Promise<string | null> {
   try {
-    await supabase.from('ops_arbitrage_events').insert({
+    const { data } = await supabase.from('ops_arbitrage_events').insert({
       chain: params.chain || 'EVM',
       network: params.network,
       mode: params.mode,
@@ -498,9 +680,11 @@ async function logOpsArbitrageEvent(
       tx_hash: params.tx_hash,
       status: params.status,
       error_message: params.error_message,
-    });
+    }).select('id').single();
+    return data?.id || null;
   } catch (error) {
     console.error('[execute-evm-arbitrage] Failed to log ops event:', error);
+    return null;
   }
 }
 
@@ -642,11 +826,35 @@ serve(async (req) => {
     // Check if mainnet mode is enabled in system settings
     const { data: systemSettings } = await supabase
       .from('system_settings')
-      .select('is_mainnet_mode, mainnet_min_profit_to_gas_ratio, evm_min_fee_payer_balance_native')
+      .select('is_mainnet_mode, mainnet_min_profit_to_gas_ratio, evm_min_fee_payer_balance_native, arb_execution_locked, arb_execution_locked_reason')
       .limit(1)
       .maybeSingle();
 
     const isMainnetMode = systemSettings?.is_mainnet_mode === true;
+    
+    // ============ EXECUTION LOCK CHECK ============
+    if (systemSettings?.arb_execution_locked === true) {
+      const lockReason = systemSettings.arb_execution_locked_reason || 'Execution locked by safety system';
+      console.error(`[execute-evm-arbitrage] EXECUTION LOCKED: ${lockReason}`);
+      
+      await logOpsArbitrageEvent(supabase, {
+        network,
+        mode: 'SIMULATION',
+        strategy_id: strategy.id,
+        status: 'ABORTED',
+        error_message: `EXECUTION_LOCKED: ${lockReason}`,
+      });
+      
+      return new Response(JSON.stringify({ 
+        error: 'Execution locked', 
+        reason: lockReason,
+        status: 'LOCKED',
+        action_required: 'Admin must acknowledge alerts and unlock execution in dashboard',
+      }), {
+        status: 403,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
     
     // Determine execution mode based on multiple gates
     // Must pass ALL gates to execute real swaps:
@@ -654,6 +862,7 @@ serve(async (req) => {
     // 2. ARB_EXECUTION_ENABLED == true
     // 3. is_mainnet_mode == true in system_settings
     // 4. Not a testnet network
+    // 5. arb_execution_locked == false
     const canExecuteReal = arbEnv === 'mainnet' && arbExecutionEnabled && isMainnetMode && !isTestnet;
     const shouldSimulate = !canExecuteReal;
     const executionMode = canExecuteReal ? 'OPS_REFILL' : 'SIMULATION';
@@ -1392,7 +1601,7 @@ serve(async (req) => {
     console.log(`[execute-evm-arbitrage] Arbitrage executed successfully!`);
 
     // Log to ops_arbitrage_events with COMPLETE details
-    await logOpsArbitrageEvent(supabase, {
+    const eventId = await logOpsArbitrageEvent(supabase, {
       network,
       mode: 'OPS_REFILL',
       strategy_id: strategy.id,
@@ -1406,6 +1615,49 @@ serve(async (req) => {
       tx_hash: `${txHashA},${txHashB}`,
       status: 'EXECUTED',
     });
+
+    // ============ PNL DISCREPANCY EVALUATION ============
+    const discrepancy = evaluatePnlDiscrepancy({
+      expectedNetProfit: waterfall.netProfit,
+      realizedProfit,
+      estimatedGasCost: waterfall.estimatedGasCost,
+      actualGasSpent: gasSpent,
+    });
+
+    console.log(`[execute-evm-arbitrage] PnL Discrepancy: delta=${discrepancy.pnlDelta}, ratio=${discrepancy.pnlRatio.toFixed(3)}, alert=${discrepancy.isAlert}`);
+
+    let alertCreated = false;
+    let executionLocked = false;
+
+    if (discrepancy.isAlert && discrepancy.alertType) {
+      alertCreated = true;
+      console.warn(`[execute-evm-arbitrage] PNL ALERT: ${discrepancy.alertType} - ${discrepancy.reason}`);
+      
+      await logPnlAlert(supabase, {
+        network,
+        run_id: eventId || undefined,
+        alert_type: discrepancy.alertType,
+        severity: discrepancy.severity,
+        expected_net_profit: waterfall.netProfit.toString(),
+        realized_profit: realizedProfit.toString(),
+        gas_spent: gasSpent.toString(),
+        details_json: {
+          pnl_delta: discrepancy.pnlDelta.toString(),
+          pnl_ratio: discrepancy.pnlRatio,
+          reason: discrepancy.reason,
+          strategy_id: strategy.id,
+          tx_hash_a: txHashA,
+          tx_hash_b: txHashB,
+          estimated_gas_cost: waterfall.estimatedGasCost.toString(),
+          actual_gas_spent: gasSpent.toString(),
+        },
+      });
+
+      // Check if we should auto-lock (only on mainnet with execution enabled)
+      if (arbEnv === 'mainnet' && arbExecutionEnabled) {
+        executionLocked = await checkAndAutoLock(supabase, network);
+      }
+    }
 
     // Trigger auto-refill if REALIZED profit exceeds threshold
     if (realizedProfit >= AUTO_REFILL_PROFIT_THRESHOLD_WEI) {
@@ -1436,6 +1688,15 @@ serve(async (req) => {
       run_id: runData?.id,
       status: 'EXECUTED',
       auto_refill_triggered: realizedProfit >= AUTO_REFILL_PROFIT_THRESHOLD_WEI,
+      // PnL discrepancy info
+      pnl_discrepancy: {
+        delta: discrepancy.pnlDelta.toString(),
+        ratio: discrepancy.pnlRatio,
+        alert_created: alertCreated,
+        alert_type: discrepancy.alertType,
+        severity: discrepancy.severity,
+        execution_locked: executionLocked,
+      },
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
