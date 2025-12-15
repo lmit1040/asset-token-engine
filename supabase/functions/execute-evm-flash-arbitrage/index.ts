@@ -44,6 +44,14 @@ const CHAIN_IDS: Record<string, number> = {
 // Testnets don't have 0x API support
 const TESTNET_NETWORKS = ['SEPOLIA', 'POLYGON_AMOY', 'ARBITRUM_SEPOLIA', 'BSC_TESTNET'];
 
+// PNL Alert Configuration (from env with safe defaults)
+const PNL_ALERT_NEGATIVE_REALIZED = Deno.env.get('PNL_ALERT_NEGATIVE_REALIZED') !== 'false';
+const PNL_ALERT_MAX_NEGATIVE_PROFIT_WEI = BigInt(Deno.env.get('PNL_ALERT_MAX_NEGATIVE_PROFIT_WEI') || '0');
+const PNL_ALERT_MIN_RATIO = parseFloat(Deno.env.get('PNL_ALERT_MIN_RATIO') || '0.50');
+const PNL_ALERT_MAX_GAS_MULTIPLIER = parseFloat(Deno.env.get('PNL_ALERT_MAX_GAS_MULTIPLIER') || '1.50');
+const PNL_FAIL_MAX_CONSECUTIVE = parseInt(Deno.env.get('PNL_FAIL_MAX_CONSECUTIVE') || '3', 10);
+const PNL_FAIL_WINDOW_MINUTES = parseInt(Deno.env.get('PNL_FAIL_WINDOW_MINUTES') || '60', 10);
+
 /**
  * Generate mock quote for testnet strategies (0x API doesn't support testnets)
  * Simulates PROFITABLE opportunities for testing flash loan execution
@@ -146,6 +154,230 @@ async function getZeroXSwapTransaction(params: {
   }
 }
 
+// =====================================================
+// PnL Discrepancy Alerting Functions
+// =====================================================
+
+interface PnlEvaluationResult {
+  hasAlert: boolean;
+  alertType: string;
+  severity: 'warning' | 'critical';
+  details: Record<string, unknown>;
+}
+
+function evaluatePnlDiscrepancy(
+  expectedNetProfit: bigint,
+  realizedProfit: bigint,
+  estimatedGasCost: bigint,
+  actualGasSpent: bigint
+): PnlEvaluationResult | null {
+  const pnlDelta = realizedProfit - expectedNetProfit;
+  const maxExpected = expectedNetProfit > 0n ? expectedNetProfit : 1n;
+  const pnlRatio = Number(realizedProfit) / Number(maxExpected);
+
+  // Alert 1: Negative realized profit
+  if (PNL_ALERT_NEGATIVE_REALIZED && realizedProfit < PNL_ALERT_MAX_NEGATIVE_PROFIT_WEI) {
+    return {
+      hasAlert: true,
+      alertType: 'NEGATIVE_REALIZED_PROFIT',
+      severity: 'critical',
+      details: {
+        realized_profit: realizedProfit.toString(),
+        expected_net_profit: expectedNetProfit.toString(),
+        pnl_delta: pnlDelta.toString(),
+        threshold: PNL_ALERT_MAX_NEGATIVE_PROFIT_WEI.toString(),
+      },
+    };
+  }
+
+  // Alert 2: Low profit ratio
+  if (pnlRatio < PNL_ALERT_MIN_RATIO && expectedNetProfit > 0n) {
+    return {
+      hasAlert: true,
+      alertType: 'LOW_PROFIT_RATIO',
+      severity: pnlRatio < 0 ? 'critical' : 'warning',
+      details: {
+        pnl_ratio: pnlRatio.toFixed(4),
+        min_ratio: PNL_ALERT_MIN_RATIO,
+        realized_profit: realizedProfit.toString(),
+        expected_net_profit: expectedNetProfit.toString(),
+      },
+    };
+  }
+
+  // Alert 3: Excessive gas spend
+  if (estimatedGasCost > 0n && actualGasSpent > 0n) {
+    const gasMultiplier = Number(actualGasSpent) / Number(estimatedGasCost);
+    if (gasMultiplier > PNL_ALERT_MAX_GAS_MULTIPLIER) {
+      return {
+        hasAlert: true,
+        alertType: 'EXCESSIVE_GAS_SPEND',
+        severity: gasMultiplier > 2.0 ? 'critical' : 'warning',
+        details: {
+          gas_multiplier: gasMultiplier.toFixed(2),
+          max_multiplier: PNL_ALERT_MAX_GAS_MULTIPLIER,
+          estimated_gas: estimatedGasCost.toString(),
+          actual_gas: actualGasSpent.toString(),
+        },
+      };
+    }
+  }
+
+  return null;
+}
+
+// deno-lint-ignore no-explicit-any
+async function logPnlAlert(
+  supabase: any,
+  network: string,
+  runId: string | null,
+  alert: PnlEvaluationResult,
+  expectedNetProfit: string,
+  realizedProfit: string,
+  gasSpent: string
+): Promise<void> {
+  try {
+    await supabase.from('ops_arbitrage_alerts').insert({
+      network: network.toUpperCase(),
+      chain: 'EVM',
+      run_id: runId,
+      alert_type: alert.alertType,
+      severity: alert.severity,
+      expected_net_profit: expectedNetProfit,
+      realized_profit: realizedProfit,
+      gas_spent: gasSpent,
+      details_json: alert.details,
+    });
+    console.log(`[execute-evm-flash-arbitrage] PnL alert logged: ${alert.alertType} (${alert.severity})`);
+  } catch (error) {
+    console.error('[execute-evm-flash-arbitrage] Failed to log PnL alert:', error);
+  }
+}
+
+// deno-lint-ignore no-explicit-any
+async function checkAndAutoLock(
+  supabase: any,
+  network: string
+): Promise<boolean> {
+  const arbEnv = Deno.env.get('ARB_ENV');
+  const arbEnabled = Deno.env.get('ARB_EXECUTION_ENABLED') === 'true';
+  
+  // Only auto-lock on mainnet with execution enabled
+  if (arbEnv !== 'mainnet' || !arbEnabled) {
+    return false;
+  }
+
+  try {
+    const windowStart = new Date(Date.now() - PNL_FAIL_WINDOW_MINUTES * 60 * 1000).toISOString();
+    
+    const { data: recentAlerts, error } = await supabase
+      .from('ops_arbitrage_alerts')
+      .select('id, severity, created_at')
+      .eq('network', network.toUpperCase())
+      .gte('created_at', windowStart)
+      .is('acknowledged_at', null)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('[execute-evm-flash-arbitrage] Error checking alerts:', error);
+      return false;
+    }
+
+    // Count consecutive critical/warning alerts
+    // deno-lint-ignore no-explicit-any
+    const criticalCount = (recentAlerts || []).filter((a: any) => 
+      a.severity === 'critical' || a.severity === 'warning'
+    ).length;
+
+    if (criticalCount >= PNL_FAIL_MAX_CONSECUTIVE) {
+      console.log(`[execute-evm-flash-arbitrage] AUTO-LOCK: ${criticalCount} consecutive alerts in ${PNL_FAIL_WINDOW_MINUTES}min window`);
+      
+      await supabase
+        .from('system_settings')
+        .update({
+          arb_execution_locked: true,
+          arb_execution_locked_at: new Date().toISOString(),
+          arb_execution_locked_reason: `Auto-locked: ${criticalCount} consecutive PnL alerts on ${network} flash arbitrage within ${PNL_FAIL_WINDOW_MINUTES} minutes`,
+        })
+        .eq('id', (await supabase.from('system_settings').select('id').limit(1).single()).data?.id);
+
+      return true;
+    }
+
+    return false;
+  } catch (error) {
+    console.error('[execute-evm-flash-arbitrage] Error in auto-lock check:', error);
+    return false;
+  }
+}
+
+// deno-lint-ignore no-explicit-any
+async function isExecutionLocked(supabase: any): Promise<{ locked: boolean; reason: string | null }> {
+  try {
+    const { data } = await supabase
+      .from('system_settings')
+      .select('arb_execution_locked, arb_execution_locked_reason')
+      .limit(1)
+      .single();
+    
+    return {
+      locked: data?.arb_execution_locked || false,
+      reason: data?.arb_execution_locked_reason || null,
+    };
+  } catch {
+    return { locked: false, reason: null };
+  }
+}
+
+// deno-lint-ignore no-explicit-any
+async function logOpsArbitrageEvent(
+  supabase: any,
+  eventData: {
+    chain: string;
+    network: string;
+    mode: string;
+    strategy_id?: string;
+    run_id?: string;
+    notional_in?: string;
+    expected_gross_profit?: string;
+    expected_net_profit?: string;
+    realized_profit?: string;
+    gas_used?: string;
+    effective_gas_price?: string;
+    tx_hash?: string;
+    status: string;
+    error_message?: string;
+  }
+): Promise<string | null> {
+  try {
+    const { data, error } = await supabase
+      .from('ops_arbitrage_events')
+      .insert(eventData)
+      .select('id')
+      .single();
+    
+    if (error) {
+      console.error('[execute-evm-flash-arbitrage] Failed to log ops event:', error);
+      return null;
+    }
+    return data?.id || null;
+  } catch (error) {
+    console.error('[execute-evm-flash-arbitrage] Error logging ops event:', error);
+    return null;
+  }
+}
+
+async function captureBalanceSnapshot(
+  provider: ethers.Provider,
+  walletAddress: string
+): Promise<bigint> {
+  try {
+    return await provider.getBalance(walletAddress);
+  } catch {
+    return 0n;
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -157,6 +389,20 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // Check execution lock
+    const lockStatus = await isExecutionLocked(supabase);
+    if (lockStatus.locked) {
+      console.log('[execute-evm-flash-arbitrage] Execution is LOCKED:', lockStatus.reason);
+      return new Response(JSON.stringify({ 
+        error: 'Execution locked', 
+        reason: lockStatus.reason,
+        locked: true 
+      }), {
+        status: 403,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     // Parse request body first to check for autoExecution flag
     const { strategy_id, simulate_only, autoExecution } = await req.json();
@@ -418,6 +664,19 @@ serve(async (req) => {
         flash_loan_fee: flashLoanFee.toString(),
       });
 
+      // Log simulation event
+      await logOpsArbitrageEvent(supabase, {
+        chain: 'EVM',
+        network: network.toUpperCase(),
+        mode: 'SIMULATION',
+        strategy_id: strategy.id,
+        notional_in: flashLoanAmount,
+        expected_gross_profit: grossProfit.toString(),
+        expected_net_profit: netProfit.toString(),
+        status: 'SKIPPED',
+        error_message: errorMsg,
+      });
+
       return new Response(JSON.stringify({
         success: false,
         message: 'Flash loan arbitrage not profitable',
@@ -451,6 +710,18 @@ serve(async (req) => {
         approved_for_auto_execution: netProfit > 0n,
       });
 
+      // Log simulation event
+      await logOpsArbitrageEvent(supabase, {
+        chain: 'EVM',
+        network: network.toUpperCase(),
+        mode: 'SIMULATION',
+        strategy_id: strategy.id,
+        notional_in: flashLoanAmount,
+        expected_gross_profit: grossProfit.toString(),
+        expected_net_profit: netProfit.toString(),
+        status: 'SIMULATED',
+      });
+
       return new Response(JSON.stringify({
         success: true,
         message: 'Flash loan arbitrage simulation profitable',
@@ -475,6 +746,10 @@ serve(async (req) => {
     }
 
     // EXECUTION PHASE
+    // Capture balance before execution
+    const balanceBefore = await captureBalanceSnapshot(opsWallet.provider, walletAddress);
+    console.log(`[execute-evm-flash-arbitrage] Balance before: ${balanceBefore}`);
+
     // For testnets, simulate successful execution (no real DEX available)
     if (isTestnetNetwork) {
       console.log(`[execute-evm-flash-arbitrage] TESTNET: Simulating successful execution (no real DEX on ${network})`);
@@ -490,6 +765,20 @@ serve(async (req) => {
         flash_loan_amount: flashLoanAmount,
         flash_loan_fee: flashLoanFee.toString(),
         tx_signature: `MOCK_TESTNET_TX_${Date.now()}`,
+      });
+
+      // Log testnet simulation event
+      const eventId = await logOpsArbitrageEvent(supabase, {
+        chain: 'EVM',
+        network: network.toUpperCase(),
+        mode: 'TESTNET_SIMULATION',
+        strategy_id: strategy.id,
+        notional_in: flashLoanAmount,
+        expected_gross_profit: grossProfit.toString(),
+        expected_net_profit: netProfit.toString(),
+        realized_profit: netProfit.toString(), // Simulated = expected
+        tx_hash: `MOCK_TESTNET_TX_${Date.now()}`,
+        status: 'EXECUTED',
       });
 
       return new Response(JSON.stringify({
@@ -582,6 +871,11 @@ serve(async (req) => {
         console.log(`[execute-evm-flash-arbitrage] ATOMIC execution confirmed: ${txHash}`);
         console.log(`[execute-evm-flash-arbitrage] Gas used: ${receipt.gasUsed}`);
 
+        // Capture balance after and calculate realized profit
+        const balanceAfter = await captureBalanceSnapshot(opsWallet.provider, walletAddress);
+        const gasSpent = BigInt(receipt.gasUsed) * BigInt(receipt.gasPrice || 0);
+        const realizedProfit = balanceAfter - balanceBefore + gasSpent; // Add back gas to see actual trade profit
+
         // Check profit in receiver contract
         let contractProfit = 0n;
         try {
@@ -608,6 +902,41 @@ serve(async (req) => {
           run_type: 'ATOMIC',
         });
 
+        // Log ops event
+        const eventId = await logOpsArbitrageEvent(supabase, {
+          chain: 'EVM',
+          network: network.toUpperCase(),
+          mode: 'ATOMIC',
+          strategy_id: strategy.id,
+          notional_in: flashLoanAmount,
+          expected_gross_profit: grossProfit.toString(),
+          expected_net_profit: netProfit.toString(),
+          realized_profit: contractProfit.toString(),
+          gas_used: receipt.gasUsed.toString(),
+          effective_gas_price: receipt.gasPrice?.toString(),
+          tx_hash: txHash,
+          status: 'EXECUTED',
+        });
+
+        // Evaluate PnL discrepancy
+        const estimatedGasCost = 2_000_000n * (receipt.gasPrice || 30_000_000_000n); // estimated 2M gas * gas price
+        const alert = evaluatePnlDiscrepancy(netProfit, contractProfit, estimatedGasCost, gasSpent);
+        
+        if (alert) {
+          await logPnlAlert(
+            supabase,
+            network,
+            eventId,
+            alert,
+            netProfit.toString(),
+            contractProfit.toString(),
+            gasSpent.toString()
+          );
+
+          // Check if we should auto-lock
+          await checkAndAutoLock(supabase, network);
+        }
+
         return new Response(JSON.stringify({
           success: true,
           message: 'ATOMIC flash loan arbitrage executed successfully',
@@ -623,6 +952,7 @@ serve(async (req) => {
           gas_used: receipt.gasUsed.toString(),
           mode: 'ATOMIC',
           status: 'EXECUTED',
+          pnl_alert: alert ? { type: alert.alertType, severity: alert.severity } : null,
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -642,6 +972,19 @@ serve(async (req) => {
           flash_loan_amount: flashLoanAmount,
           flash_loan_fee: flashLoanFee.toString(),
           run_type: 'ATOMIC',
+        });
+
+        // Log failed event
+        await logOpsArbitrageEvent(supabase, {
+          chain: 'EVM',
+          network: network.toUpperCase(),
+          mode: 'ATOMIC',
+          strategy_id: strategy.id,
+          notional_in: flashLoanAmount,
+          expected_gross_profit: grossProfit.toString(),
+          expected_net_profit: netProfit.toString(),
+          status: 'FAILED',
+          error_message: errorMsg,
         });
 
         return new Response(JSON.stringify({ 
@@ -744,6 +1087,8 @@ serve(async (req) => {
       // Execute leg A
       console.log(`[execute-evm-flash-arbitrage] Executing leg A...`);
       let txHashA: string;
+      let gasUsedA = 0n;
+      let gasPriceA = 0n;
       try {
         const txA = await opsWallet.wallet.sendTransaction({
           to: swapTxA.to,
@@ -751,8 +1096,10 @@ serve(async (req) => {
           value: swapTxA.value,
           gasLimit: BigInt(swapTxA.gas) * 2n,
         });
-        await txA.wait();
+        const receiptA = await txA.wait();
         txHashA = txA.hash;
+        gasUsedA = receiptA?.gasUsed || 0n;
+        gasPriceA = receiptA?.gasPrice || 0n;
         console.log(`[execute-evm-flash-arbitrage] Leg A confirmed: ${txHashA}`);
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : 'Leg A failed';
@@ -802,6 +1149,8 @@ serve(async (req) => {
 
       console.log(`[execute-evm-flash-arbitrage] Executing leg B...`);
       let txHashB: string;
+      let gasUsedB = 0n;
+      let gasPriceB = 0n;
       try {
         const txB = await opsWallet.wallet.sendTransaction({
           to: swapTxB.to,
@@ -809,8 +1158,10 @@ serve(async (req) => {
           value: swapTxB.value,
           gasLimit: BigInt(swapTxB.gas) * 2n,
         });
-        await txB.wait();
+        const receiptB = await txB.wait();
         txHashB = txB.hash;
+        gasUsedB = receiptB?.gasUsed || 0n;
+        gasPriceB = receiptB?.gasPrice || 0n;
         console.log(`[execute-evm-flash-arbitrage] Leg B confirmed: ${txHashB}`);
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : 'Leg B failed';
@@ -831,6 +1182,11 @@ serve(async (req) => {
         });
       }
 
+      // Capture balance after and calculate realized profit
+      const balanceAfter = await captureBalanceSnapshot(opsWallet.provider, walletAddress);
+      const totalGasSpent = (gasUsedA * gasPriceA) + (gasUsedB * gasPriceB);
+      const realizedProfit = balanceAfter - balanceBefore + totalGasSpent;
+
       // Record successful legacy execution
       await supabase.from('arbitrage_runs').insert({
         strategy_id: strategy.id,
@@ -839,13 +1195,48 @@ serve(async (req) => {
         status: 'EXECUTED',
         tx_signature: `${txHashA},${txHashB}`,
         estimated_profit_lamports: Number(netProfit / 1_000_000_000n),
-        actual_profit_lamports: Number(netProfit / 1_000_000_000n),
+        actual_profit_lamports: Number(realizedProfit / 1_000_000_000n),
         used_flash_loan: true,
         flash_loan_provider: providerName,
         flash_loan_amount: flashLoanAmount,
         flash_loan_fee: flashLoanFee.toString(),
         run_type: 'LEGACY',
       });
+
+      // Log ops event
+      const eventId = await logOpsArbitrageEvent(supabase, {
+        chain: 'EVM',
+        network: network.toUpperCase(),
+        mode: 'LEGACY',
+        strategy_id: strategy.id,
+        notional_in: flashLoanAmount,
+        expected_gross_profit: grossProfit.toString(),
+        expected_net_profit: netProfit.toString(),
+        realized_profit: realizedProfit.toString(),
+        gas_used: (gasUsedA + gasUsedB).toString(),
+        effective_gas_price: gasPriceB.toString(),
+        tx_hash: `${txHashA},${txHashB}`,
+        status: 'EXECUTED',
+      });
+
+      // Evaluate PnL discrepancy
+      const estimatedGasCost = BigInt(swapTxA.gas) * 2n + BigInt(swapTxB.gas) * 2n;
+      const alert = evaluatePnlDiscrepancy(netProfit, realizedProfit, estimatedGasCost, totalGasSpent);
+      
+      if (alert) {
+        await logPnlAlert(
+          supabase,
+          network,
+          eventId,
+          alert,
+          netProfit.toString(),
+          realizedProfit.toString(),
+          totalGasSpent.toString()
+        );
+
+        // Check if we should auto-lock
+        await checkAndAutoLock(supabase, network);
+      }
 
       console.log(`[execute-evm-flash-arbitrage] LEGACY mode completed successfully`);
 
@@ -862,9 +1253,11 @@ serve(async (req) => {
         flash_loan_fee: flashLoanFee.toString(),
         gross_profit: grossProfit.toString(),
         net_profit: netProfit.toString(),
+        realized_profit: realizedProfit.toString(),
         net_profit_eth: Number(netProfit) / 1e18,
         mode: 'LEGACY',
         status: 'EXECUTED',
+        pnl_alert: alert ? { type: alert.alertType, severity: alert.severity } : null,
         note: 'Deploy receiver contract for true atomic flash loan execution.',
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
