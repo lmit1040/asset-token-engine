@@ -39,6 +39,7 @@ import {
   History
 } from 'lucide-react';
 import { PnLTrendsChart } from '@/components/arbitrage/PnLTrendsChart';
+import { EvmWalletBalancesCard } from '@/components/arbitrage/EvmWalletBalancesCard';
 
 interface SystemSettings {
   id: string;
@@ -886,6 +887,9 @@ export default function AdminAutomatedArbitragePage() {
             </CardContent>
           </Card>
         )}
+
+        {/* EVM Wallet Balances */}
+        <EvmWalletBalancesCard />
 
         {/* Mainnet Threshold Configuration (only shown in mainnet mode) */}
         {settings?.is_mainnet_mode && (
