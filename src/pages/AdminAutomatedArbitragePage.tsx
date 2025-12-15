@@ -891,6 +891,61 @@ export default function AdminAutomatedArbitragePage() {
         {/* EVM Wallet Balances */}
         <EvmWalletBalancesCard />
 
+        {/* Solana Arbitrage Configuration */}
+        <Card className="border-border/50">
+          <CardHeader>
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <Settings className="h-4 w-4" />
+              Solana Arbitrage Configuration (Environment)
+            </CardTitle>
+            <CardDescription>
+              These values are configured via environment secrets and control Solana arbitrage profitability gates
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              <div className="p-3 rounded-lg bg-muted/50 space-y-1">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">ARB_ENV</p>
+                <p className="text-lg font-semibold font-mono">
+                  {settings?.is_mainnet_mode ? 'mainnet' : 'devnet/testnet'}
+                </p>
+                <p className="text-xs text-muted-foreground">Network environment for execution</p>
+              </div>
+              <div className="p-3 rounded-lg bg-muted/50 space-y-1">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">MIN_NET_PROFIT_LAMPORTS</p>
+                <p className="text-lg font-semibold font-mono">200,000</p>
+                <p className="text-xs text-muted-foreground">~0.0002 SOL minimum net profit</p>
+              </div>
+              <div className="p-3 rounded-lg bg-muted/50 space-y-1">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">MIN_PROFIT_BPS</p>
+                <p className="text-lg font-semibold font-mono">10 bps</p>
+                <p className="text-xs text-muted-foreground">0.10% minimum profit percentage</p>
+              </div>
+              <div className="p-3 rounded-lg bg-muted/50 space-y-1">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">MAX_NOTIONAL_LAMPORTS</p>
+                <p className="text-lg font-semibold font-mono">100B</p>
+                <p className="text-xs text-muted-foreground">~100 SOL max trade size</p>
+              </div>
+            </div>
+            <div className="mt-4 p-3 rounded-lg bg-primary/5 border border-primary/20">
+              <div className="flex items-start gap-2">
+                <Info className="h-4 w-4 text-primary mt-0.5" />
+                <div className="text-sm">
+                  <p className="font-medium text-primary">Net Profit Waterfall</p>
+                  <p className="text-muted-foreground mt-1">
+                    Solana arbitrage now calculates net profit after deducting: route fees (from Jupiter), 
+                    prioritization fees, compute budget costs, and slippage buffer. Execution only occurs when 
+                    <code className="mx-1 px-1 py-0.5 bg-muted rounded text-xs">netProfitLamports &gt; MIN_NET_PROFIT</code> 
+                    AND 
+                    <code className="mx-1 px-1 py-0.5 bg-muted rounded text-xs">netProfitBps &gt; MIN_PROFIT_BPS</code>.
+                    Mock quotes are blocked from execution.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Mainnet Threshold Configuration (only shown in mainnet mode) */}
         {settings?.is_mainnet_mode && (
           <Card className="border-destructive/30">
