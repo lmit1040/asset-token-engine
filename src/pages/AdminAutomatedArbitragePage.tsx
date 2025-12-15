@@ -810,7 +810,7 @@ export default function AdminAutomatedArbitragePage() {
               <Timer className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">5 min</div>
+              <div className="text-2xl font-bold">1 min</div>
               <p className="text-xs text-muted-foreground">
                 Last: {automationLogs[0] ? new Date(automationLogs[0].cycle_started_at).toLocaleTimeString() : 'N/A'}
               </p>
