@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
@@ -20,8 +20,14 @@ import {
   AlertTriangle, 
   CheckCircle2, 
   XCircle,
-  Loader2
+  Loader2,
+  RefreshCw,
+  Wifi,
+  WifiOff,
+  Clock
 } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
 interface NetworkModeCardProps {
   isMainnetMode: boolean;
@@ -29,27 +35,113 @@ interface NetworkModeCardProps {
   isUpdating?: boolean;
 }
 
-interface NetworkStatus {
+interface RpcTestResult {
+  network: string;
   name: string;
-  mainnet: string;
-  testnet: string;
-  hasCustomRpc: boolean;
+  url: string;
+  isCustomRpc: boolean;
+  isMainnet: boolean;
+  status: 'ok' | 'error' | 'timeout';
+  latencyMs: number | null;
+  error?: string;
+  blockNumber?: number | string;
 }
 
-const NETWORK_STATUS: NetworkStatus[] = [
-  { name: 'Solana', mainnet: 'Mainnet', testnet: 'Devnet', hasCustomRpc: true },
-  { name: 'Polygon', mainnet: 'Polygon', testnet: 'Amoy', hasCustomRpc: true },
-  { name: 'Ethereum', mainnet: 'Mainnet', testnet: 'Sepolia', hasCustomRpc: true },
-  { name: 'Arbitrum', mainnet: 'Arbitrum', testnet: 'Sepolia', hasCustomRpc: true },
-  { name: 'BSC', mainnet: 'Mainnet', testnet: 'Testnet', hasCustomRpc: true },
-];
+interface RpcTestSummary {
+  mainnetReady: boolean;
+  mainnetOk: number;
+  mainnetTotal: number;
+  testnetOk: number;
+  testnetTotal: number;
+  avgMainnetLatency: number | null;
+  avgTestnetLatency: number | null;
+}
+
+// Map network keys to display names for current mode
+const NETWORK_DISPLAY_MAP: Record<string, { mainnet: string; testnet: string }> = {
+  SOLANA: { mainnet: 'SOLANA_MAINNET', testnet: 'SOLANA_DEVNET' },
+  POLYGON: { mainnet: 'POLYGON', testnet: 'POLYGON_AMOY' },
+  ETHEREUM: { mainnet: 'ETHEREUM', testnet: 'SEPOLIA' },
+  ARBITRUM: { mainnet: 'ARBITRUM', testnet: 'ARBITRUM_SEPOLIA' },
+  BSC: { mainnet: 'BSC', testnet: 'BSC_TESTNET' },
+};
 
 export function NetworkModeCard({ isMainnetMode, onToggle, isUpdating }: NetworkModeCardProps) {
   const [showMainnetConfirm, setShowMainnetConfirm] = useState(false);
   const [confirmStep, setConfirmStep] = useState(1);
+  const [rpcResults, setRpcResults] = useState<RpcTestResult[]>([]);
+  const [rpcSummary, setRpcSummary] = useState<RpcTestSummary | null>(null);
+  const [testingRpc, setTestingRpc] = useState(false);
+  const [lastTestedAt, setLastTestedAt] = useState<Date | null>(null);
 
-  const handleToggleAttempt = (checked: boolean) => {
+  // Test RPC connectivity
+  const testRpcConnectivity = async () => {
+    setTestingRpc(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('test-rpc-connectivity', {
+        body: { testMainnet: true, testTestnet: true }
+      });
+      
+      if (error) throw error;
+      
+      setRpcResults(data.results || []);
+      setRpcSummary(data.summary || null);
+      setLastTestedAt(new Date());
+      
+      if (data.summary?.mainnetReady) {
+        toast.success('All RPC endpoints are reachable');
+      } else {
+        toast.warning('Some RPC endpoints are unreachable');
+      }
+    } catch (error) {
+      console.error('Error testing RPC connectivity:', error);
+      toast.error('Failed to test RPC connectivity');
+    } finally {
+      setTestingRpc(false);
+    }
+  };
+
+  // Get result for a specific network based on current mode
+  const getNetworkResult = (networkKey: string): RpcTestResult | undefined => {
+    const mapping = NETWORK_DISPLAY_MAP[networkKey];
+    if (!mapping) return undefined;
+    
+    const targetNetwork = isMainnetMode ? mapping.mainnet : mapping.testnet;
+    return rpcResults.find(r => r.network === targetNetwork);
+  };
+
+  const handleToggleAttempt = async (checked: boolean) => {
     if (checked) {
+      // Test connectivity before allowing mainnet switch
+      if (!rpcSummary?.mainnetReady) {
+        setTestingRpc(true);
+        try {
+          const { data, error } = await supabase.functions.invoke('test-rpc-connectivity', {
+            body: { testMainnet: true, testTestnet: false }
+          });
+          
+          if (error) throw error;
+          
+          setRpcResults(prev => {
+            const nonMainnet = prev.filter(r => !r.isMainnet);
+            return [...nonMainnet, ...(data.results || [])];
+          });
+          setRpcSummary(data.summary || null);
+          setLastTestedAt(new Date());
+          
+          if (!data.summary?.mainnetReady) {
+            toast.error('Cannot enable mainnet: Some RPC endpoints are unreachable. Please fix the connectivity issues first.');
+            return;
+          }
+        } catch (error) {
+          console.error('Error testing RPC connectivity:', error);
+          toast.error('Failed to verify RPC connectivity');
+          return;
+        } finally {
+          setTestingRpc(false);
+        }
+      }
+      
       // Switching TO mainnet requires confirmation
       setConfirmStep(1);
       setShowMainnetConfirm(true);
@@ -72,6 +164,20 @@ export function NetworkModeCard({ isMainnetMode, onToggle, isUpdating }: Network
   const handleMainnetCancel = () => {
     setShowMainnetConfirm(false);
     setConfirmStep(1);
+  };
+
+  const getLatencyColor = (latencyMs: number | null): string => {
+    if (latencyMs === null) return 'text-muted-foreground';
+    if (latencyMs < 200) return 'text-green-500';
+    if (latencyMs < 500) return 'text-amber-500';
+    return 'text-destructive';
+  };
+
+  const getStatusIcon = (result: RpcTestResult | undefined) => {
+    if (!result) return <Clock className="h-3.5 w-3.5 text-muted-foreground" />;
+    if (result.status === 'ok') return <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />;
+    if (result.status === 'timeout') return <WifiOff className="h-3.5 w-3.5 text-amber-500" />;
+    return <XCircle className="h-3.5 w-3.5 text-destructive" />;
   };
 
   return (
@@ -108,6 +214,20 @@ export function NetworkModeCard({ isMainnetMode, onToggle, isUpdating }: Network
             </div>
             
             <div className="flex items-center gap-4">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={testRpcConnectivity}
+                disabled={testingRpc}
+              >
+                {testingRpc ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Wifi className="h-4 w-4 mr-2" />
+                )}
+                Test RPCs
+              </Button>
+              
               <div className="flex flex-col items-end gap-1">
                 <Label htmlFor="network-mode" className="text-sm font-medium">
                   {isMainnetMode ? 'Live Mode' : 'Test Mode'}
@@ -120,45 +240,108 @@ export function NetworkModeCard({ isMainnetMode, onToggle, isUpdating }: Network
                 id="network-mode"
                 checked={isMainnetMode}
                 onCheckedChange={handleToggleAttempt}
-                disabled={isUpdating}
+                disabled={isUpdating || testingRpc}
                 className={isMainnetMode ? 'data-[state=checked]:bg-destructive' : ''}
               />
-              {isUpdating && <Loader2 className="h-4 w-4 animate-spin" />}
+              {(isUpdating || testingRpc) && <Loader2 className="h-4 w-4 animate-spin" />}
             </div>
           </div>
         </CardHeader>
         
-        <CardContent>
+        <CardContent className="space-y-4">
+          {/* RPC Status Summary */}
+          {rpcSummary && (
+            <div className="flex items-center gap-4 p-2 rounded-lg bg-background/50 text-sm">
+              <div className="flex items-center gap-2">
+                {rpcSummary.mainnetReady ? (
+                  <CheckCircle2 className="h-4 w-4 text-green-500" />
+                ) : (
+                  <AlertTriangle className="h-4 w-4 text-amber-500" />
+                )}
+                <span>
+                  Mainnet: {rpcSummary.mainnetOk}/{rpcSummary.mainnetTotal} OK
+                  {rpcSummary.avgMainnetLatency && (
+                    <span className={`ml-1 ${getLatencyColor(rpcSummary.avgMainnetLatency)}`}>
+                      (avg {rpcSummary.avgMainnetLatency}ms)
+                    </span>
+                  )}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span>
+                  Testnet: {rpcSummary.testnetOk}/{rpcSummary.testnetTotal} OK
+                  {rpcSummary.avgTestnetLatency && (
+                    <span className={`ml-1 ${getLatencyColor(rpcSummary.avgTestnetLatency)}`}>
+                      (avg {rpcSummary.avgTestnetLatency}ms)
+                    </span>
+                  )}
+                </span>
+              </div>
+              {lastTestedAt && (
+                <span className="text-xs text-muted-foreground ml-auto">
+                  Tested: {lastTestedAt.toLocaleTimeString()}
+                </span>
+              )}
+            </div>
+          )}
+          
+          {/* Network Status Grid */}
           <div className="grid gap-3 sm:grid-cols-5">
-            {NETWORK_STATUS.map((network) => (
-              <div 
-                key={network.name}
-                className={`p-3 rounded-lg border ${
-                  isMainnetMode 
-                    ? 'border-destructive/30 bg-destructive/5' 
-                    : 'border-amber-500/30 bg-amber-500/5'
-                }`}
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-medium text-sm">{network.name}</span>
-                  {network.hasCustomRpc ? (
-                    <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
-                  ) : (
-                    <XCircle className="h-3.5 w-3.5 text-muted-foreground" />
+            {Object.keys(NETWORK_DISPLAY_MAP).map((networkKey) => {
+              const result = getNetworkResult(networkKey);
+              const mapping = NETWORK_DISPLAY_MAP[networkKey];
+              const displayNetwork = isMainnetMode ? mapping.mainnet : mapping.testnet;
+              
+              return (
+                <div 
+                  key={networkKey}
+                  className={`p-3 rounded-lg border transition-colors ${
+                    result?.status === 'ok'
+                      ? 'border-green-500/30 bg-green-500/5'
+                      : result?.status === 'error' || result?.status === 'timeout'
+                        ? 'border-destructive/30 bg-destructive/5'
+                        : isMainnetMode 
+                          ? 'border-destructive/30 bg-destructive/5' 
+                          : 'border-amber-500/30 bg-amber-500/5'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-medium text-sm">{networkKey}</span>
+                    {getStatusIcon(result)}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {displayNetwork.replace('_', ' ')}
+                  </div>
+                  {result && (
+                    <div className="mt-2 space-y-1">
+                      {result.latencyMs !== null && (
+                        <div className={`text-xs font-mono ${getLatencyColor(result.latencyMs)}`}>
+                          {result.latencyMs}ms
+                        </div>
+                      )}
+                      {result.error && (
+                        <div className="text-[10px] text-destructive truncate" title={result.error}>
+                          {result.error}
+                        </div>
+                      )}
+                      <div className="text-[10px] text-muted-foreground/70">
+                        {result.isCustomRpc ? 'Alchemy RPC' : 'Public RPC'}
+                      </div>
+                    </div>
+                  )}
+                  {!result && (
+                    <div className="text-[10px] text-muted-foreground/70 mt-2">
+                      Click "Test RPCs"
+                    </div>
                   )}
                 </div>
-                <div className="text-xs text-muted-foreground">
-                  {isMainnetMode ? network.mainnet : network.testnet}
-                </div>
-                <div className="text-[10px] text-muted-foreground/70 mt-1">
-                  {network.hasCustomRpc ? 'Alchemy RPC' : 'Public RPC'}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
           
+          {/* Mode badges */}
           {isMainnetMode && (
-            <div className="mt-4 flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2">
               <Badge variant="destructive">Live Trades</Badge>
               <Badge variant="destructive">Real Gas Costs</Badge>
               <Badge variant="destructive">Real PnL</Badge>
@@ -166,13 +349,24 @@ export function NetworkModeCard({ isMainnetMode, onToggle, isUpdating }: Network
           )}
           
           {!isMainnetMode && (
-            <div className="mt-4 flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2">
               <Badge variant="secondary" className="bg-amber-500/20 text-amber-700 dark:text-amber-300">
                 Simulated Only
               </Badge>
               <Badge variant="secondary" className="bg-amber-500/20 text-amber-700 dark:text-amber-300">
                 No Real Transactions
               </Badge>
+            </div>
+          )}
+          
+          {/* Mainnet readiness warning */}
+          {rpcSummary && !rpcSummary.mainnetReady && !isMainnetMode && (
+            <div className="flex items-center gap-2 p-2 rounded-lg bg-destructive/10 text-sm text-destructive">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <span>
+                Cannot enable mainnet mode: Some RPC endpoints are unreachable. 
+                Please check your RPC configuration.
+              </span>
             </div>
           )}
         </CardContent>
@@ -201,6 +395,14 @@ export function NetworkModeCard({ isMainnetMode, onToggle, isUpdating }: Network
                       <li>Arbitrum → Mainnet</li>
                       <li>BSC → Mainnet</li>
                     </ul>
+                    {rpcSummary && (
+                      <div className="flex items-center gap-2 p-2 rounded bg-green-500/10 text-green-700 dark:text-green-400">
+                        <CheckCircle2 className="h-4 w-4" />
+                        <span className="text-sm">
+                          All {rpcSummary.mainnetTotal} mainnet RPC endpoints verified
+                        </span>
+                      </div>
+                    )}
                   </>
                 ) : (
                   <>
@@ -213,9 +415,6 @@ export function NetworkModeCard({ isMainnetMode, onToggle, isUpdating }: Network
                       <li>Real gas costs will be incurred</li>
                       <li>Profits and losses will be real</li>
                     </ul>
-                    <p className="text-sm text-muted-foreground">
-                      Ensure all RPC endpoints are properly configured before proceeding.
-                    </p>
                   </>
                 )}
               </div>
