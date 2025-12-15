@@ -398,6 +398,69 @@ export type Database = {
           },
         ]
       }
+      detected_pools: {
+        Row: {
+          arbitrage_attempted: boolean | null
+          arbitrage_result: string | null
+          chain: string
+          created_block: number | null
+          detected_at: string
+          dex: string
+          first_trade_at: string | null
+          id: string
+          is_rug_risk: boolean | null
+          liquidity_usd: number | null
+          pool_address: string
+          rug_risk_reasons: string[] | null
+          status: string
+          token0_address: string
+          token0_symbol: string | null
+          token1_address: string
+          token1_symbol: string | null
+          updated_at: string
+        }
+        Insert: {
+          arbitrage_attempted?: boolean | null
+          arbitrage_result?: string | null
+          chain?: string
+          created_block?: number | null
+          detected_at?: string
+          dex: string
+          first_trade_at?: string | null
+          id?: string
+          is_rug_risk?: boolean | null
+          liquidity_usd?: number | null
+          pool_address: string
+          rug_risk_reasons?: string[] | null
+          status?: string
+          token0_address: string
+          token0_symbol?: string | null
+          token1_address: string
+          token1_symbol?: string | null
+          updated_at?: string
+        }
+        Update: {
+          arbitrage_attempted?: boolean | null
+          arbitrage_result?: string | null
+          chain?: string
+          created_block?: number | null
+          detected_at?: string
+          dex?: string
+          first_trade_at?: string | null
+          id?: string
+          is_rug_risk?: boolean | null
+          liquidity_usd?: number | null
+          pool_address?: string
+          rug_risk_reasons?: string[] | null
+          status?: string
+          token0_address?: string
+          token0_symbol?: string | null
+          token1_address?: string
+          token1_symbol?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       evm_fee_payer_keys: {
         Row: {
           balance_native: number | null
