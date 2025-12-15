@@ -74,21 +74,13 @@ export interface EvmOpsWallet {
   chainId: number;
 }
 
-// Cache wallet instances per network
-const walletCache: Record<string, EvmOpsWallet> = {};
-
 /**
  * Get the EVM operations wallet for a specific network
  * Defaults to Polygon if no network specified
+ * NOTE: Creates fresh provider/wallet instances each call to avoid network change errors
  */
 export function getEvmOpsWallet(network: string = "POLYGON"): EvmOpsWallet {
   const normalizedNetwork = network.toUpperCase();
-  
-  // Return cached instance if available
-  if (walletCache[normalizedNetwork]) {
-    console.log(`[evm-ops-wallet] Using cached wallet for ${normalizedNetwork}`);
-    return walletCache[normalizedNetwork];
-  }
 
   const privateKey = Deno.env.get("EVM_OPS_PRIVATE_KEY");
   if (!privateKey) {
@@ -104,7 +96,9 @@ export function getEvmOpsWallet(network: string = "POLYGON"): EvmOpsWallet {
 
   console.log(`[evm-ops-wallet] Initializing wallet for ${normalizedNetwork} (chainId: ${chainId})`);
 
-  const provider = new ethers.JsonRpcProvider(rpcUrl, chainId);
+  // Create static network to prevent network detection issues
+  const staticNetwork = new ethers.Network(normalizedNetwork, chainId);
+  const provider = new ethers.JsonRpcProvider(rpcUrl, staticNetwork, { staticNetwork: true });
   
   // Ensure private key has 0x prefix
   const formattedKey = privateKey.startsWith("0x") ? privateKey : `0x${privateKey}`;
@@ -117,9 +111,6 @@ export function getEvmOpsWallet(network: string = "POLYGON"): EvmOpsWallet {
     network: normalizedNetwork,
     chainId,
   };
-
-  // Cache the wallet instance
-  walletCache[normalizedNetwork] = opsWallet;
 
   console.log(`[evm-ops-wallet] Wallet initialized: ${wallet.address} on ${normalizedNetwork}`);
 
