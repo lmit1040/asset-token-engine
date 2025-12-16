@@ -570,9 +570,47 @@ export default function AdminAutomatedArbitragePage() {
     );
   }
 
+  // Check if any Polygon strategies have auto-execution enabled
+  const polygonAutoEnabled = strategies.some(s => 
+    s.evm_network === 'POLYGON' && s.is_auto_enabled
+  );
+  
+  // Execution is only "armed" if auto_arbitrage_enabled AND at least one strategy has auto enabled
+  const isExecutionArmed = settings?.auto_arbitrage_enabled && polygonAutoEnabled;
+
   return (
     <DashboardLayout title="Automated Arbitrage" subtitle="Internal cost optimization & fee payer management">
       <div className="space-y-6">
+        {/* Execution Mode Banner - Critical Safety Indicator */}
+        <Card className={isExecutionArmed ? "border-destructive bg-destructive/10" : "border-amber-500 bg-amber-500/10"}>
+          <CardContent className="py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                {isExecutionArmed ? (
+                  <AlertTriangle className="h-6 w-6 text-destructive animate-pulse" />
+                ) : (
+                  <Search className="h-6 w-6 text-amber-500" />
+                )}
+                <div>
+                  <h3 className={`font-bold text-lg ${isExecutionArmed ? 'text-destructive' : 'text-amber-600'}`}>
+                    {isExecutionArmed ? '⚠️ EXECUTION ARMED' : '🔍 SCAN ONLY MODE'}
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    {isExecutionArmed 
+                      ? 'Auto-execution is ENABLED. Trades may execute automatically!'
+                      : 'Safe mode: Scanning for opportunities only. Manual execution required.'}
+                  </p>
+                </div>
+              </div>
+              <div className="text-right text-xs text-muted-foreground space-y-1">
+                <div>Auto-Arbitrage: <Badge variant={settings?.auto_arbitrage_enabled ? "destructive" : "secondary"}>{settings?.auto_arbitrage_enabled ? 'ON' : 'OFF'}</Badge></div>
+                <div>Polygon Auto-Exec: <Badge variant={polygonAutoEnabled ? "destructive" : "secondary"}>{polygonAutoEnabled ? 'ENABLED' : 'DISABLED'}</Badge></div>
+                <div className="text-[10px] opacity-70">Requires: ARB_EXECUTION_ENABLED=true + Manual Click</div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Unified Network Mode Toggle */}
         <NetworkModeCard
           isMainnetMode={settings?.is_mainnet_mode || false}
