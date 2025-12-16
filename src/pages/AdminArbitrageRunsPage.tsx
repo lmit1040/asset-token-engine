@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Activity, ExternalLink, AlertTriangle, RefreshCw, Zap } from 'lucide-react';
+import { Activity, ExternalLink, AlertTriangle, RefreshCw, Zap, CheckCircle, Radio } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 // Auto-refill thresholds (matching edge function values)
@@ -45,6 +45,29 @@ const EXPLORER_URLS: Record<string, { url: string; name: string }> = {
   ETHEREUM: { url: 'https://etherscan.io/tx/', name: 'Etherscan' },
   ARBITRUM: { url: 'https://arbiscan.io/tx/', name: 'Arbiscan' },
   BSC: { url: 'https://bscscan.com/tx/', name: 'BscScan' },
+};
+
+// Testnet networks
+const TESTNET_NETWORKS = ['SEPOLIA', 'AMOY', 'GOERLI', 'MUMBAI', 'BSC_TESTNET', 'ARBITRUM_SEPOLIA'];
+
+// Helper: Check if network is testnet
+const isTestnetNetwork = (network: string | null): boolean => {
+  if (!network) return false;
+  return TESTNET_NETWORKS.includes(network.toUpperCase());
+};
+
+// Helper: Check if transaction is mock/simulated
+const isMockTransaction = (txSignature: string | null): boolean => {
+  if (!txSignature) return false;
+  return txSignature.startsWith('MOCK_') || txSignature.includes('TESTNET');
+};
+
+// Helper: Determine execution type
+const getExecutionType = (status: string, network: string | null, txSignature: string | null): 'REAL' | 'MOCK' | 'TESTNET' | 'SCAN' => {
+  if (status === 'SIMULATED') return 'SCAN';
+  if (isMockTransaction(txSignature)) return 'MOCK';
+  if (isTestnetNetwork(network)) return 'TESTNET';
+  return 'REAL';
 };
 
 export default function AdminArbitrageRunsPage() {
@@ -169,7 +192,7 @@ export default function AdminArbitrageRunsPage() {
         </Alert>
 
         {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
           <Card>
             <CardHeader className="pb-2">
               <CardDescription>Total Runs</CardDescription>
@@ -178,17 +201,39 @@ export default function AdminArbitrageRunsPage() {
           </Card>
           <Card>
             <CardHeader className="pb-2">
-              <CardDescription>Simulated</CardDescription>
+              <CardDescription>Scans</CardDescription>
               <CardTitle className="text-2xl text-blue-600">
                 {runs.filter(r => r.status === 'SIMULATED').length}
               </CardTitle>
             </CardHeader>
           </Card>
-          <Card>
+          <Card className="border-green-500/50 bg-green-500/5">
             <CardHeader className="pb-2">
-              <CardDescription>Executed</CardDescription>
+              <CardDescription className="flex items-center gap-1">
+                <CheckCircle className="h-3 w-3 text-green-600" />
+                Real Executions
+              </CardDescription>
               <CardTitle className="text-2xl text-green-600">
-                {runs.filter(r => r.status === 'EXECUTED').length}
+                {runs.filter(r => {
+                  const strategy = strategies.find(s => s.id === r.strategy_id);
+                  const execType = getExecutionType(r.status, strategy?.evm_network || null, r.tx_signature);
+                  return r.status === 'EXECUTED' && execType === 'REAL';
+                }).length}
+              </CardTitle>
+            </CardHeader>
+          </Card>
+          <Card className="border-amber-500/50 bg-amber-500/5">
+            <CardHeader className="pb-2">
+              <CardDescription className="flex items-center gap-1">
+                <AlertTriangle className="h-3 w-3 text-amber-600" />
+                Testnet/Mock
+              </CardDescription>
+              <CardTitle className="text-2xl text-amber-600">
+                {runs.filter(r => {
+                  const strategy = strategies.find(s => s.id === r.strategy_id);
+                  const execType = getExecutionType(r.status, strategy?.evm_network || null, r.tx_signature);
+                  return r.status === 'EXECUTED' && (execType === 'MOCK' || execType === 'TESTNET');
+                }).length}
               </CardTitle>
             </CardHeader>
           </Card>
@@ -204,18 +249,11 @@ export default function AdminArbitrageRunsPage() {
             <CardHeader className="pb-2">
               <CardDescription className="flex items-center gap-1">
                 <Zap className="h-3 w-3 text-green-600" />
-                Auto-Refills Triggered
+                Auto-Refills
               </CardDescription>
               <CardTitle className="text-2xl text-green-600">
                 {runs.filter(r => didTriggerAutoRefill(r)).length}
               </CardTitle>
-              <p className="text-xs text-muted-foreground mt-1">
-                ~{formatLamportsToSol(
-                  runs
-                    .filter(r => didTriggerAutoRefill(r))
-                    .reduce((sum, r) => sum + (r.actual_profit_lamports ?? r.estimated_profit_lamports ?? 0), 0)
-                )} recycled
-              </p>
             </CardHeader>
           </Card>
         </div>
@@ -282,96 +320,123 @@ export default function AdminArbitrageRunsPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Strategy</TableHead>
+                    <TableHead>Network</TableHead>
+                    <TableHead>Type</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-center">Auto-Refill</TableHead>
-                    <TableHead className="text-right">Est. Profit (SOL)</TableHead>
-                    <TableHead className="text-right">Actual Profit (SOL)</TableHead>
+                    <TableHead className="text-right">Est. Profit</TableHead>
+                    <TableHead className="text-right">Actual Profit</TableHead>
                     <TableHead>TX Signature</TableHead>
-                    <TableHead>Error</TableHead>
                     <TableHead>Started</TableHead>
-                    <TableHead>Finished</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {runs.map((run) => (
-                    <TableRow 
-                      key={run.id} 
-                      className="cursor-pointer hover:bg-muted/50"
-                      onClick={() => setSelectedRun(run)}
-                    >
-                      <TableCell className="font-medium">
-                        {strategyNames[run.strategy_id] || run.strategy_id.slice(0, 8)}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={getStatusVariant(run.status)}>
-                          {run.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-center">
-                        {didTriggerAutoRefill(run) ? (
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger>
-                                <div className="inline-flex items-center gap-1 text-green-600">
-                                  <Zap className="h-4 w-4 fill-current" />
-                                </div>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Auto-refill triggered</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right font-mono">
-                        {formatLamportsToSol(run.estimated_profit_lamports)}
-                      </TableCell>
-                      <TableCell className="text-right font-mono">
-                        {formatLamportsToSol(run.actual_profit_lamports)}
-                      </TableCell>
-                      <TableCell>
-                        {run.tx_signature ? (
-                          <div className="flex flex-col gap-1">
-                            {run.tx_signature.split(',').map((sig, idx) => (
-                              <a 
-                                key={idx}
-                                href={getExplorerUrl(sig.trim(), run.strategy_id)}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-primary hover:underline flex items-center gap-1"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                {sig.trim().slice(0, 8)}...
-                                <ExternalLink className="h-3 w-3" />
-                              </a>
-                            ))}
-                          </div>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {run.error_message ? (
-                          <span className="text-sm text-destructive truncate max-w-32 block">
-                            {run.error_message.slice(0, 30)}...
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {format(new Date(run.started_at), 'MMM d, HH:mm:ss')}
-                      </TableCell>
-                      <TableCell>
-                        {run.finished_at 
-                          ? format(new Date(run.finished_at), 'HH:mm:ss')
-                          : <span className="text-muted-foreground">-</span>
-                        }
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {runs.map((run) => {
+                    const strategy = strategies.find(s => s.id === run.strategy_id);
+                    const network = strategy?.chain_type === 'EVM' ? strategy?.evm_network : 'SOLANA';
+                    const execType = getExecutionType(run.status, strategy?.evm_network || null, run.tx_signature);
+                    const isTestnet = isTestnetNetwork(network);
+                    const isMock = isMockTransaction(run.tx_signature);
+                    
+                    return (
+                      <TableRow 
+                        key={run.id} 
+                        className="cursor-pointer hover:bg-muted/50"
+                        onClick={() => setSelectedRun(run)}
+                      >
+                        <TableCell className="font-medium">
+                          {strategyNames[run.strategy_id] || run.strategy_id.slice(0, 8)}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={isTestnet ? 'outline' : 'secondary'} className={isTestnet ? 'border-amber-500 text-amber-600' : ''}>
+                            {network || 'Unknown'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {execType === 'REAL' && (
+                            <Badge className="bg-green-600 hover:bg-green-700">
+                              <CheckCircle className="h-3 w-3 mr-1" />
+                              REAL
+                            </Badge>
+                          )}
+                          {execType === 'MOCK' && (
+                            <Badge variant="outline" className="border-amber-500 text-amber-600">
+                              <Radio className="h-3 w-3 mr-1" />
+                              MOCK
+                            </Badge>
+                          )}
+                          {execType === 'TESTNET' && (
+                            <Badge variant="outline" className="border-amber-500 text-amber-600">
+                              <AlertTriangle className="h-3 w-3 mr-1" />
+                              TESTNET
+                            </Badge>
+                          )}
+                          {execType === 'SCAN' && (
+                            <Badge variant="secondary">
+                              SCAN
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={getStatusVariant(run.status)}>
+                            {run.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {didTriggerAutoRefill(run) ? (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger>
+                                  <div className="inline-flex items-center gap-1 text-green-600">
+                                    <Zap className="h-4 w-4 fill-current" />
+                                  </div>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>Auto-refill triggered</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right font-mono">
+                          {formatLamportsToSol(run.estimated_profit_lamports)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono">
+                          {formatLamportsToSol(run.actual_profit_lamports)}
+                        </TableCell>
+                        <TableCell>
+                          {run.tx_signature ? (
+                            <div className="flex flex-col gap-1">
+                              {isMock ? (
+                                <span className="text-amber-600 text-xs font-mono">{run.tx_signature.slice(0, 16)}...</span>
+                              ) : (
+                                run.tx_signature.split(',').map((sig, idx) => (
+                                  <a 
+                                    key={idx}
+                                    href={getExplorerUrl(sig.trim(), run.strategy_id)}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-primary hover:underline flex items-center gap-1"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    {sig.trim().slice(0, 8)}...
+                                    <ExternalLink className="h-3 w-3" />
+                                  </a>
+                                ))
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {format(new Date(run.started_at), 'MMM d, HH:mm:ss')}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             )}

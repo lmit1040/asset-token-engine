@@ -13,7 +13,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Activity, ExternalLink, AlertTriangle, RefreshCw, Shield, ShieldOff, Filter, Bell, Lock, Unlock, CheckCircle, Play, Search, Loader2 } from 'lucide-react';
+import { Activity, ExternalLink, AlertTriangle, RefreshCw, Shield, ShieldOff, Filter, Bell, Lock, Unlock, CheckCircle, Play, Search, Loader2, Radio } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface OpsArbitrageEvent {
@@ -61,6 +61,31 @@ const EXPLORER_URLS: Record<string, { url: string; name: string }> = {
   ETHEREUM: { url: 'https://etherscan.io/tx/', name: 'Etherscan' },
   ARBITRUM: { url: 'https://arbiscan.io/tx/', name: 'Arbiscan' },
   BSC: { url: 'https://bscscan.com/tx/', name: 'BscScan' },
+};
+
+// Testnet detection
+const TESTNET_NETWORKS = ['sepolia', 'amoy', 'goerli', 'mumbai', 'bsc_testnet', 'arbitrum_sepolia', 'SEPOLIA', 'AMOY'];
+const isTestnetNetwork = (network: string): boolean => TESTNET_NETWORKS.includes(network.toLowerCase()) || TESTNET_NETWORKS.includes(network);
+const isMockTransaction = (txHash: string | null): boolean => txHash?.startsWith('MOCK_') || txHash?.includes('TESTNET') || false;
+
+// Get execution type badge info
+const getExecutionTypeInfo = (mode: string, status: string, txHash: string | null, network: string) => {
+  const isTestnet = isTestnetNetwork(network);
+  const isMock = isMockTransaction(txHash);
+  
+  if (mode.includes('SIMULATION') || status === 'SIMULATED') {
+    return { label: 'SCAN', variant: 'secondary' as const, color: '' };
+  }
+  if (isMock) {
+    return { label: 'MOCK', variant: 'outline' as const, color: 'border-amber-500 text-amber-600' };
+  }
+  if (isTestnet) {
+    return { label: 'TESTNET', variant: 'outline' as const, color: 'border-amber-500 text-amber-600' };
+  }
+  if (status === 'EXECUTED') {
+    return { label: 'REAL', variant: 'default' as const, color: 'bg-green-600 hover:bg-green-700' };
+  }
+  return { label: mode, variant: 'secondary' as const, color: '' };
 };
 
 export default function AdminOpsArbitrageEventsPage() {
@@ -413,17 +438,33 @@ export default function AdminOpsArbitrageEventsPage() {
         </Alert>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
           <Card>
             <CardHeader className="pb-2">
               <CardDescription>Total Events</CardDescription>
               <CardTitle className="text-2xl">{stats.total}</CardTitle>
             </CardHeader>
           </Card>
-          <Card>
+          <Card className="border-green-500/50 bg-green-500/5">
             <CardHeader className="pb-2">
-              <CardDescription>Executed</CardDescription>
-              <CardTitle className="text-2xl text-green-600">{stats.executed}</CardTitle>
+              <CardDescription className="flex items-center gap-1">
+                <CheckCircle className="h-3 w-3 text-green-600" />
+                Real Executions
+              </CardDescription>
+              <CardTitle className="text-2xl text-green-600">
+                {events.filter(e => e.status === 'EXECUTED' && !isMockTransaction(e.tx_hash) && !isTestnetNetwork(e.network)).length}
+              </CardTitle>
+            </CardHeader>
+          </Card>
+          <Card className="border-amber-500/50 bg-amber-500/5">
+            <CardHeader className="pb-2">
+              <CardDescription className="flex items-center gap-1">
+                <AlertTriangle className="h-3 w-3 text-amber-600" />
+                Testnet/Mock
+              </CardDescription>
+              <CardTitle className="text-2xl text-amber-600">
+                {events.filter(e => e.status === 'EXECUTED' && (isMockTransaction(e.tx_hash) || isTestnetNetwork(e.network))).length}
+              </CardTitle>
             </CardHeader>
           </Card>
           <Card>
@@ -645,80 +686,112 @@ export default function AdminOpsArbitrageEventsPage() {
                         <TableRow>
                           <TableHead>Created</TableHead>
                           <TableHead>Network</TableHead>
+                          <TableHead>Type</TableHead>
                           <TableHead>Mode</TableHead>
                           <TableHead className="text-right">Notional</TableHead>
-                          <TableHead className="text-right">Exp. Gross</TableHead>
                           <TableHead className="text-right">Exp. Net</TableHead>
                           <TableHead className="text-right">Realized</TableHead>
-                          <TableHead className="text-right">Gas Spent</TableHead>
                           <TableHead>Status</TableHead>
                           <TableHead>TX Hash</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {events.map((event) => (
-                          <TableRow 
-                            key={event.id} 
-                            className="cursor-pointer hover:bg-muted/50"
-                            onClick={() => setSelectedEvent(event)}
-                          >
-                            <TableCell className="whitespace-nowrap">
-                              {format(new Date(event.created_at), 'MMM d, HH:mm:ss')}
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant="outline">{event.network.toUpperCase()}</Badge>
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant={event.mode === 'OPS_REFILL' ? 'default' : 'secondary'}>
-                                {event.mode}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-right font-mono text-sm">
-                              {formatWei(event.notional_in)}
-                            </TableCell>
-                            <TableCell className="text-right font-mono text-sm">
-                              {formatWei(event.expected_gross_profit)}
-                            </TableCell>
-                            <TableCell className="text-right font-mono text-sm">
-                              {formatWei(event.expected_net_profit)}
-                            </TableCell>
-                            <TableCell className={`text-right font-mono text-sm ${
-                              event.realized_profit && parseFloat(event.realized_profit) > 0 
-                                ? 'text-green-600' 
-                                : event.realized_profit && parseFloat(event.realized_profit) < 0 
-                                  ? 'text-destructive' 
-                                  : ''
-                            }`}>
-                              {formatWei(event.realized_profit)}
-                            </TableCell>
-                            <TableCell className="text-right font-mono text-sm">
-                              {event.gas_used && event.effective_gas_price 
-                                ? formatWei((BigInt(event.gas_used) * BigInt(event.effective_gas_price)).toString())
-                                : '-'}
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant={getStatusVariant(event.status)}>
-                                {event.status}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>
-                              {event.tx_hash ? (
-                                <a 
-                                  href={getExplorerUrl(event.tx_hash.split(',')[0], event.network)}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-primary hover:underline flex items-center gap-1"
-                                  onClick={(e) => e.stopPropagation()}
+                        {events.map((event) => {
+                          const execTypeInfo = getExecutionTypeInfo(event.mode, event.status, event.tx_hash, event.network);
+                          const isTestnet = isTestnetNetwork(event.network);
+                          const isMock = isMockTransaction(event.tx_hash);
+                          
+                          return (
+                            <TableRow 
+                              key={event.id} 
+                              className="cursor-pointer hover:bg-muted/50"
+                              onClick={() => setSelectedEvent(event)}
+                            >
+                              <TableCell className="whitespace-nowrap">
+                                {format(new Date(event.created_at), 'MMM d, HH:mm:ss')}
+                              </TableCell>
+                              <TableCell>
+                                <Badge 
+                                  variant="outline" 
+                                  className={isTestnet ? 'border-amber-500 text-amber-600' : 'border-green-500 text-green-600'}
                                 >
-                                  {event.tx_hash.slice(0, 8)}...
-                                  <ExternalLink className="h-3 w-3" />
-                                </a>
-                              ) : (
-                                <span className="text-muted-foreground">-</span>
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        ))}
+                                  {event.network.toUpperCase()}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                {execTypeInfo.label === 'REAL' && (
+                                  <Badge className="bg-green-600 hover:bg-green-700">
+                                    <CheckCircle className="h-3 w-3 mr-1" />
+                                    REAL
+                                  </Badge>
+                                )}
+                                {execTypeInfo.label === 'MOCK' && (
+                                  <Badge variant="outline" className="border-amber-500 text-amber-600">
+                                    <Radio className="h-3 w-3 mr-1" />
+                                    MOCK
+                                  </Badge>
+                                )}
+                                {execTypeInfo.label === 'TESTNET' && (
+                                  <Badge variant="outline" className="border-amber-500 text-amber-600">
+                                    <AlertTriangle className="h-3 w-3 mr-1" />
+                                    TESTNET
+                                  </Badge>
+                                )}
+                                {execTypeInfo.label === 'SCAN' && (
+                                  <Badge variant="secondary">SCAN</Badge>
+                                )}
+                                {!['REAL', 'MOCK', 'TESTNET', 'SCAN'].includes(execTypeInfo.label) && (
+                                  <Badge variant="secondary">{execTypeInfo.label}</Badge>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={event.mode === 'OPS_REFILL' ? 'default' : 'secondary'}>
+                                  {event.mode}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right font-mono text-sm">
+                                {formatWei(event.notional_in)}
+                              </TableCell>
+                              <TableCell className="text-right font-mono text-sm">
+                                {formatWei(event.expected_net_profit)}
+                              </TableCell>
+                              <TableCell className={`text-right font-mono text-sm ${
+                                event.realized_profit && parseFloat(event.realized_profit) > 0 
+                                  ? 'text-green-600' 
+                                  : event.realized_profit && parseFloat(event.realized_profit) < 0 
+                                    ? 'text-destructive' 
+                                    : ''
+                              }`}>
+                                {formatWei(event.realized_profit)}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={getStatusVariant(event.status)}>
+                                  {event.status}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                {event.tx_hash ? (
+                                  isMock ? (
+                                    <span className="text-amber-600 text-xs font-mono">{event.tx_hash.slice(0, 16)}...</span>
+                                  ) : (
+                                    <a 
+                                      href={getExplorerUrl(event.tx_hash.split(',')[0], event.network)}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-primary hover:underline flex items-center gap-1"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      {event.tx_hash.slice(0, 8)}...
+                                      <ExternalLink className="h-3 w-3" />
+                                    </a>
+                                  )
+                                ) : (
+                                  <span className="text-muted-foreground">-</span>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
                       </TableBody>
                     </Table>
                   </div>
