@@ -59,7 +59,24 @@ export interface ZeroXQuoteParams {
   buyToken: string;
   sellAmount: string;
   takerAddress?: string;
+  includedSources?: string[];
+  excludedSources?: string[];
 }
+
+// Supported liquidity sources for 0x on Polygon
+export const POLYGON_LIQUIDITY_SOURCES = [
+  "Uniswap_V3",
+  "QuickSwap",
+  "QuickSwap_V3", 
+  "SushiSwap",
+  "Curve",
+  "Balancer_V2",
+  "DODO_V2",
+  "KyberSwap_Elastic",
+  "Aave_V3",
+] as const;
+
+export type PolygonLiquiditySource = typeof POLYGON_LIQUIDITY_SOURCES[number];
 
 export class ZeroXApiError extends Error {
   public statusCode: number;
@@ -78,7 +95,7 @@ export class ZeroXApiError extends Error {
  * Returns null if quote fails (no liquidity, etc.)
  */
 export async function getZeroXQuote(params: ZeroXQuoteParams): Promise<ZeroXQuote | null> {
-  const { network, sellToken, buyToken, sellAmount, takerAddress } = params;
+  const { network, sellToken, buyToken, sellAmount, takerAddress, includedSources, excludedSources } = params;
   const normalizedNetwork = network.toUpperCase();
 
   const chainId = CHAIN_IDS[normalizedNetwork];
@@ -106,7 +123,16 @@ export async function getZeroXQuote(params: ZeroXQuoteParams): Promise<ZeroXQuot
     url.searchParams.set("taker", takerAddress);
   }
 
-  console.log(`[zerox-client] Fetching quote: ${sellToken} -> ${buyToken} on ${normalizedNetwork} (chainId: ${chainId})`);
+  // Source constraints for cross-venue arbitrage discovery
+  if (includedSources && includedSources.length > 0) {
+    url.searchParams.set("includedSources", includedSources.join(","));
+  }
+  if (excludedSources && excludedSources.length > 0) {
+    url.searchParams.set("excludedSources", excludedSources.join(","));
+  }
+
+  const sourceInfo = includedSources?.length ? ` [sources: ${includedSources.join(",")}]` : "";
+  console.log(`[zerox-client] Fetching quote: ${sellToken} -> ${buyToken} on ${normalizedNetwork} (chainId: ${chainId})${sourceInfo}`);
 
   try {
     const headers: Record<string, string> = {

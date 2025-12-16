@@ -98,3 +98,12 @@ verify_jwt = false
 
 [functions.scan-new-pools]
 verify_jwt = false
+
+[functions.scan-polygon-ops-refill]
+verify_jwt = false
+
+[functions.execute-polygon-ops-refill]
+verify_jwt = false
+
+[functions.scan-polygon-profit-discovery]
+verify_jwt = false

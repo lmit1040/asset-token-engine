@@ -43,6 +43,7 @@ import AdminFlashLoanAnalyticsPage from "./pages/AdminFlashLoanAnalyticsPage";
 import AdminNDASignaturesPage from "./pages/AdminNDASignaturesPage";
 import AdminOpsArbitrageEventsPage from "./pages/AdminOpsArbitrageEventsPage";
 import AdminNewPoolsPage from "./pages/AdminNewPoolsPage";
+import AdminProfitDiscoveryPage from "./pages/AdminProfitDiscoveryPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -94,6 +95,7 @@ const App = () => (
               <Route path="/admin/nda-signatures" element={<AdminNDASignaturesPage />} />
               <Route path="/admin/arbitrage/new-pools" element={<AdminNewPoolsPage />} />
               <Route path="/admin/arbitrage/ops-events" element={<AdminOpsArbitrageEventsPage />} />
+              <Route path="/admin/arbitrage/profit-discovery" element={<AdminProfitDiscoveryPage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </WalletProvider>
