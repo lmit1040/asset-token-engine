@@ -160,6 +160,17 @@ const EXPLORER_URLS: Record<string, string> = {
   BSC: 'https://bscscan.com/tx/',
 };
 
+// Testnet detection helpers
+const TESTNET_NETWORKS = ['SEPOLIA', 'AMOY', 'GOERLI', 'MUMBAI', 'BSC_TESTNET', 'ARBITRUM_SEPOLIA'];
+const isTestnetNetwork = (network: string | null): boolean => {
+  if (!network) return false;
+  return TESTNET_NETWORKS.includes(network.toUpperCase());
+};
+const isMockTransaction = (txSignature: string | null): boolean => {
+  if (!txSignature) return false;
+  return txSignature.startsWith('MOCK_') || txSignature.includes('TESTNET');
+};
+
 type OpportunityFilter = 'all' | 'errors' | 'profitable' | 'approved';
 
 export default function AdminAutomatedArbitragePage() {
@@ -1081,8 +1092,8 @@ export default function AdminAutomatedArbitragePage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Strategy</TableHead>
-                      <TableHead>Chain</TableHead>
-                      <TableHead>Type</TableHead>
+                      <TableHead>Network</TableHead>
+                      <TableHead>Exec Type</TableHead>
                       <TableHead>Mode</TableHead>
                       <TableHead>PnL</TableHead>
                       <TableHead>Status</TableHead>
@@ -1104,6 +1115,9 @@ export default function AdminAutomatedArbitragePage() {
                         const chain = strategy?.chain_type || 'SOLANA';
                         const network = strategy?.evm_network || chain;
                         const explorerUrl = EXPLORER_URLS[network] || EXPLORER_URLS.SOLANA;
+                        const isTestnet = isTestnetNetwork(network);
+                        const isMock = isMockTransaction(run.tx_signature);
+                        const isRealExec = run.status === 'EXECUTED' && !isTestnet && !isMock;
 
                         return (
                           <TableRow key={run.id}>
@@ -1111,16 +1125,32 @@ export default function AdminAutomatedArbitragePage() {
                               {strategy?.name || 'Unknown'}
                             </TableCell>
                             <TableCell>
-                              <Badge variant="outline">{chain}</Badge>
-                              {strategy?.evm_network && (
-                                <Badge variant="secondary" className="ml-1">{strategy.evm_network}</Badge>
-                              )}
+                              <Badge 
+                                variant="outline" 
+                                className={isTestnet ? 'border-amber-500 text-amber-600' : ''}
+                              >
+                                {network}
+                              </Badge>
                             </TableCell>
                             <TableCell>
-                              {run.auto_executed ? (
-                                <Badge variant="secondary">Auto</Badge>
+                              {isRealExec ? (
+                                <Badge className="bg-green-600 hover:bg-green-700">
+                                  <CheckCircle2 className="h-3 w-3 mr-1" />
+                                  REAL
+                                </Badge>
+                              ) : isMock ? (
+                                <Badge variant="outline" className="border-amber-500 text-amber-600">
+                                  MOCK
+                                </Badge>
+                              ) : isTestnet ? (
+                                <Badge variant="outline" className="border-amber-500 text-amber-600">
+                                  <AlertTriangle className="h-3 w-3 mr-1" />
+                                  TESTNET
+                                </Badge>
                               ) : (
-                                <Badge variant="outline">Manual</Badge>
+                                <Badge variant="secondary">
+                                  {run.auto_executed ? 'Auto' : 'Manual'}
+                                </Badge>
                               )}
                             </TableCell>
                             <TableCell>
@@ -1139,27 +1169,29 @@ export default function AdminAutomatedArbitragePage() {
                             <TableCell>
                               {run.status === 'EXECUTED' ? (
                                 <Badge className="bg-green-500">
-                                  <CheckCircle2 className="h-3 w-3 mr-1" />
                                   Success
                                 </Badge>
                               ) : (
                                 <Badge variant="destructive">
-                                  <AlertTriangle className="h-3 w-3 mr-1" />
                                   Failed
                                 </Badge>
                               )}
                             </TableCell>
                             <TableCell>
                               {run.tx_signature ? (
-                                <a 
-                                  href={`${explorerUrl}${run.tx_signature}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-primary hover:underline flex items-center gap-1"
-                                >
-                                  {run.tx_signature.slice(0, 8)}...
-                                  <ExternalLink className="h-3 w-3" />
-                                </a>
+                                isMock ? (
+                                  <span className="text-amber-600 text-xs font-mono">{run.tx_signature.slice(0, 16)}...</span>
+                                ) : (
+                                  <a 
+                                    href={`${explorerUrl}${run.tx_signature}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-primary hover:underline flex items-center gap-1"
+                                  >
+                                    {run.tx_signature.slice(0, 8)}...
+                                    <ExternalLink className="h-3 w-3" />
+                                  </a>
+                                )
                               ) : (
                                 <span className="text-muted-foreground">-</span>
                               )}
@@ -1194,16 +1226,28 @@ export default function AdminAutomatedArbitragePage() {
                       p => p.chain === strategy.evm_network || 
                            (strategy.chain_type === 'EVM' && p.chain === strategy.evm_network)
                     );
+                    const isStrategyTestnet = isTestnetNetwork(strategy.evm_network);
                     
                     return (
-                      <div key={strategy.id} className={`border rounded-lg p-4 space-y-4 ${strategy.use_flash_loan ? 'border-primary/50 bg-primary/5' : ''}`}>
+                      <div key={strategy.id} className={`border rounded-lg p-4 space-y-4 ${strategy.use_flash_loan ? 'border-primary/50 bg-primary/5' : ''} ${isStrategyTestnet ? 'border-amber-500/50 bg-amber-500/5' : ''}`}>
                         <div className="flex items-center justify-between">
                           <div>
                             <h3 className="font-semibold flex items-center gap-2">
                               {strategy.name}
                               <Badge variant="outline">{strategy.chain_type}</Badge>
                               {strategy.evm_network && (
-                                <Badge variant="secondary">{strategy.evm_network}</Badge>
+                                <Badge 
+                                  variant="secondary" 
+                                  className={isStrategyTestnet ? 'border-amber-500 text-amber-600' : ''}
+                                >
+                                  {strategy.evm_network}
+                                </Badge>
+                              )}
+                              {isStrategyTestnet && (
+                                <Badge variant="outline" className="border-amber-500 text-amber-600">
+                                  <AlertTriangle className="h-3 w-3 mr-1" />
+                                  TESTNET
+                                </Badge>
                               )}
                               {strategy.use_flash_loan && (
                                 <Badge className="bg-primary">
