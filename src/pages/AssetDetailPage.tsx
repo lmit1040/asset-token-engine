@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Edit, Archive, Upload, FileText, Shield, Plus, Coins, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Edit, Archive, Upload, FileText, Shield, Plus, Coins, AlertCircle, Eye } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -14,6 +14,7 @@ import { TokenDefinitionModal } from '@/components/assets/TokenDefinitionModal';
 import { ProposeTokenDefinitionModal } from '@/components/assets/ProposeTokenDefinitionModal';
 import { TokenDetailCard } from '@/components/assets/TokenDetailCard';
 import { TokenProposalCard } from '@/components/assets/TokenProposalCard';
+import { MediaViewerModal } from '@/components/assets/MediaViewerModal';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -58,6 +59,7 @@ export default function AssetDetailPage() {
   const [showProofModal, setShowProofModal] = useState(false);
   const [showTokenModal, setShowTokenModal] = useState(false);
   const [showProposeTokenModal, setShowProposeTokenModal] = useState(false);
+  const [selectedProofFile, setSelectedProofFile] = useState<ProofOfReserveFile | null>(null);
 
   // Check if current user is the original submitter
   const isOriginalSubmitter = user && asset?.submitted_by === user.id;
@@ -302,14 +304,15 @@ export default function AssetDetailPage() {
                         </code>
                       </td>
                       <td className="table-cell text-right">
-                        <a
-                          href={file.file_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-primary hover:underline text-sm"
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setSelectedProofFile(file)}
+                          className="text-primary hover:text-primary/80"
                         >
-                          View File
-                        </a>
+                          <Eye className="h-4 w-4 mr-1" />
+                          View
+                        </Button>
                       </td>
                     </tr>
                   ))}
@@ -424,6 +427,16 @@ export default function AssetDetailPage() {
             setShowProposeTokenModal(false);
             fetchData();
           }}
+        />
+      )}
+
+      {selectedProofFile && (
+        <MediaViewerModal
+          file={selectedProofFile}
+          files={proofFiles}
+          open={!!selectedProofFile}
+          onOpenChange={(open) => !open && setSelectedProofFile(null)}
+          onFileChange={(file) => setSelectedProofFile(file)}
         />
       )}
     </DashboardLayout>
