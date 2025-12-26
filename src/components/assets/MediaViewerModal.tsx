@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { X, Download, ExternalLink, ZoomIn, ZoomOut, RotateCw, Maximize2 } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Download, ExternalLink, ZoomIn, ZoomOut, RotateCw, Maximize2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { ProofOfReserveFile } from '@/types/database';
@@ -7,13 +7,19 @@ import { format } from 'date-fns';
 
 interface MediaViewerModalProps {
   file: ProofOfReserveFile;
+  files?: ProofOfReserveFile[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onFileChange?: (file: ProofOfReserveFile) => void;
 }
 
-export function MediaViewerModal({ file, open, onOpenChange }: MediaViewerModalProps) {
+export function MediaViewerModal({ file, files = [], open, onOpenChange, onFileChange }: MediaViewerModalProps) {
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
+
+  const currentIndex = files.findIndex(f => f.id === file.id);
+  const hasPrev = files.length > 1 && currentIndex > 0;
+  const hasNext = files.length > 1 && currentIndex < files.length - 1;
 
   const isImage = file.file_type.startsWith('image/');
   const isVideo = file.file_type.startsWith('video/');
@@ -27,6 +33,44 @@ export function MediaViewerModal({ file, open, onOpenChange }: MediaViewerModalP
     setZoom(1);
     setRotation(0);
   };
+
+  const goToPrev = useCallback(() => {
+    if (hasPrev && onFileChange) {
+      handleReset();
+      onFileChange(files[currentIndex - 1]);
+    }
+  }, [hasPrev, currentIndex, files, onFileChange]);
+
+  const goToNext = useCallback(() => {
+    if (hasNext && onFileChange) {
+      handleReset();
+      onFileChange(files[currentIndex + 1]);
+    }
+  }, [hasNext, currentIndex, files, onFileChange]);
+
+  // Keyboard navigation
+  useEffect(() => {
+    if (!open) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      switch (e.key) {
+        case 'Escape':
+          onOpenChange(false);
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          goToPrev();
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          goToNext();
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [open, onOpenChange, goToPrev, goToNext]);
 
   const renderContent = () => {
     if (isImage) {
@@ -119,6 +163,7 @@ export function MediaViewerModal({ file, open, onOpenChange }: MediaViewerModalP
               </DialogTitle>
               <p className="text-xs text-muted-foreground mt-1">
                 Uploaded {format(new Date(file.uploaded_at), 'MMMM d, yyyy')} • {file.file_type}
+                {files.length > 1 && ` • ${currentIndex + 1} of ${files.length}`}
               </p>
             </div>
             <div className="flex items-center gap-2 mr-8">
@@ -152,17 +197,45 @@ export function MediaViewerModal({ file, open, onOpenChange }: MediaViewerModalP
           </div>
         </DialogHeader>
 
-        <div className="p-4 overflow-auto">
+        <div className="p-4 overflow-auto relative">
+          {/* Navigation arrows */}
+          {hasPrev && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="absolute left-6 top-1/2 -translate-y-1/2 z-10 h-10 w-10 bg-background/80 hover:bg-background"
+              onClick={goToPrev}
+            >
+              <ChevronLeft className="h-6 w-6" />
+            </Button>
+          )}
+          {hasNext && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="absolute right-6 top-1/2 -translate-y-1/2 z-10 h-10 w-10 bg-background/80 hover:bg-background"
+              onClick={goToNext}
+            >
+              <ChevronRight className="h-6 w-6" />
+            </Button>
+          )}
           {renderContent()}
         </div>
 
         {/* File Hash Footer */}
         <div className="px-6 py-3 border-t border-border bg-muted/20">
           <div className="flex items-center justify-between text-xs">
-            <span className="text-muted-foreground">SHA-256 Hash:</span>
-            <code className="font-mono text-foreground bg-muted px-2 py-1 rounded">
-              {file.file_hash}
-            </code>
+            <div className="flex items-center gap-4">
+              <span className="text-muted-foreground">SHA-256 Hash:</span>
+              <code className="font-mono text-foreground bg-muted px-2 py-1 rounded">
+                {file.file_hash}
+              </code>
+            </div>
+            {files.length > 1 && (
+              <span className="text-muted-foreground">
+                Use ← → arrow keys to navigate
+              </span>
+            )}
           </div>
         </div>
       </DialogContent>
