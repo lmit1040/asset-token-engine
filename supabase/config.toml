@@ -3,6 +3,12 @@ project_id = "hqohcfwahmkxtpfbhcku"
 [functions.check-launch-status]
 verify_jwt = false
 
+[functions.update-launch-settings]
+verify_jwt = false
+
+[functions.debug-quote]
+verify_jwt = false
+
 [functions.generate-evm-fee-payer]
 verify_jwt = false
 

@@ -1306,6 +1306,8 @@ export type Database = {
           flash_loan_profit_threshold_bps: number | null
           id: string
           is_mainnet_mode: boolean
+          last_safety_check_at: string | null
+          launch_stage: string | null
           mainnet_fee_payer_top_up_sol: number
           mainnet_min_fee_payer_balance_sol: number
           mainnet_min_profit_to_gas_ratio: number
@@ -1336,6 +1338,8 @@ export type Database = {
           flash_loan_profit_threshold_bps?: number | null
           id?: string
           is_mainnet_mode?: boolean
+          last_safety_check_at?: string | null
+          launch_stage?: string | null
           mainnet_fee_payer_top_up_sol?: number
           mainnet_min_fee_payer_balance_sol?: number
           mainnet_min_profit_to_gas_ratio?: number
@@ -1366,6 +1370,8 @@ export type Database = {
           flash_loan_profit_threshold_bps?: number | null
           id?: string
           is_mainnet_mode?: boolean
+          last_safety_check_at?: string | null
+          launch_stage?: string | null
           mainnet_fee_payer_top_up_sol?: number
           mainnet_min_fee_payer_balance_sol?: number
           mainnet_min_profit_to_gas_ratio?: number
@@ -1840,6 +1846,8 @@ export type Database = {
           flash_loan_profit_threshold_bps: number | null
           id: string
           is_mainnet_mode: boolean
+          last_safety_check_at: string | null
+          launch_stage: string | null
           mainnet_fee_payer_top_up_sol: number
           mainnet_min_fee_payer_balance_sol: number
           mainnet_min_profit_to_gas_ratio: number

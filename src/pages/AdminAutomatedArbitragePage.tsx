@@ -41,6 +41,7 @@ import {
 import { PnLTrendsChart } from '@/components/arbitrage/PnLTrendsChart';
 import { EvmWalletBalancesCard } from '@/components/arbitrage/EvmWalletBalancesCard';
 import { NetworkModeCard } from '@/components/arbitrage/NetworkModeCard';
+import { LaunchControlPanel } from '@/components/launch/LaunchControlPanel';
 
 interface SystemSettings {
   id: string;
@@ -61,6 +62,11 @@ interface SystemSettings {
   mainnet_min_profit_to_gas_ratio: number;
   evm_min_fee_payer_balance_native: number;
   evm_fee_payer_top_up_native: number;
+  // Launch control fields
+  arb_execution_locked: boolean;
+  arb_execution_locked_reason: string | null;
+  launch_stage: string;
+  last_safety_check_at: string | null;
 }
 
 interface FlashLoanProvider {
@@ -581,44 +587,84 @@ export default function AdminAutomatedArbitragePage() {
   return (
     <DashboardLayout title="Automated Arbitrage" subtitle="Internal cost optimization & fee payer management">
       <div className="space-y-6">
+        {/* Launch Control Panel */}
+        <LaunchControlPanel
+          settings={settings ? {
+            id: settings.id,
+            safe_mode_enabled: settings.safe_mode_enabled,
+            arb_execution_locked: settings.arb_execution_locked,
+            arb_execution_locked_reason: settings.arb_execution_locked_reason,
+            is_mainnet_mode: settings.is_mainnet_mode,
+            launch_stage: settings.launch_stage || 'DEVELOPMENT',
+            auto_arbitrage_enabled: settings.auto_arbitrage_enabled,
+            auto_flash_loans_enabled: settings.auto_flash_loans_enabled,
+            last_safety_check_at: settings.last_safety_check_at,
+          } : null}
+          onSettingsChange={(newSettings) => {
+            if (settings) {
+              setSettings({
+                ...settings,
+                safe_mode_enabled: newSettings.safe_mode_enabled,
+                arb_execution_locked: newSettings.arb_execution_locked,
+                arb_execution_locked_reason: newSettings.arb_execution_locked_reason,
+                is_mainnet_mode: newSettings.is_mainnet_mode,
+                launch_stage: newSettings.launch_stage,
+                auto_arbitrage_enabled: newSettings.auto_arbitrage_enabled,
+                auto_flash_loans_enabled: newSettings.auto_flash_loans_enabled,
+                last_safety_check_at: newSettings.last_safety_check_at,
+              });
+            }
+          }}
+          onRefresh={fetchData}
+        />
+
         {/* Execution Mode Banner - Critical Safety Indicator */}
-        <Card className={isExecutionArmed ? "border-destructive bg-destructive/10" : "border-amber-500 bg-amber-500/10"}>
-          <CardContent className="py-4">
-            <div className="flex items-center justify-between">
+        {settings?.arb_execution_locked && (
+          <Card className="border-red-500 bg-red-500/10">
+            <CardContent className="py-4">
               <div className="flex items-center gap-3">
-                {isExecutionArmed ? (
-                  <AlertTriangle className="h-6 w-6 text-destructive animate-pulse" />
-                ) : (
-                  <Search className="h-6 w-6 text-amber-500" />
-                )}
+                <AlertTriangle className="h-6 w-6 text-red-500" />
                 <div>
-                  <h3 className={`font-bold text-lg ${isExecutionArmed ? 'text-destructive' : 'text-amber-600'}`}>
-                    {isExecutionArmed ? '⚠️ EXECUTION ARMED' : '🔍 SCAN ONLY MODE'}
-                  </h3>
+                  <h3 className="font-bold text-lg text-red-500">🔒 EXECUTION LOCKED</h3>
                   <p className="text-sm text-muted-foreground">
-                    {isExecutionArmed 
-                      ? 'Auto-execution is ENABLED. Trades may execute automatically!'
-                      : 'Safe mode: Scanning for opportunities only. Manual execution required.'}
+                    {settings.arb_execution_locked_reason || 'Arbitrage execution is locked. Unlock from Launch Control Panel.'}
                   </p>
                 </div>
               </div>
-              <div className="text-right text-xs text-muted-foreground space-y-1">
-                <div>Auto-Arbitrage: <Badge variant={settings?.auto_arbitrage_enabled ? "destructive" : "secondary"}>{settings?.auto_arbitrage_enabled ? 'ON' : 'OFF'}</Badge></div>
-                <div>Polygon Auto-Exec: <Badge variant={polygonAutoEnabled ? "destructive" : "secondary"}>{polygonAutoEnabled ? 'ENABLED' : 'DISABLED'}</Badge></div>
-                <div className="text-[10px] opacity-70">Requires: ARB_EXECUTION_ENABLED=true + Manual Click</div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
 
-        {/* Unified Network Mode Toggle */}
-        <NetworkModeCard
-          isMainnetMode={settings?.is_mainnet_mode || false}
-          onToggle={async (enabled) => {
-            await updateSystemSetting('is_mainnet_mode', enabled);
-          }}
-          isUpdating={updating}
-        />
+        {!settings?.arb_execution_locked && (
+          <Card className={isExecutionArmed ? "border-destructive bg-destructive/10" : "border-amber-500 bg-amber-500/10"}>
+            <CardContent className="py-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  {isExecutionArmed ? (
+                    <AlertTriangle className="h-6 w-6 text-destructive animate-pulse" />
+                  ) : (
+                    <Search className="h-6 w-6 text-amber-500" />
+                  )}
+                  <div>
+                    <h3 className={`font-bold text-lg ${isExecutionArmed ? 'text-destructive' : 'text-amber-600'}`}>
+                      {isExecutionArmed ? '⚠️ EXECUTION ARMED' : '🔍 SCAN ONLY MODE'}
+                    </h3>
+                    <p className="text-sm text-muted-foreground">
+                      {isExecutionArmed 
+                        ? 'Auto-execution is ENABLED. Trades may execute automatically!'
+                        : 'Safe mode: Scanning for opportunities only. Manual execution required.'}
+                    </p>
+                  </div>
+                </div>
+                <div className="text-right text-xs text-muted-foreground space-y-1">
+                  <div>Auto-Arbitrage: <Badge variant={settings?.auto_arbitrage_enabled ? "destructive" : "secondary"}>{settings?.auto_arbitrage_enabled ? 'ON' : 'OFF'}</Badge></div>
+                  <div>Polygon Auto-Exec: <Badge variant={polygonAutoEnabled ? "destructive" : "secondary"}>{polygonAutoEnabled ? 'ENABLED' : 'DISABLED'}</Badge></div>
+                  <div className="text-[10px] opacity-70">Requires: ARB_EXECUTION_ENABLED=true + Manual Click</div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Action Buttons */}
         <div className="flex flex-wrap justify-between gap-4">
