@@ -180,10 +180,22 @@ export function AssetViewerModal({ assetId, open, onOpenChange, onNavigateToFull
                       {proofFiles.map((file) => (
                         <div
                           key={file.id}
-                          className="flex items-center gap-3 p-3 rounded-lg border border-border bg-muted/20 hover:bg-muted/40 transition-colors group"
+                          className="flex items-center gap-3 p-3 rounded-lg border border-border bg-muted/20 hover:bg-muted/40 transition-colors group cursor-pointer"
+                          onClick={() => canPreviewInline(file.file_type) && setSelectedFile(file)}
                         >
-                          <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-                            {getFileIcon(file.file_type)}
+                          {/* Thumbnail Preview */}
+                          <div className="h-12 w-12 rounded-lg bg-muted/50 flex items-center justify-center overflow-hidden flex-shrink-0">
+                            {file.file_type.startsWith('image/') ? (
+                              <img 
+                                src={file.file_url} 
+                                alt={file.file_name}
+                                className="h-full w-full object-cover"
+                              />
+                            ) : (
+                              <div className="h-full w-full flex items-center justify-center bg-primary/10 text-primary">
+                                {getFileIcon(file.file_type)}
+                              </div>
+                            )}
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium text-foreground truncate">
@@ -199,7 +211,10 @@ export function AssetViewerModal({ assetId, open, onOpenChange, onNavigateToFull
                                 variant="ghost"
                                 size="icon"
                                 className="h-8 w-8"
-                                onClick={() => setSelectedFile(file)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedFile(file);
+                                }}
                               >
                                 <Eye className="h-4 w-4" />
                               </Button>
@@ -210,7 +225,7 @@ export function AssetViewerModal({ assetId, open, onOpenChange, onNavigateToFull
                                 className="h-8 w-8"
                                 asChild
                               >
-                                <a href={file.file_url} target="_blank" rel="noopener noreferrer">
+                                <a href={file.file_url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
                                   <ExternalLink className="h-4 w-4" />
                                 </a>
                               </Button>
@@ -221,7 +236,7 @@ export function AssetViewerModal({ assetId, open, onOpenChange, onNavigateToFull
                               className="h-8 w-8"
                               asChild
                             >
-                              <a href={file.file_url} download={file.file_name}>
+                              <a href={file.file_url} download={file.file_name} onClick={(e) => e.stopPropagation()}>
                                 <Download className="h-4 w-4" />
                               </a>
                             </Button>
@@ -290,8 +305,10 @@ export function AssetViewerModal({ assetId, open, onOpenChange, onNavigateToFull
       {selectedFile && (
         <MediaViewerModal
           file={selectedFile}
+          files={proofFiles}
           open={!!selectedFile}
           onOpenChange={(open) => !open && setSelectedFile(null)}
+          onFileChange={setSelectedFile}
         />
       )}
     </>
