@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Download, ExternalLink, ZoomIn, ZoomOut, RotateCw, Maximize2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Download, ExternalLink, ZoomIn, ZoomOut, RotateCw, Maximize2, Minimize2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { ProofOfReserveFile } from '@/types/database';
@@ -16,6 +16,7 @@ interface MediaViewerModalProps {
 export function MediaViewerModal({ file, files = [], open, onOpenChange, onFileChange }: MediaViewerModalProps) {
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const currentIndex = files.findIndex(f => f.id === file.id);
   const hasPrev = files.length > 1 && currentIndex > 0;
@@ -33,6 +34,8 @@ export function MediaViewerModal({ file, files = [], open, onOpenChange, onFileC
     setZoom(1);
     setRotation(0);
   };
+
+  const toggleFullscreen = () => setIsFullscreen(prev => !prev);
 
   const goToPrev = useCallback(() => {
     if (hasPrev && onFileChange) {
@@ -55,7 +58,11 @@ export function MediaViewerModal({ file, files = [], open, onOpenChange, onFileC
     const handleKeyDown = (e: KeyboardEvent) => {
       switch (e.key) {
         case 'Escape':
-          onOpenChange(false);
+          if (isFullscreen) {
+            setIsFullscreen(false);
+          } else {
+            onOpenChange(false);
+          }
           break;
         case 'ArrowLeft':
           e.preventDefault();
@@ -65,18 +72,24 @@ export function MediaViewerModal({ file, files = [], open, onOpenChange, onFileC
           e.preventDefault();
           goToNext();
           break;
+        case 'f':
+        case 'F':
+          toggleFullscreen();
+          break;
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [open, onOpenChange, goToPrev, goToNext]);
+  }, [open, onOpenChange, goToPrev, goToNext, isFullscreen]);
+
+  const contentHeight = isFullscreen ? 'h-[calc(100vh-120px)]' : 'min-h-[400px] max-h-[70vh]';
 
   const renderContent = () => {
     if (isImage) {
       return (
         <div 
-          className="flex items-center justify-center min-h-[400px] max-h-[70vh] overflow-auto bg-black/20 rounded-lg"
+          className={`flex items-center justify-center ${contentHeight} overflow-auto bg-black/20 rounded-lg`}
           onClick={handleReset}
         >
           <img
@@ -93,7 +106,7 @@ export function MediaViewerModal({ file, files = [], open, onOpenChange, onFileC
 
     if (isVideo) {
       return (
-        <div className="flex items-center justify-center min-h-[400px] max-h-[70vh] bg-black rounded-lg overflow-hidden">
+        <div className={`flex items-center justify-center ${contentHeight} bg-black rounded-lg overflow-hidden`}>
           <video
             src={file.file_url}
             controls
@@ -108,7 +121,7 @@ export function MediaViewerModal({ file, files = [], open, onOpenChange, onFileC
 
     if (isAudio) {
       return (
-        <div className="flex flex-col items-center justify-center min-h-[200px] bg-muted/30 rounded-lg p-8">
+        <div className={`flex flex-col items-center justify-center ${isFullscreen ? 'h-[calc(100vh-120px)]' : 'min-h-[200px]'} bg-muted/30 rounded-lg p-8`}>
           <div className="h-20 w-20 rounded-full bg-primary/20 flex items-center justify-center mb-6">
             <div className="h-12 w-12 rounded-full bg-primary/40 animate-pulse" />
           </div>
@@ -126,7 +139,7 @@ export function MediaViewerModal({ file, files = [], open, onOpenChange, onFileC
 
     if (isPdf) {
       return (
-        <div className="w-full h-[70vh] bg-muted/30 rounded-lg overflow-hidden">
+        <div className={`w-full ${isFullscreen ? 'h-[calc(100vh-120px)]' : 'h-[70vh]'} bg-muted/30 rounded-lg overflow-hidden`}>
           <iframe
             src={file.file_url}
             title={file.file_name}
@@ -138,7 +151,7 @@ export function MediaViewerModal({ file, files = [], open, onOpenChange, onFileC
 
     // Fallback for unsupported types
     return (
-      <div className="flex flex-col items-center justify-center min-h-[200px] bg-muted/30 rounded-lg p-8">
+      <div className={`flex flex-col items-center justify-center ${isFullscreen ? 'h-[calc(100vh-120px)]' : 'min-h-[200px]'} bg-muted/30 rounded-lg p-8`}>
         <p className="text-muted-foreground mb-4">
           This file type cannot be previewed inline.
         </p>
@@ -154,7 +167,7 @@ export function MediaViewerModal({ file, files = [], open, onOpenChange, onFileC
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl max-h-[95vh] p-0 gap-0 overflow-hidden">
+      <DialogContent className={`p-0 gap-0 overflow-hidden transition-all duration-200 ${isFullscreen ? 'max-w-[100vw] max-h-[100vh] w-screen h-screen rounded-none' : 'max-w-5xl max-h-[95vh]'}`}>
         <DialogHeader className="px-6 py-4 border-b border-border bg-muted/30">
           <div className="flex items-center justify-between">
             <div className="flex-1 min-w-0 mr-4">
@@ -183,10 +196,14 @@ export function MediaViewerModal({ file, files = [], open, onOpenChange, onFileC
                   </Button>
                 </>
               )}
-              <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
-                <a href={file.file_url} target="_blank" rel="noopener noreferrer">
-                  <Maximize2 className="h-4 w-4" />
-                </a>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-8 w-8" 
+                onClick={toggleFullscreen}
+                title={isFullscreen ? 'Exit fullscreen (F)' : 'Fullscreen (F)'}
+              >
+                {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
               </Button>
               <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
                 <a href={file.file_url} download={file.file_name}>
@@ -231,11 +248,9 @@ export function MediaViewerModal({ file, files = [], open, onOpenChange, onFileC
                 {file.file_hash}
               </code>
             </div>
-            {files.length > 1 && (
-              <span className="text-muted-foreground">
-                Use ← → arrow keys to navigate
-              </span>
-            )}
+            <span className="text-muted-foreground">
+              {files.length > 1 ? 'Use ← → to navigate • ' : ''}F for fullscreen • Esc to close
+            </span>
           </div>
         </div>
       </DialogContent>
