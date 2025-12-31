@@ -55,7 +55,7 @@ export default function ProfilePage() {
     setIsLoading(false);
   }
 
-  async function handleSave() {
+async function handleSave() {
     if (!user) return;
     
     setIsSaving(true);
@@ -67,8 +67,49 @@ export default function ProfilePage() {
 
       if (error) throw error;
 
+      // Check if profile is now complete and award reward
+      if (name.trim()) {
+        try {
+          // Check if user already received this reward
+          const { data: existingReward } = await supabase
+            .from('activity_rewards')
+            .select('id')
+            .eq('user_id', user.id)
+            .eq('reward_type', 'profile_complete')
+            .maybeSingle();
+
+          if (!existingReward) {
+            const { data: rewardConfig } = await supabase
+              .from('reward_configurations')
+              .select('mxg_amount')
+              .eq('reward_type', 'profile_complete')
+              .eq('is_active', true)
+              .maybeSingle();
+
+            if (rewardConfig) {
+              await supabase.from('activity_rewards').insert({
+                user_id: user.id,
+                reward_type: 'profile_complete',
+                action_type: 'Completed profile',
+                mxg_amount: rewardConfig.mxg_amount,
+                status: 'pending',
+              });
+              toast.success(`Profile updated! You earned ${rewardConfig.mxg_amount} MXG for completing your profile.`);
+            } else {
+              toast.success('Profile updated successfully');
+            }
+          } else {
+            toast.success('Profile updated successfully');
+          }
+        } catch (rewardError) {
+          console.error('Failed to create profile reward:', rewardError);
+          toast.success('Profile updated successfully');
+        }
+      } else {
+        toast.success('Profile updated successfully');
+      }
+
       setProfile(prev => prev ? { ...prev, name: name.trim() || null } : null);
-      toast.success('Profile updated successfully');
     } catch (error: any) {
       toast.error(error.message || 'Failed to update profile');
     } finally {
