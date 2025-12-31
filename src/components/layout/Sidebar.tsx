@@ -1,7 +1,8 @@
 import { NavLink as RouterNavLink, useLocation } from "react-router-dom";
-import { LayoutDashboard, Coins, User, Users, Activity, LogOut, Award, Vote, ArrowRightLeft, FileCheck, Wallet, Globe, FileUp, FolderOpen, ClipboardList, Archive, Zap, ShieldCheck, Bot, Newspaper, FileText, Package, Rocket, Sparkles, BarChart3, FileSignature, Layers, Radar, MonitorDot, Crosshair, TrendingUp } from "lucide-react";
+import { LayoutDashboard, Coins, User, Users, Activity, LogOut, Award, Vote, ArrowRightLeft, FileCheck, Wallet, Globe, FileUp, FolderOpen, ClipboardList, Archive, Zap, ShieldCheck, Bot, Newspaper, FileText, Package, Rocket, Sparkles, BarChart3, FileSignature, Layers, Radar, MonitorDot, Crosshair, TrendingUp, Gift, UserPlus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
+
 const navigation = [{
   name: "Dashboard",
   href: "/dashboard",
@@ -31,6 +32,10 @@ const navigation = [{
   href: "/mxu-benefits",
   icon: Award
 }, {
+  name: "Earn MXG",
+  href: "/earn-mxg",
+  icon: TrendingUp
+}, {
   name: "Governance",
   href: "/governance",
   icon: Vote
@@ -39,6 +44,7 @@ const navigation = [{
   href: "/profile",
   icon: User
 }];
+
 const adminNavigation = [{
   name: "Users",
   href: "/admin/users",
@@ -112,10 +118,19 @@ const adminNavigation = [{
   href: "/admin/nda-signatures",
   icon: FileSignature
 }, {
+  name: "Reward Config",
+  href: "/admin/reward-config",
+  icon: Gift
+}, {
+  name: "Referrals",
+  href: "/admin/referrals",
+  icon: UserPlus
+}, {
   name: "Launch Checklist",
   href: "/admin/launch-checklist",
   icon: Rocket
 }];
+
 export function Sidebar() {
   const location = useLocation();
   const {
@@ -125,12 +140,15 @@ export function Sidebar() {
     signOut,
     user
   } = useAuth();
+
   const getRoleDisplay = () => {
     if (role === "admin") return "Administrator";
     if (role === "asset_manager") return "Asset Manager";
     return "User";
   };
-  return <div className="flex h-full w-64 flex-col bg-sidebar border-r border-sidebar-border">
+
+  return (
+    <div className="flex h-full w-64 flex-col bg-sidebar border-r border-sidebar-border">
       {/* Logo */}
       <div className="flex h-40 items-center gap-3 px-6 border-b border-sidebar-border">
         <img src="/assets/MetallumXLogo.png" alt="MetallumX" className="w-full max-w-full h-auto object-contain" />
@@ -141,32 +159,38 @@ export function Sidebar() {
         <div className="mb-4">
           <p className="px-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Main</p>
           {navigation.map(item => {
-          const isActive = location.pathname === item.href || item.href !== "/dashboard" && location.pathname.startsWith(item.href);
-          return <RouterNavLink key={item.name} to={item.href} className={cn("sidebar-link", isActive && "active")}>
+            const isActive = location.pathname === item.href || item.href !== "/dashboard" && location.pathname.startsWith(item.href);
+            return (
+              <RouterNavLink key={item.name} to={item.href} className={cn("sidebar-link", isActive && "active")}>
                 <item.icon className="h-5 w-5" />
                 {item.name}
-              </RouterNavLink>;
-        })}
+              </RouterNavLink>
+            );
+          })}
         </div>
 
-        {(isAdmin || isAssetManager) && <div className="pt-4 border-t border-sidebar-border">
+        {(isAdmin || isAssetManager) && (
+          <div className="pt-4 border-t border-sidebar-border">
             <p className="px-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
               {isAdmin ? "Admin" : "Manager"}
             </p>
             {adminNavigation.filter(item => {
-          // Asset managers only see Review Submissions
-          if (!isAdmin && isAssetManager) {
-            return item.href === "/admin/submissions";
-          }
-          return true;
-        }).map(item => {
-          const isActive = location.pathname.startsWith(item.href);
-          return <RouterNavLink key={item.name} to={item.href} className={cn("sidebar-link", isActive && "active")}>
-                    <item.icon className="h-5 w-5" />
-                    {item.name}
-                  </RouterNavLink>;
-        })}
-          </div>}
+              // Asset managers only see Review Submissions
+              if (!isAdmin && isAssetManager) {
+                return item.href === "/admin/submissions";
+              }
+              return true;
+            }).map(item => {
+              const isActive = location.pathname.startsWith(item.href);
+              return (
+                <RouterNavLink key={item.name} to={item.href} className={cn("sidebar-link", isActive && "active")}>
+                  <item.icon className="h-5 w-5" />
+                  {item.name}
+                </RouterNavLink>
+              );
+            })}
+          </div>
+        )}
       </nav>
 
       {/* User section */}
@@ -189,5 +213,6 @@ export function Sidebar() {
           Sign Out
         </button>
       </div>
-    </div>;
+    </div>
+  );
 }
