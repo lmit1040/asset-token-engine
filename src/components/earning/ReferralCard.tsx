@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Users, Copy, Share2, Check, UserPlus, Gift } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
+import { HelpTooltip } from '@/components/help/HelpTooltip';
 import type { ReferralCode, Referral } from '@/types/rewards';
 
 interface ReferralCardProps {
@@ -115,6 +116,7 @@ export function ReferralCard({ signupReward, onboardingReward }: ReferralCardPro
         <CardTitle className="flex items-center gap-2">
           <Users className="h-5 w-5 text-primary" />
           Referral Program
+          <HelpTooltip content="Invite friends using your unique code. Earn MXG when they sign up and complete onboarding." />
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">

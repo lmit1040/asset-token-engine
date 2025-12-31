@@ -1,5 +1,6 @@
 import { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
+import { HelpTooltip } from '@/components/help/HelpTooltip';
 
 interface StatCardProps {
   title: string;
@@ -11,14 +12,18 @@ interface StatCardProps {
     isPositive: boolean;
   };
   className?: string;
+  helpText?: string;
 }
 
-export function StatCard({ title, value, subtitle, icon, trend, className }: StatCardProps) {
+export function StatCard({ title, value, subtitle, icon, trend, className, helpText }: StatCardProps) {
   return (
     <div className={cn('stat-card', className)}>
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-sm font-medium text-muted-foreground">{title}</p>
+          <div className="flex items-center gap-1.5">
+            <p className="text-sm font-medium text-muted-foreground">{title}</p>
+            {helpText && <HelpTooltip content={helpText} side="right" />}
+          </div>
           <p className="mt-2 text-3xl font-bold text-foreground">{value}</p>
           {subtitle && (
             <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>

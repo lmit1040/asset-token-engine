@@ -8,6 +8,7 @@ import { TransactionHistory } from '@/components/dashboard/TransactionHistory';
 import { CryptoTicker } from '@/components/dashboard/CryptoTicker';
 import { NewsSection } from '@/components/dashboard/NewsSection';
 import { LegalDisclaimer } from '@/components/layout/LegalDisclaimer';
+import { OnboardingTour } from '@/components/help/OnboardingTour';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -167,6 +168,11 @@ export default function DashboardPage() {
       </div>
 
       <div className="space-y-6 animate-fade-in" style={{ contain: 'layout' }}>
+        {/* Onboarding Tour */}
+        <div className="flex justify-end">
+          <OnboardingTour />
+        </div>
+
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <StatCard
@@ -174,24 +180,28 @@ export default function DashboardPage() {
             value={formatCurrency(stats.portfolioValue)}
             subtitle="Estimated USD value"
             icon={<DollarSign className="h-6 w-6" />}
+            helpText="Total estimated value of all your token holdings based on current market prices."
           />
           <StatCard
             title="Token Types Held"
             value={stats.totalTokenTypes}
             subtitle="Unique token positions"
             icon={<Coins className="h-6 w-6" />}
+            helpText="Number of different token types you own. Each token represents a specific asset or asset basket."
           />
           <StatCard
             title="Total Holdings"
             value={stats.totalHoldings}
             subtitle="Active positions"
             icon={<TrendingUp className="h-6 w-6" />}
+            helpText="Total number of token positions in your portfolio."
           />
           <StatCard
             title="Vault Assets"
             value={stats.totalAssets}
             subtitle="Backing your tokens"
             icon={<Vault className="h-6 w-6" />}
+            helpText="Total physical assets in the vault that back all tokens on the platform."
           />
         </div>
 
