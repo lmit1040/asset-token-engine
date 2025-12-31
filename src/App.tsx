@@ -44,6 +44,7 @@ import AdminNDASignaturesPage from "./pages/AdminNDASignaturesPage";
 import AdminOpsArbitrageEventsPage from "./pages/AdminOpsArbitrageEventsPage";
 import AdminNewPoolsPage from "./pages/AdminNewPoolsPage";
 import AdminProfitDiscoveryPage from "./pages/AdminProfitDiscoveryPage";
+import MxgEarningPage from "./pages/MxgEarningPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -70,6 +71,7 @@ const App = () => (
               <Route path="/submit-asset" element={<SubmitAssetPage />} />
               <Route path="/my-submissions" element={<MySubmissionsPage />} />
               <Route path="/mxu-benefits" element={<MxuBenefitsPage />} />
+              <Route path="/earn-mxg" element={<MxgEarningPage />} />
               <Route path="/governance" element={<GovernancePage />} />
               <Route path="/governance/:id" element={<ProposalDetailPage />} />
               <Route path="/profile" element={<ProfilePage />} />
