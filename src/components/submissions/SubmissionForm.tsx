@@ -126,7 +126,48 @@ export function SubmissionForm({ onSuccess }: SubmissionFormProps) {
 
       if (error) throw error;
 
-      toast.success('Asset submission created successfully');
+      // Create activity reward for asset submission
+      try {
+        const { data: rewardConfig } = await supabase
+          .from('reward_configurations')
+          .select('mxg_amount, max_per_user_daily')
+          .eq('reward_type', 'asset_submission')
+          .eq('is_active', true)
+          .maybeSingle();
+
+        if (rewardConfig) {
+          // Check daily limit
+          const today = new Date().toISOString().split('T')[0];
+          const { count } = await supabase
+            .from('activity_rewards')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', user.id)
+            .eq('reward_type', 'asset_submission')
+            .gte('created_at', today);
+
+          const dailyCount = count || 0;
+          const maxDaily = rewardConfig.max_per_user_daily || Infinity;
+
+          if (dailyCount < maxDaily) {
+            await supabase.from('activity_rewards').insert({
+              user_id: user.id,
+              reward_type: 'asset_submission',
+              action_type: 'Submitted asset for review',
+              mxg_amount: rewardConfig.mxg_amount,
+              status: 'pending',
+            });
+            toast.success(`Asset submission created! You earned ${rewardConfig.mxg_amount} MXG.`);
+          } else {
+            toast.success('Asset submission created successfully');
+          }
+        } else {
+          toast.success('Asset submission created successfully');
+        }
+      } catch (rewardError) {
+        console.error('Failed to create submission reward:', rewardError);
+        toast.success('Asset submission created successfully');
+      }
+
       setFormData({
         asset_type: '',
         title: '',

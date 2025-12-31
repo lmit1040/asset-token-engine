@@ -116,9 +116,32 @@ export default function ProposalDetailPage() {
 
       if (updateError) throw updateError;
 
+      // Create voting reward
+      try {
+        const { data: rewardConfig } = await supabase
+          .from('reward_configurations')
+          .select('mxg_amount')
+          .eq('reward_type', 'governance_vote')
+          .eq('is_active', true)
+          .maybeSingle();
+
+        if (rewardConfig) {
+          await supabase.from('activity_rewards').insert({
+            user_id: user.id,
+            reward_type: 'governance_vote',
+            action_type: `Voted ${choice} on proposal`,
+            entity_id: proposal.id,
+            mxg_amount: rewardConfig.mxg_amount,
+            status: 'pending',
+          });
+        }
+      } catch (rewardError) {
+        console.error('Failed to create voting reward:', rewardError);
+      }
+
       toast({
         title: 'Vote recorded',
-        description: `You voted ${choice} with ${mxgBalance.toLocaleString()} MXG.`,
+        description: `You voted ${choice} with ${mxgBalance.toLocaleString()} MXG. You earned a voting reward!`,
       });
 
       fetchData();

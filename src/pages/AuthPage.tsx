@@ -20,6 +20,7 @@ const authSchema = z.object({
     .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
     .regex(/[0-9]/, 'Password must contain at least one number'),
   name: z.string().optional(),
+  referralCode: z.string().optional(),
 });
 
 const emailSchema = z.object({
@@ -57,6 +58,7 @@ export default function AuthPage() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
+  const [referralCode, setReferralCode] = useState('');
   const { signIn, signUp, user } = useAuth();
   
   // NDA state
@@ -140,8 +142,23 @@ export default function AuthPage() {
         toast.success('Account created successfully!');
       }
 
+      // Process referral if code was provided
+      if (referralCode.trim()) {
+        try {
+          await supabase.functions.invoke('process-referral', {
+            body: {
+              referralCode: referralCode.trim(),
+              referredUserId: userId,
+            }
+          });
+        } catch (refError) {
+          console.error('Referral processing error:', refError);
+        }
+      }
+
       setShowNDA(false);
       setPendingSignup(null);
+      setReferralCode('');
       
     } catch (error) {
       console.error('Signup error:', error);
@@ -307,20 +324,35 @@ export default function AuthPage() {
 
             <form onSubmit={handleSubmit} className="space-y-5">
               {mode === 'signup' && (
-                <div className="space-y-2">
-                  <Label htmlFor="name" className="text-sm text-muted-foreground">Full Name</Label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="name" className="text-sm text-muted-foreground">Full Name</Label>
+                    <div className="relative">
+                      <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="name"
+                        type="text"
+                        placeholder="John Doe"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        className="pl-10 input-dark"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="referralCode" className="text-sm text-muted-foreground">
+                      Referral Code <span className="text-xs">(optional)</span>
+                    </Label>
                     <Input
-                      id="name"
+                      id="referralCode"
                       type="text"
-                      placeholder="John Doe"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      className="pl-10 input-dark"
+                      placeholder="Enter referral code"
+                      value={referralCode}
+                      onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
+                      className="input-dark"
                     />
                   </div>
-                </div>
+                </>
               )}
 
               {mode !== 'reset-password' && (
