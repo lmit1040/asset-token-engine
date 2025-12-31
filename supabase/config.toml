@@ -113,3 +113,15 @@ verify_jwt = false
 
 [functions.scan-polygon-profit-discovery]
 verify_jwt = false
+
+[functions.claim-activity-reward]
+verify_jwt = false
+
+[functions.generate-referral-code]
+verify_jwt = false
+
+[functions.process-referral]
+verify_jwt = false
+
+[functions.process-staking-rewards]
+verify_jwt = false

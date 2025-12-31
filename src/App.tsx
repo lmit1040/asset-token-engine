@@ -45,6 +45,8 @@ import AdminOpsArbitrageEventsPage from "./pages/AdminOpsArbitrageEventsPage";
 import AdminNewPoolsPage from "./pages/AdminNewPoolsPage";
 import AdminProfitDiscoveryPage from "./pages/AdminProfitDiscoveryPage";
 import MxgEarningPage from "./pages/MxgEarningPage";
+import AdminRewardConfigPage from "./pages/AdminRewardConfigPage";
+import AdminReferralsPage from "./pages/AdminReferralsPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -98,6 +100,8 @@ const App = () => (
               <Route path="/admin/arbitrage/new-pools" element={<AdminNewPoolsPage />} />
               <Route path="/admin/arbitrage/ops-events" element={<AdminOpsArbitrageEventsPage />} />
               <Route path="/admin/arbitrage/profit-discovery" element={<AdminProfitDiscoveryPage />} />
+              <Route path="/admin/reward-config" element={<AdminRewardConfigPage />} />
+              <Route path="/admin/referrals" element={<AdminReferralsPage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </WalletProvider>
