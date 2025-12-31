@@ -8,6 +8,7 @@ import { Lock, Unlock, TrendingUp, Calendar, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { format, addDays, differenceInDays } from 'date-fns';
+import { HelpTooltip } from '@/components/help/HelpTooltip';
 import type { StakingPool, UserStake } from '@/types/rewards';
 
 interface StakingCardProps {
@@ -192,6 +193,7 @@ export function StakingCard({ pool, userStake, mxgBalance, onStakeChange }: Stak
           <CardTitle className="flex items-center gap-2">
             <TrendingUp className="h-5 w-5 text-primary" />
             {pool.pool_name}
+            <HelpTooltip content="Stake your MXG tokens to earn passive rewards. Tokens are locked for the specified period." />
           </CardTitle>
           <Badge variant="secondary" className="text-green-500">
             {pool.apy_percentage}% APY

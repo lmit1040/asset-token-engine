@@ -47,6 +47,8 @@ import AdminProfitDiscoveryPage from "./pages/AdminProfitDiscoveryPage";
 import MxgEarningPage from "./pages/MxgEarningPage";
 import AdminRewardConfigPage from "./pages/AdminRewardConfigPage";
 import AdminReferralsPage from "./pages/AdminReferralsPage";
+import FAQPage from "./pages/FAQPage";
+import DocumentationPage from "./pages/DocumentationPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -102,6 +104,8 @@ const App = () => (
               <Route path="/admin/arbitrage/profit-discovery" element={<AdminProfitDiscoveryPage />} />
               <Route path="/admin/reward-config" element={<AdminRewardConfigPage />} />
               <Route path="/admin/referrals" element={<AdminReferralsPage />} />
+              <Route path="/faq" element={<FAQPage />} />
+              <Route path="/help/documentation" element={<DocumentationPage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </WalletProvider>
