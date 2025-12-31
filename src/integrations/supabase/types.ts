@@ -47,6 +47,42 @@ export type Database = {
         }
         Relationships: []
       }
+      activity_rewards: {
+        Row: {
+          action_type: string
+          created_at: string | null
+          distributed_at: string | null
+          entity_id: string | null
+          id: string
+          mxg_amount: number
+          reward_type: string
+          status: string | null
+          user_id: string
+        }
+        Insert: {
+          action_type: string
+          created_at?: string | null
+          distributed_at?: string | null
+          entity_id?: string | null
+          id?: string
+          mxg_amount: number
+          reward_type: string
+          status?: string | null
+          user_id: string
+        }
+        Update: {
+          action_type?: string
+          created_at?: string | null
+          distributed_at?: string | null
+          entity_id?: string | null
+          id?: string
+          mxg_amount?: number
+          reward_type?: string
+          status?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       arbitrage_runs: {
         Row: {
           actual_profit_lamports: number | null
@@ -1216,6 +1252,104 @@ export type Database = {
           ip_address?: string
           request_count?: number
           window_start?: string
+        }
+        Relationships: []
+      }
+      referral_codes: {
+        Row: {
+          code: string
+          created_at: string | null
+          id: string
+          is_active: boolean | null
+          user_id: string
+          uses_count: number | null
+        }
+        Insert: {
+          code: string
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          user_id: string
+          uses_count?: number | null
+        }
+        Update: {
+          code?: string
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          user_id?: string
+          uses_count?: number | null
+        }
+        Relationships: []
+      }
+      referrals: {
+        Row: {
+          created_at: string | null
+          id: string
+          onboarding_completed: boolean | null
+          referral_code_id: string | null
+          referred_id: string
+          referrer_id: string
+          reward_amount: number | null
+          reward_distributed: boolean | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          onboarding_completed?: boolean | null
+          referral_code_id?: string | null
+          referred_id: string
+          referrer_id: string
+          reward_amount?: number | null
+          reward_distributed?: boolean | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          onboarding_completed?: boolean | null
+          referral_code_id?: string | null
+          referred_id?: string
+          referrer_id?: string
+          reward_amount?: number | null
+          reward_distributed?: boolean | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "referrals_referral_code_id_fkey"
+            columns: ["referral_code_id"]
+            isOneToOne: false
+            referencedRelation: "referral_codes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reward_configurations: {
+        Row: {
+          description: string | null
+          id: string
+          is_active: boolean | null
+          max_per_user_daily: number | null
+          mxg_amount: number
+          reward_type: string
+          updated_at: string | null
+        }
+        Insert: {
+          description?: string | null
+          id?: string
+          is_active?: boolean | null
+          max_per_user_daily?: number | null
+          mxg_amount: number
+          reward_type: string
+          updated_at?: string | null
+        }
+        Update: {
+          description?: string | null
+          id?: string
+          is_active?: boolean | null
+          max_per_user_daily?: number | null
+          mxg_amount?: number
+          reward_type?: string
+          updated_at?: string | null
         }
         Relationships: []
       }
