@@ -199,8 +199,13 @@ export function AssetViewerModal({ assetId, open, onOpenChange, onNavigateToFull
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium text-foreground truncate">
-                              {file.file_name}
+                              {file.title || file.file_name}
                             </p>
+                            {file.description && (
+                              <p className="text-xs text-muted-foreground truncate">
+                                {file.description}
+                              </p>
+                            )}
                             <p className="text-xs text-muted-foreground">
                               {format(new Date(file.uploaded_at), 'MMM d, yyyy')}
                             </p>

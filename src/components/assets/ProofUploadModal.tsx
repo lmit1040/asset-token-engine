@@ -1,12 +1,16 @@
 import { useState } from 'react';
-import { X, Upload, FileText } from 'lucide-react';
+import { X, Upload, FileText, Video, Image } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 
 interface ProofUploadModalProps {
   assetId: string;
+  assetName?: string;
   onClose: () => void;
   onSuccess: () => void;
 }
@@ -18,11 +22,26 @@ async function computeSHA256(file: File): Promise<string> {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-export function ProofUploadModal({ assetId, onClose, onSuccess }: ProofUploadModalProps) {
+export function ProofUploadModal({ assetId, assetName, onClose, onSuccess }: ProofUploadModalProps) {
   const { user } = useAuth();
   const [file, setFile] = useState<File | null>(null);
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
+
+  const getFileIcon = (fileType: string) => {
+    if (fileType.startsWith('video/')) return <Video className="h-8 w-8 text-primary" />;
+    if (fileType.startsWith('image/')) return <Image className="h-8 w-8 text-primary" />;
+    return <FileText className="h-8 w-8 text-primary" />;
+  };
+
+  const getFileTypeLabel = (fileType: string) => {
+    if (fileType.startsWith('video/')) return 'Video';
+    if (fileType.startsWith('image/')) return 'Image';
+    if (fileType === 'application/pdf') return 'PDF Document';
+    return 'Document';
+  };
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -53,6 +72,11 @@ export function ProofUploadModal({ assetId, onClose, onSuccess }: ProofUploadMod
   const handleUpload = async () => {
     if (!file || !user) return;
 
+    if (!title.trim()) {
+      toast.error('Please enter a title for the proof file');
+      return;
+    }
+
     setIsUploading(true);
     try {
       // Compute SHA-256 hash
@@ -73,7 +97,7 @@ export function ProofUploadModal({ assetId, onClose, onSuccess }: ProofUploadMod
         .from('proof-of-reserve')
         .getPublicUrl(fileName);
 
-      // Save to database
+      // Save to database with title and description
       const { error: dbError } = await supabase
         .from('proof_of_reserve_files')
         .insert({
@@ -83,6 +107,8 @@ export function ProofUploadModal({ assetId, onClose, onSuccess }: ProofUploadMod
           file_type: file.type,
           file_hash: fileHash,
           uploaded_by: user.id,
+          title: title.trim(),
+          description: description.trim() || null,
         });
 
       if (dbError) throw dbError;
@@ -98,16 +124,45 @@ export function ProofUploadModal({ assetId, onClose, onSuccess }: ProofUploadMod
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
-      <div className="glass-card w-full max-w-lg p-6 animate-fade-in">
+      <div className="glass-card w-full max-w-lg p-6 animate-fade-in max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-semibold text-foreground">Upload Proof of Reserve</h2>
+          <div>
+            <h2 className="text-xl font-semibold text-foreground">Upload Proof of Reserve</h2>
+            {assetName && (
+              <p className="text-sm text-muted-foreground mt-1">For: {assetName}</p>
+            )}
+          </div>
           <Button variant="ghost" size="icon" onClick={onClose}>
             <X className="h-5 w-5" />
           </Button>
         </div>
 
+        {/* Title Field */}
+        <div className="space-y-2 mb-4">
+          <Label htmlFor="proof-title">Title <span className="text-destructive">*</span></Label>
+          <Input
+            id="proof-title"
+            placeholder="e.g., Certificate of Authenticity, Storage Receipt"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+          />
+        </div>
+
+        {/* Description Field */}
+        <div className="space-y-2 mb-4">
+          <Label htmlFor="proof-description">Description</Label>
+          <Textarea
+            id="proof-description"
+            placeholder="Add details about this proof document..."
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={3}
+          />
+        </div>
+
+        {/* File Upload Area */}
         <div
-          className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+          className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
             dragActive ? 'border-primary bg-primary/5' : 'border-border'
           }`}
           onDragEnter={handleDrag}
@@ -117,11 +172,11 @@ export function ProofUploadModal({ assetId, onClose, onSuccess }: ProofUploadMod
         >
           {file ? (
             <div className="flex items-center gap-3 justify-center">
-              <FileText className="h-8 w-8 text-primary" />
+              {getFileIcon(file.type)}
               <div className="text-left">
                 <p className="font-medium text-foreground">{file.name}</p>
                 <p className="text-sm text-muted-foreground">
-                  {(file.size / 1024 / 1024).toFixed(2)} MB
+                  {getFileTypeLabel(file.type)} • {(file.size / 1024 / 1024).toFixed(2)} MB
                 </p>
               </div>
               <Button variant="ghost" size="sm" onClick={() => setFile(null)}>
@@ -135,7 +190,7 @@ export function ProofUploadModal({ assetId, onClose, onSuccess }: ProofUploadMod
               <p className="text-sm text-muted-foreground mb-4">or click to browse</p>
               <input
                 type="file"
-                accept="image/*,.pdf"
+                accept="image/*,.pdf,video/*"
                 onChange={handleFileChange}
                 className="hidden"
                 id="file-upload"
@@ -150,12 +205,12 @@ export function ProofUploadModal({ assetId, onClose, onSuccess }: ProofUploadMod
         </div>
 
         <p className="text-xs text-muted-foreground mt-4">
-          Supported formats: Images (JPG, PNG) and PDFs. A SHA-256 hash will be computed and stored for verification.
+          Supported formats: Images (JPG, PNG), PDFs, and Videos (MP4, MOV, WebM). A SHA-256 hash will be computed and stored for verification.
         </p>
 
         <div className="flex justify-end gap-3 mt-6">
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleUpload} disabled={!file || isUploading}>
+          <Button onClick={handleUpload} disabled={!file || !title.trim() || isUploading}>
             {isUploading ? (
               <div className="h-4 w-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
             ) : (
