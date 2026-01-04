@@ -138,25 +138,15 @@ export function MediaViewerModal({ file, files = [], open, onOpenChange, onFileC
     }
 
     if (isPdf) {
+      const googleViewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(file.file_url)}&embedded=true`;
       return (
-        <div className={`w-full ${isFullscreen ? 'h-[calc(100vh-120px)]' : 'h-[70vh]'} bg-muted/30 rounded-lg overflow-hidden flex flex-col`}>
-          <object
-            data={file.file_url}
-            type="application/pdf"
-            className="w-full flex-1"
-          >
-            <div className="flex flex-col items-center justify-center h-full p-8 text-center">
-              <p className="text-muted-foreground mb-4">
-                PDF preview is not available in your browser.
-              </p>
-              <Button asChild>
-                <a href={file.file_url} target="_blank" rel="noopener noreferrer">
-                  <ExternalLink className="h-4 w-4 mr-2" />
-                  Open PDF in New Tab
-                </a>
-              </Button>
-            </div>
-          </object>
+        <div className={`w-full ${isFullscreen ? 'h-[calc(100vh-120px)]' : 'h-[70vh]'} bg-muted/30 rounded-lg overflow-hidden`}>
+          <iframe
+            src={googleViewerUrl}
+            title={file.file_name}
+            className="w-full h-full border-0"
+            allowFullScreen
+          />
         </div>
       );
     }
