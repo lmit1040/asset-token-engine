@@ -15,9 +15,10 @@ import { Asset, AssetType, OwnerEntity, ASSET_TYPE_LABELS, OWNER_ENTITY_LABELS }
 
 export default function AssetsPage() {
   const { isAdmin, user } = useAuth();
-  const [activeTab, setActiveTab] = useState<'all' | 'my-assets'>('all');
+  // Non-admins default to 'my-assets', admins can see both tabs
+  const [activeTab, setActiveTab] = useState<'all' | 'my-assets'>(isAdmin ? 'all' : 'my-assets');
   
-  // All assets state
+  // All assets state (only used by admins)
   const [assets, setAssets] = useState<Asset[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -31,9 +32,12 @@ export default function AssetsPage() {
   const [myAssetTypeFilter, setMyAssetTypeFilter] = useState<AssetType | 'all'>('all');
   const [myOwnerFilter, setMyOwnerFilter] = useState<OwnerEntity | 'all'>('all');
 
+  // Only fetch all assets if admin
   useEffect(() => {
-    fetchAssets();
-  }, []);
+    if (isAdmin) {
+      fetchAssets();
+    }
+  }, [isAdmin]);
 
   useEffect(() => {
     if (user?.id) {
@@ -235,29 +239,40 @@ export default function AssetsPage() {
     >
       <div className="space-y-6 animate-fade-in">
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'all' | 'my-assets')}>
-          <TabsList className="grid w-full max-w-md grid-cols-2">
-            <TabsTrigger value="all" className="flex items-center gap-2">
-              All Assets
-              <Badge variant="secondary" className="ml-1">{assets.length}</Badge>
-            </TabsTrigger>
-            <TabsTrigger value="my-assets" className="flex items-center gap-2">
-              My Assets
-              <Badge variant="secondary" className="ml-1">{myAssets.length}</Badge>
-            </TabsTrigger>
-          </TabsList>
+          {isAdmin ? (
+            <TabsList className="grid w-full max-w-md grid-cols-2">
+              <TabsTrigger value="all" className="flex items-center gap-2">
+                All Assets
+                <Badge variant="secondary" className="ml-1">{assets.length}</Badge>
+              </TabsTrigger>
+              <TabsTrigger value="my-assets" className="flex items-center gap-2">
+                My Assets
+                <Badge variant="secondary" className="ml-1">{myAssets.length}</Badge>
+              </TabsTrigger>
+            </TabsList>
+          ) : (
+            <TabsList className="w-fit">
+              <TabsTrigger value="my-assets" className="flex items-center gap-2">
+                My Assets
+                <Badge variant="secondary" className="ml-1">{myAssets.length}</Badge>
+              </TabsTrigger>
+            </TabsList>
+          )}
 
-          <TabsContent value="all" className="space-y-6 mt-6">
-            {renderFiltersBar(
-              searchQuery,
-              setSearchQuery,
-              assetTypeFilter,
-              setAssetTypeFilter,
-              ownerFilter,
-              setOwnerFilter,
-              true
-            )}
-            {renderAssetsGrid(filteredAssets, isLoading, 'No assets found.')}
-          </TabsContent>
+          {isAdmin && (
+            <TabsContent value="all" className="space-y-6 mt-6">
+              {renderFiltersBar(
+                searchQuery,
+                setSearchQuery,
+                assetTypeFilter,
+                setAssetTypeFilter,
+                ownerFilter,
+                setOwnerFilter,
+                true
+              )}
+              {renderAssetsGrid(filteredAssets, isLoading, 'No assets found.')}
+            </TabsContent>
+          )}
 
           <TabsContent value="my-assets" className="space-y-6 mt-6">
             {renderMyAssetsSummary()}
