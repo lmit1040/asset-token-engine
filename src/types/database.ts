@@ -52,6 +52,8 @@ export interface ProofOfReserveFile {
   file_hash: string;
   uploaded_by: string | null;
   uploaded_at: string;
+  title: string | null;
+  description: string | null;
 }
 
 export interface TokenDefinition {

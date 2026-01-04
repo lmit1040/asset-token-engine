@@ -1155,31 +1155,37 @@ export type Database = {
       proof_of_reserve_files: {
         Row: {
           asset_id: string
+          description: string | null
           file_hash: string
           file_name: string
           file_type: string
           file_url: string
           id: string
+          title: string | null
           uploaded_at: string
           uploaded_by: string | null
         }
         Insert: {
           asset_id: string
+          description?: string | null
           file_hash: string
           file_name: string
           file_type: string
           file_url: string
           id?: string
+          title?: string | null
           uploaded_at?: string
           uploaded_by?: string | null
         }
         Update: {
           asset_id?: string
+          description?: string | null
           file_hash?: string
           file_name?: string
           file_type?: string
           file_url?: string
           id?: string
+          title?: string | null
           uploaded_at?: string
           uploaded_by?: string | null
         }

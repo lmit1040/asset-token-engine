@@ -172,10 +172,10 @@ export function MediaViewerModal({ file, files = [], open, onOpenChange, onFileC
           <div className="flex items-center justify-between">
             <div className="flex-1 min-w-0 mr-4">
               <DialogTitle className="text-sm font-medium truncate">
-                {file.file_name}
+                {file.title || file.file_name}
               </DialogTitle>
               <p className="text-xs text-muted-foreground mt-1">
-                Uploaded {format(new Date(file.uploaded_at), 'MMMM d, yyyy')} • {file.file_type}
+                {file.file_name} • Uploaded {format(new Date(file.uploaded_at), 'MMMM d, yyyy')} • {file.file_type}
                 {files.length > 1 && ` • ${currentIndex + 1} of ${files.length}`}
               </p>
             </div>
@@ -237,6 +237,13 @@ export function MediaViewerModal({ file, files = [], open, onOpenChange, onFileC
             </Button>
           )}
           {renderContent()}
+
+          {/* Description if available */}
+          {file.description && (
+            <div className="mt-4 p-4 bg-muted/30 rounded-lg">
+              <p className="text-sm text-foreground">{file.description}</p>
+            </div>
+          )}
         </div>
 
         {/* File Hash Footer */}
@@ -244,7 +251,7 @@ export function MediaViewerModal({ file, files = [], open, onOpenChange, onFileC
           <div className="flex items-center justify-between text-xs">
             <div className="flex items-center gap-4">
               <span className="text-muted-foreground">SHA-256 Hash:</span>
-              <code className="font-mono text-foreground bg-muted px-2 py-1 rounded">
+              <code className="font-mono text-foreground bg-muted px-2 py-1 rounded text-xs truncate max-w-[300px]">
                 {file.file_hash}
               </code>
             </div>
