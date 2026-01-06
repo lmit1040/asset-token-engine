@@ -89,6 +89,7 @@ export interface ZeroXQuoteResult {
   requestParams?: Record<string, string>;
   retryAttempts?: number;
   usedRelaxedConstraints?: boolean;
+  wasRateLimited?: boolean;
 }
 
 // Supported liquidity sources for 0x on Polygon
@@ -227,11 +228,13 @@ export async function getZeroXQuoteWithDetails(params: ZeroXQuoteParams): Promis
   if (excludedSources?.length) requestParams.excludedSources = excludedSources.join(",");
   if (slippageBps) requestParams.slippageBps = slippageBps.toString();
 
-  const RETRY_DELAYS = [0, 250, 750]; // First attempt immediate, then 250ms, then 750ms
+  // Rate limit handling: exponential backoff with longer delays for 429
+  const MAX_RETRIES = 2; // Reduced from 3
   let lastError: string | null = null;
   let lastErrorCode: number | null = null;
   let lastRawResponse: string | undefined;
   let retryAttempts = 0;
+  let wasRateLimited = false;
 
   // Try with source constraints first, then relax if needed
   const attemptConfigs = [
@@ -244,10 +247,14 @@ export async function getZeroXQuoteWithDetails(params: ZeroXQuoteParams): Promis
   }
 
   for (const config of attemptConfigs) {
-    for (let attempt = 0; attempt < RETRY_DELAYS.length; attempt++) {
-      if (attempt > 0 || config.relaxed) {
-        const delay = config.relaxed && attempt === 0 ? 250 : RETRY_DELAYS[attempt];
-        await sleep(delay);
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      // Exponential backoff: 0ms, 1000ms, 2000ms (longer delays)
+      if (attempt > 0) {
+        const backoffDelay = 1000 * Math.pow(2, attempt - 1);
+        console.log(`[zerox-client] Backoff delay: ${backoffDelay}ms before attempt ${attempt + 1}`);
+        await sleep(backoffDelay);
+      } else if (config.relaxed) {
+        await sleep(500); // Delay before trying relaxed config
       }
       
       retryAttempts++;
@@ -281,7 +288,6 @@ export async function getZeroXQuoteWithDetails(params: ZeroXQuoteParams): Promis
           : (config.includedSources?.length ? ` [sources: ${config.includedSources.join(",")}]` : "");
         
         console.log(`[zerox-client] Attempt ${retryAttempts}: ${sellToken} -> ${buyToken} on ${normalizedNetwork} (chainId: ${chainId})${constraintInfo}`);
-        console.log(`[zerox-client] Request params: ${JSON.stringify(requestParams)}`);
 
         const headers: Record<string, string> = {
           "Content-Type": "application/json",
@@ -297,11 +303,20 @@ export async function getZeroXQuoteWithDetails(params: ZeroXQuoteParams): Promis
           const redactedError = errorText.substring(0, 500).replace(/0x-api-key[^&]*/gi, "0x-api-key=REDACTED");
           
           console.error(`[zerox-client] API error (${response.status}): ${redactedError}`);
-          console.error(`[zerox-client] Failed request params: sellToken=${sellToken}, buyToken=${buyToken}, sellAmount=${sellAmount}, chainId=${chainId}`);
           
           lastError = `0x API error ${response.status}: ${redactedError}`;
           lastErrorCode = response.status;
           lastRawResponse = redactedError;
+          
+          // Handle rate limiting (429) with exponential backoff
+          if (response.status === 429) {
+            wasRateLimited = true;
+            console.warn(`[zerox-client] Rate limited (429). Attempt ${attempt + 1}/${MAX_RETRIES}`);
+            // Much longer delay for rate limiting
+            const rateLimitDelay = 2000 * Math.pow(2, attempt); // 2s, 4s, 8s
+            await sleep(rateLimitDelay);
+            continue;
+          }
           
           // Don't retry on 400 (bad params) or 404 (no liquidity)
           if (response.status === 400 || response.status === 404) {
@@ -318,6 +333,7 @@ export async function getZeroXQuoteWithDetails(params: ZeroXQuoteParams): Promis
               requestParams,
               retryAttempts,
               usedRelaxedConstraints: config.relaxed,
+              wasRateLimited,
             };
           }
           
@@ -333,35 +349,36 @@ export async function getZeroXQuoteWithDetails(params: ZeroXQuoteParams): Promis
         const data = await response.json();
         console.log(`[zerox-client] Quote received: buyAmount=${data.buyAmount}${config.relaxed ? " (relaxed constraints)" : ""}`);
 
-        return {
-          quote: {
-            sellToken: data.sellToken || sellToken,
-            buyToken: data.buyToken || buyToken,
-            sellAmount: data.sellAmount || sellAmount,
-            buyAmount: data.buyAmount,
-            price: data.price || "0",
-            guaranteedPrice: data.guaranteedPrice,
-            to: data.to,
-            data: data.data,
-            gas: data.gas || data.transaction?.gas || "0",
-            gasPrice: data.gasPrice || data.transaction?.gasPrice,
-            estimatedGas: data.estimatedGas || data.gas || "0",
-            sources: data.sources?.map((s: { name: string }) => s.name) || [],
-            allowanceTarget: data.allowanceTarget,
-          },
-          error: null,
-          errorCode: null,
-          requestParams,
-          retryAttempts,
-          usedRelaxedConstraints: config.relaxed,
-        };
-      } catch (error) {
-        lastError = error instanceof Error ? error.message : String(error);
-        lastErrorCode = 0;
-        console.error(`[zerox-client] Unexpected error on attempt ${retryAttempts}:`, lastError);
+          return {
+            quote: {
+              sellToken: data.sellToken || sellToken,
+              buyToken: data.buyToken || buyToken,
+              sellAmount: data.sellAmount || sellAmount,
+              buyAmount: data.buyAmount,
+              price: data.price || "0",
+              guaranteedPrice: data.guaranteedPrice,
+              to: data.to,
+              data: data.data,
+              gas: data.gas || data.transaction?.gas || "0",
+              gasPrice: data.gasPrice || data.transaction?.gasPrice,
+              estimatedGas: data.estimatedGas || data.gas || "0",
+              sources: data.sources?.map((s: { name: string }) => s.name) || [],
+              allowanceTarget: data.allowanceTarget,
+            },
+            error: null,
+            errorCode: null,
+            requestParams,
+            retryAttempts,
+            usedRelaxedConstraints: config.relaxed,
+            wasRateLimited,
+          };
+        } catch (error) {
+          lastError = error instanceof Error ? error.message : String(error);
+          lastErrorCode = 0;
+          console.error(`[zerox-client] Unexpected error on attempt ${retryAttempts}:`, lastError);
+        }
       }
     }
-  }
 
   return {
     quote: null,
@@ -370,6 +387,7 @@ export async function getZeroXQuoteWithDetails(params: ZeroXQuoteParams): Promis
     rawResponse: lastRawResponse,
     requestParams,
     retryAttempts,
+    wasRateLimited,
   };
 }
 
