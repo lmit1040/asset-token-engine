@@ -497,7 +497,7 @@ export default function AdminProfitDiscoveryPage() {
                 </CardContent>
               </Card>
             )}
-            <div className="grid gap-4 md:grid-cols-6">
+            <div className="grid gap-4 md:grid-cols-7">
               <Card>
                 <CardContent className="pt-6">
                   <div className="text-2xl font-bold">{scanStats.totalScanned}</div>
@@ -508,6 +508,12 @@ export default function AdminProfitDiscoveryPage() {
                 <CardContent className="pt-6">
                   <div className="text-2xl font-bold text-emerald-400">{scanStats.profitable}</div>
                   <p className="text-xs text-muted-foreground">Profitable</p>
+                </CardContent>
+              </Card>
+              <Card className="border-emerald-500/30 bg-emerald-500/5">
+                <CardContent className="pt-6">
+                  <div className="text-2xl font-bold text-emerald-400">{scanStats.profitable}</div>
+                  <p className="text-xs text-muted-foreground">Strategies Created</p>
                 </CardContent>
               </Card>
               <Card>
@@ -537,6 +543,23 @@ export default function AdminProfitDiscoveryPage() {
                 </CardContent>
               </Card>
             </div>
+            
+            {/* Strategies Created Notice */}
+            {scanStats.profitable > 0 && (
+              <Card className="border-emerald-500/30 bg-emerald-500/5">
+                <CardContent className="pt-6 flex items-center gap-3">
+                  <TrendingUp className="h-5 w-5 text-emerald-400" />
+                  <div>
+                    <p className="font-medium text-emerald-400">
+                      {scanStats.profitable} arbitrage {scanStats.profitable === 1 ? 'strategy' : 'strategies'} auto-created
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      Created as disabled. Review and enable them in the Strategies page.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </>
         )}
 
