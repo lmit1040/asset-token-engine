@@ -50,6 +50,7 @@ import AdminReferralsPage from "./pages/AdminReferralsPage";
 import FAQPage from "./pages/FAQPage";
 import DocumentationPage from "./pages/DocumentationPage";
 import PricingPage from "./pages/PricingPage";
+import TrustDashboardPage from "./pages/TrustDashboardPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -108,6 +109,7 @@ const App = () => (
               <Route path="/faq" element={<FAQPage />} />
               <Route path="/help/documentation" element={<DocumentationPage />} />
               <Route path="/pricing" element={<PricingPage />} />
+              <Route path="/trust-dashboard" element={<TrustDashboardPage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </WalletProvider>
