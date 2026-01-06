@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Search, Zap, ArrowRight, TrendingUp, TrendingDown, Loader2, RefreshCw, Target, Triangle } from "lucide-react";
+import { Search, Zap, ArrowRight, TrendingUp, TrendingDown, Loader2, RefreshCw, Target, Triangle, AlertTriangle } from "lucide-react";
 
 // Liquidity sources supported by 0x on Polygon
 const POLYGON_SOURCES = [
@@ -68,6 +68,8 @@ export default function AdminProfitDiscoveryPage() {
     profitable: number;
     notProfitable: number;
     failed: number;
+    rateLimitCount: number;
+    abortedDueToRateLimit: boolean;
     durationMs: number;
   } | null>(null);
   
@@ -117,6 +119,8 @@ export default function AdminProfitDiscoveryPage() {
           profitable: data.profitable,
           notProfitable: data.notProfitable,
           failed: data.failed,
+          rateLimitCount: data.rateLimitCount || 0,
+          abortedDueToRateLimit: data.abortedDueToRateLimit || false,
           durationMs: data.durationMs,
         });
 
@@ -307,38 +311,61 @@ export default function AdminProfitDiscoveryPage() {
 
         {/* Results Summary */}
         {scanStats && (
-          <div className="grid gap-4 md:grid-cols-5">
-            <Card>
-              <CardContent className="pt-6">
-                <div className="text-2xl font-bold">{scanStats.totalScanned}</div>
-                <p className="text-xs text-muted-foreground">Total Scanned</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-6">
-                <div className="text-2xl font-bold text-emerald-400">{scanStats.profitable}</div>
-                <p className="text-xs text-muted-foreground">Profitable</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-6">
-                <div className="text-2xl font-bold text-amber-400">{scanStats.notProfitable}</div>
-                <p className="text-xs text-muted-foreground">Not Profitable</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-6">
-                <div className="text-2xl font-bold text-red-400">{scanStats.failed}</div>
-                <p className="text-xs text-muted-foreground">Failed</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-6">
-                <div className="text-2xl font-bold">{(scanStats.durationMs / 1000).toFixed(1)}s</div>
-                <p className="text-xs text-muted-foreground">Duration</p>
-              </CardContent>
-            </Card>
-          </div>
+          <>
+            {scanStats.abortedDueToRateLimit && (
+              <Card className="border-amber-500/50 bg-amber-500/10">
+                <CardContent className="pt-6 flex items-center gap-3">
+                  <AlertTriangle className="h-5 w-5 text-amber-400" />
+                  <div>
+                    <p className="font-medium text-amber-400">Scan aborted due to rate limiting</p>
+                    <p className="text-sm text-muted-foreground">
+                      The 0x API rate limit was reached. Try reducing sources or max combinations.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+            <div className="grid gap-4 md:grid-cols-6">
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="text-2xl font-bold">{scanStats.totalScanned}</div>
+                  <p className="text-xs text-muted-foreground">Total Scanned</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="text-2xl font-bold text-emerald-400">{scanStats.profitable}</div>
+                  <p className="text-xs text-muted-foreground">Profitable</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="text-2xl font-bold text-amber-400">{scanStats.notProfitable}</div>
+                  <p className="text-xs text-muted-foreground">Not Profitable</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="text-2xl font-bold text-red-400">{scanStats.failed}</div>
+                  <p className="text-xs text-muted-foreground">Failed</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-6">
+                  <div className={`text-2xl font-bold ${scanStats.rateLimitCount > 0 ? 'text-amber-400' : ''}`}>
+                    {scanStats.rateLimitCount}
+                  </div>
+                  <p className="text-xs text-muted-foreground">Rate Limits</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="text-2xl font-bold">{(scanStats.durationMs / 1000).toFixed(1)}s</div>
+                  <p className="text-xs text-muted-foreground">Duration</p>
+                </CardContent>
+              </Card>
+            </div>
+          </>
         )}
 
         {/* Results Table */}

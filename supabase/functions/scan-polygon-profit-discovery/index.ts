@@ -4,7 +4,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { getZeroXQuote, POLYGON_LIQUIDITY_SOURCES } from "../_shared/zerox-client.ts";
+import { getZeroXQuoteWithDetails, POLYGON_LIQUIDITY_SOURCES } from "../_shared/zerox-client.ts";
 import { POLYGON_TOKENS, OPS_REFILL_CONFIG, formatUSDC, formatWETH, formatPOL } from "../_shared/polygon-tokens.ts";
 
 const corsHeaders = {
@@ -26,10 +26,14 @@ const TRIANGULAR_PATHS = {
   "USDC_WETH_WMATIC": ["USDC_E", "WETH", "WMATIC", "USDC_E"],
 } as const;
 
-// Configuration
-const MAX_COMBINATIONS_PER_SCAN = 20; // Throttle to avoid API hammering
+// Configuration - Adjusted for rate limiting
+const MAX_COMBINATIONS_PER_SCAN = 10; // Reduced from 20 to avoid rate limits
 const SLIPPAGE_BPS = 30; // 0.3%
 const GAS_PRICE_GWEI = 50; // Conservative estimate
+const INTER_QUOTE_DELAY_MS = 500; // Increased from 100ms
+const BATCH_PAUSE_MS = 2000; // Pause between batches
+const BATCH_SIZE = 3; // Process 3 combinations then pause
+const RATE_LIMIT_THRESHOLD = 3; // Circuit breaker after 3 consecutive rate limits
 
 interface ScanRequest {
   mode: ScanMode;
@@ -101,14 +105,14 @@ async function recordScanEvent(
   }
 }
 
-// Quote a single leg with source constraints
+// Quote a single leg with source constraints - returns detailed result
 async function quoteLeg(
   sellToken: string,
   buyToken: string,
   sellAmount: string,
   includedSources?: string[]
-): Promise<{ buyAmount: string; sources: string[] } | null> {
-  const quote = await getZeroXQuote({
+): Promise<{ buyAmount: string; sources: string[]; wasRateLimited: boolean } | null> {
+  const result = await getZeroXQuoteWithDetails({
     network: "POLYGON",
     sellToken,
     buyToken,
@@ -116,11 +120,14 @@ async function quoteLeg(
     includedSources,
   });
 
-  if (!quote) return null;
+  if (!result.quote) {
+    return null;
+  }
 
   return {
-    buyAmount: quote.buyAmount,
-    sources: quote.sources || [],
+    buyAmount: result.quote.buyAmount,
+    sources: result.quote.sources || [],
+    wasRateLimited: result.wasRateLimited || false,
   };
 }
 
@@ -150,21 +157,25 @@ function calculateNetProfit(
   return { grossProfit, netProfit, slippageBuffer, profitBps };
 }
 
-// Source Matrix Scan
+// Source Matrix Scan with circuit breaker
 async function runSourceMatrixScan(
   supabase: any,
   tokenPair: { base: string; quote: string },
   sources: string[],
   notionalUsdc: bigint,
   maxCombinations: number
-): Promise<ScanResult[]> {
+): Promise<{ results: ScanResult[]; rateLimitCount: number; abortedDueToRateLimit: boolean }> {
   const results: ScanResult[] = [];
   const baseToken = POLYGON_TOKENS[tokenPair.base as keyof typeof POLYGON_TOKENS];
   const quoteToken = POLYGON_TOKENS[tokenPair.quote as keyof typeof POLYGON_TOKENS];
   
+  let consecutiveRateLimits = 0;
+  let totalRateLimits = 0;
+  let abortedDueToRateLimit = false;
+  
   if (!baseToken || !quoteToken) {
     console.error("[profit-discovery] Invalid token pair");
-    return results;
+    return { results, rateLimitCount: 0, abortedDueToRateLimit: false };
   }
 
   // Generate source combinations (sourceA != sourceB)
@@ -183,7 +194,22 @@ async function runSourceMatrixScan(
 
   console.log(`[profit-discovery] Running SOURCE_MATRIX scan with ${selected.length} combinations`);
 
+  let processedCount = 0;
+  
   for (const [sourceA, sourceB] of selected) {
+    // Circuit breaker check
+    if (consecutiveRateLimits >= RATE_LIMIT_THRESHOLD) {
+      console.warn(`[profit-discovery] Circuit breaker triggered after ${consecutiveRateLimits} consecutive rate limits. Aborting scan.`);
+      abortedDueToRateLimit = true;
+      break;
+    }
+    
+    // Batch pause - after every BATCH_SIZE combinations, take a longer break
+    if (processedCount > 0 && processedCount % BATCH_SIZE === 0) {
+      console.log(`[profit-discovery] Batch pause: ${BATCH_PAUSE_MS}ms after ${processedCount} combinations`);
+      await new Promise(r => setTimeout(r, BATCH_PAUSE_MS));
+    }
+    
     try {
       // Leg 1: base -> quote (e.g., USDC -> WETH)
       const leg1 = await quoteLeg(
@@ -208,11 +234,22 @@ async function runSourceMatrixScan(
           status: "FAILED",
           reason: `Leg1 quote failed for ${sourceA}`,
         });
+        consecutiveRateLimits = 0; // Reset on non-rate-limit failure
+        processedCount++;
         continue;
       }
+      
+      // Check if rate limited
+      if (leg1.wasRateLimited) {
+        consecutiveRateLimits++;
+        totalRateLimits++;
+        console.warn(`[profit-discovery] Rate limit detected (consecutive: ${consecutiveRateLimits})`);
+      } else {
+        consecutiveRateLimits = 0;
+      }
 
-      // Small delay to avoid rate limiting
-      await new Promise(r => setTimeout(r, 100));
+      // Longer delay between quotes
+      await new Promise(r => setTimeout(r, INTER_QUOTE_DELAY_MS));
 
       // Leg 2: quote -> base (e.g., WETH -> USDC)
       const leg2 = await quoteLeg(
@@ -236,9 +273,19 @@ async function runSourceMatrixScan(
           slippageBuffer: "0",
           status: "FAILED",
           reason: `Leg2 quote failed for ${sourceB}`,
-          leg1Quote: leg1,
+          leg1Quote: { buyAmount: leg1.buyAmount, sources: leg1.sources },
         });
+        processedCount++;
         continue;
+      }
+      
+      // Check if rate limited
+      if (leg2.wasRateLimited) {
+        consecutiveRateLimits++;
+        totalRateLimits++;
+        console.warn(`[profit-discovery] Rate limit detected (consecutive: ${consecutiveRateLimits})`);
+      } else {
+        consecutiveRateLimits = 0;
       }
 
       // Calculate profits
@@ -262,8 +309,8 @@ async function runSourceMatrixScan(
         gasEstimate: gasEstimateWei.toString(),
         slippageBuffer: slippageBuffer.toString(),
         status: netProfit > 0n ? "PROFITABLE" : "NOT_PROFITABLE",
-        leg1Quote: leg1,
-        leg2Quote: leg2,
+        leg1Quote: { buyAmount: leg1.buyAmount, sources: leg1.sources },
+        leg2Quote: { buyAmount: leg2.buyAmount, sources: leg2.sources },
       };
 
       results.push(result);
@@ -271,8 +318,8 @@ async function runSourceMatrixScan(
       // Record to database
       await recordScanEvent(supabase, result, "SOURCE_MATRIX");
 
-      // Small delay between combinations
-      await new Promise(r => setTimeout(r, 200));
+      // Delay between combinations
+      await new Promise(r => setTimeout(r, INTER_QUOTE_DELAY_MS));
 
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : "Unknown error";
@@ -292,26 +339,32 @@ async function runSourceMatrixScan(
         reason: `Error: ${errorMessage}`,
       });
     }
+    
+    processedCount++;
   }
 
-  return results;
+  return { results, rateLimitCount: totalRateLimits, abortedDueToRateLimit };
 }
 
-// Triangular Scan
+// Triangular Scan with circuit breaker
 async function runTriangularScan(
   supabase: any,
   path: string[],
   sources: string[],
   notionalUsdc: bigint,
   maxCombinations: number
-): Promise<ScanResult[]> {
+): Promise<{ results: ScanResult[]; rateLimitCount: number; abortedDueToRateLimit: boolean }> {
   const results: ScanResult[] = [];
+  
+  let consecutiveRateLimits = 0;
+  let totalRateLimits = 0;
+  let abortedDueToRateLimit = false;
   
   // Get token configs
   const tokens = path.map(t => POLYGON_TOKENS[t as keyof typeof POLYGON_TOKENS]);
   if (tokens.some(t => !t)) {
     console.error("[profit-discovery] Invalid triangular path");
-    return results;
+    return { results, rateLimitCount: 0, abortedDueToRateLimit: false };
   }
 
   // Generate source combinations for 3 legs
@@ -331,7 +384,22 @@ async function runTriangularScan(
 
   console.log(`[profit-discovery] Running TRIANGULAR scan with ${selected.length} combinations`);
 
+  let processedCount = 0;
+  
   for (const [sourceA, sourceB, sourceC] of selected) {
+    // Circuit breaker check
+    if (consecutiveRateLimits >= RATE_LIMIT_THRESHOLD) {
+      console.warn(`[profit-discovery] Circuit breaker triggered after ${consecutiveRateLimits} consecutive rate limits. Aborting scan.`);
+      abortedDueToRateLimit = true;
+      break;
+    }
+    
+    // Batch pause
+    if (processedCount > 0 && processedCount % BATCH_SIZE === 0) {
+      console.log(`[profit-discovery] Batch pause: ${BATCH_PAUSE_MS}ms after ${processedCount} combinations`);
+      await new Promise(r => setTimeout(r, BATCH_PAUSE_MS));
+    }
+    
     try {
       // Leg 1: USDC -> WETH
       const leg1 = await quoteLeg(
@@ -357,10 +425,18 @@ async function runTriangularScan(
           status: "FAILED",
           reason: `Leg1 quote failed for ${sourceA}`,
         });
+        processedCount++;
         continue;
       }
+      
+      if (leg1.wasRateLimited) {
+        consecutiveRateLimits++;
+        totalRateLimits++;
+      } else {
+        consecutiveRateLimits = 0;
+      }
 
-      await new Promise(r => setTimeout(r, 100));
+      await new Promise(r => setTimeout(r, INTER_QUOTE_DELAY_MS));
 
       // Leg 2: WETH -> WMATIC
       const leg2 = await quoteLeg(
@@ -385,12 +461,20 @@ async function runTriangularScan(
           slippageBuffer: "0",
           status: "FAILED",
           reason: `Leg2 quote failed for ${sourceB}`,
-          leg1Quote: leg1,
+          leg1Quote: { buyAmount: leg1.buyAmount, sources: leg1.sources },
         });
+        processedCount++;
         continue;
       }
+      
+      if (leg2.wasRateLimited) {
+        consecutiveRateLimits++;
+        totalRateLimits++;
+      } else {
+        consecutiveRateLimits = 0;
+      }
 
-      await new Promise(r => setTimeout(r, 100));
+      await new Promise(r => setTimeout(r, INTER_QUOTE_DELAY_MS));
 
       // Leg 3: WMATIC -> USDC
       const leg3 = await quoteLeg(
@@ -415,10 +499,18 @@ async function runTriangularScan(
           slippageBuffer: "0",
           status: "FAILED",
           reason: `Leg3 quote failed for ${sourceC}`,
-          leg1Quote: leg1,
-          leg2Quote: leg2,
+          leg1Quote: { buyAmount: leg1.buyAmount, sources: leg1.sources },
+          leg2Quote: { buyAmount: leg2.buyAmount, sources: leg2.sources },
         });
+        processedCount++;
         continue;
+      }
+      
+      if (leg3.wasRateLimited) {
+        consecutiveRateLimits++;
+        totalRateLimits++;
+      } else {
+        consecutiveRateLimits = 0;
       }
 
       // Calculate profits (3 swaps = higher gas)
@@ -443,14 +535,14 @@ async function runTriangularScan(
         gasEstimate: gasEstimateWei.toString(),
         slippageBuffer: slippageBuffer.toString(),
         status: netProfit > 0n ? "PROFITABLE" : "NOT_PROFITABLE",
-        leg1Quote: leg1,
-        leg2Quote: leg2,
-        leg3Quote: leg3,
+        leg1Quote: { buyAmount: leg1.buyAmount, sources: leg1.sources },
+        leg2Quote: { buyAmount: leg2.buyAmount, sources: leg2.sources },
+        leg3Quote: { buyAmount: leg3.buyAmount, sources: leg3.sources },
       };
 
       results.push(result);
       await recordScanEvent(supabase, result, "TRIANGULAR");
-      await new Promise(r => setTimeout(r, 200));
+      await new Promise(r => setTimeout(r, INTER_QUOTE_DELAY_MS));
 
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : "Unknown error";
@@ -471,9 +563,11 @@ async function runTriangularScan(
         reason: `Error: ${errorMessage}`,
       });
     }
+    
+    processedCount++;
   }
 
-  return results;
+  return { results, rateLimitCount: totalRateLimits, abortedDueToRateLimit };
 }
 
 serve(async (req) => {
@@ -510,13 +604,21 @@ serve(async (req) => {
     console.log(`[profit-discovery] Starting ${mode} scan with ${sources.length} sources, notional: ${notionalHuman} USDC`);
 
     let results: ScanResult[] = [];
+    let rateLimitCount = 0;
+    let abortedDueToRateLimit = false;
 
     if (mode === "SOURCE_MATRIX") {
       const tokenPair = TOKEN_PAIRS[body.tokenPair || "USDC_WETH"];
-      results = await runSourceMatrixScan(supabase, tokenPair, sources, notionalUsdc, maxCombinations);
+      const scanResult = await runSourceMatrixScan(supabase, tokenPair, sources, notionalUsdc, maxCombinations);
+      results = scanResult.results;
+      rateLimitCount = scanResult.rateLimitCount;
+      abortedDueToRateLimit = scanResult.abortedDueToRateLimit;
     } else if (mode === "TRIANGULAR") {
       const path = [...TRIANGULAR_PATHS[body.triangularPath || "USDC_WETH_WMATIC"]];
-      results = await runTriangularScan(supabase, path, sources, notionalUsdc, maxCombinations);
+      const scanResult = await runTriangularScan(supabase, path, sources, notionalUsdc, maxCombinations);
+      results = scanResult.results;
+      rateLimitCount = scanResult.rateLimitCount;
+      abortedDueToRateLimit = scanResult.abortedDueToRateLimit;
     }
 
     // Sort by net profit descending
@@ -546,6 +648,8 @@ serve(async (req) => {
         profitable,
         notProfitable,
         failed,
+        rateLimitCount,
+        abortedDueToRateLimit,
         durationMs: duration,
         topResults: topResults.map(r => ({
           ...r,
