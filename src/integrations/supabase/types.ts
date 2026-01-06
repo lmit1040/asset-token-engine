@@ -1122,6 +1122,33 @@ export type Database = {
           },
         ]
       }
+      pricing_tiers: {
+        Row: {
+          annual_fee_cents: number | null
+          created_at: string | null
+          description: string | null
+          display_name: string
+          id: string
+          tier_key: string
+        }
+        Insert: {
+          annual_fee_cents?: number | null
+          created_at?: string | null
+          description?: string | null
+          display_name: string
+          id?: string
+          tier_key: string
+        }
+        Update: {
+          annual_fee_cents?: number | null
+          created_at?: string | null
+          description?: string | null
+          display_name?: string
+          id?: string
+          tier_key?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string
@@ -1129,6 +1156,7 @@ export type Database = {
           evm_wallet_address: string | null
           id: string
           name: string | null
+          pricing_tier: string | null
           solana_wallet_address: string | null
           updated_at: string
         }
@@ -1138,6 +1166,7 @@ export type Database = {
           evm_wallet_address?: string | null
           id: string
           name?: string | null
+          pricing_tier?: string | null
           solana_wallet_address?: string | null
           updated_at?: string
         }
@@ -1147,10 +1176,19 @@ export type Database = {
           evm_wallet_address?: string | null
           id?: string
           name?: string | null
+          pricing_tier?: string | null
           solana_wallet_address?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "profiles_pricing_tier_fkey"
+            columns: ["pricing_tier"]
+            isOneToOne: false
+            referencedRelation: "pricing_tiers"
+            referencedColumns: ["tier_key"]
+          },
+        ]
       }
       proof_of_reserve_files: {
         Row: {

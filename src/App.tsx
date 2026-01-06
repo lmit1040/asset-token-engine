@@ -49,6 +49,7 @@ import AdminRewardConfigPage from "./pages/AdminRewardConfigPage";
 import AdminReferralsPage from "./pages/AdminReferralsPage";
 import FAQPage from "./pages/FAQPage";
 import DocumentationPage from "./pages/DocumentationPage";
+import PricingPage from "./pages/PricingPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -106,6 +107,7 @@ const App = () => (
               <Route path="/admin/referrals" element={<AdminReferralsPage />} />
               <Route path="/faq" element={<FAQPage />} />
               <Route path="/help/documentation" element={<DocumentationPage />} />
+              <Route path="/pricing" element={<PricingPage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </WalletProvider>
