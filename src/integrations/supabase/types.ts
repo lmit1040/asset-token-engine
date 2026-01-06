@@ -1791,6 +1791,98 @@ export type Database = {
           },
         ]
       }
+      trust_accounts: {
+        Row: {
+          annual_renewal_date: string | null
+          created_at: string
+          ein_last_four: string | null
+          entity_type: string
+          formation_date: string | null
+          formation_state: string | null
+          id: string
+          is_active: boolean
+          legal_name: string
+          notes: string | null
+          owner_user_id: string
+          updated_at: string
+        }
+        Insert: {
+          annual_renewal_date?: string | null
+          created_at?: string
+          ein_last_four?: string | null
+          entity_type: string
+          formation_date?: string | null
+          formation_state?: string | null
+          id?: string
+          is_active?: boolean
+          legal_name: string
+          notes?: string | null
+          owner_user_id: string
+          updated_at?: string
+        }
+        Update: {
+          annual_renewal_date?: string | null
+          created_at?: string
+          ein_last_four?: string | null
+          entity_type?: string
+          formation_date?: string | null
+          formation_state?: string | null
+          id?: string
+          is_active?: boolean
+          legal_name?: string
+          notes?: string | null
+          owner_user_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      trust_invoices: {
+        Row: {
+          amount_cents: number
+          created_at: string
+          description: string
+          due_date: string
+          id: string
+          invoice_number: string
+          paid_at: string | null
+          status: string
+          stripe_invoice_id: string | null
+          trust_account_id: string
+        }
+        Insert: {
+          amount_cents: number
+          created_at?: string
+          description: string
+          due_date: string
+          id?: string
+          invoice_number: string
+          paid_at?: string | null
+          status?: string
+          stripe_invoice_id?: string | null
+          trust_account_id: string
+        }
+        Update: {
+          amount_cents?: number
+          created_at?: string
+          description?: string
+          due_date?: string
+          id?: string
+          invoice_number?: string
+          paid_at?: string | null
+          status?: string
+          stripe_invoice_id?: string | null
+          trust_account_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trust_invoices_trust_account_id_fkey"
+            columns: ["trust_account_id"]
+            isOneToOne: false
+            referencedRelation: "trust_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_asset_submissions: {
         Row: {
           admin_notes: string | null
