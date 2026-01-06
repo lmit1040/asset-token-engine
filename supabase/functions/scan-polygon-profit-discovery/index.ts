@@ -26,14 +26,14 @@ const TRIANGULAR_PATHS = {
   "USDC_WETH_WMATIC": ["USDC_E", "WETH", "WMATIC", "USDC_E"],
 } as const;
 
-// Configuration - Adjusted for rate limiting
-const MAX_COMBINATIONS_PER_SCAN = 10; // Reduced from 20 to avoid rate limits
+// Configuration - Aggressively tuned for 0x free tier rate limits (~10 req/sec but bursty)
+const MAX_COMBINATIONS_PER_SCAN = 5; // Very conservative to avoid rate limits
 const SLIPPAGE_BPS = 30; // 0.3%
 const GAS_PRICE_GWEI = 50; // Conservative estimate
-const INTER_QUOTE_DELAY_MS = 500; // Increased from 100ms
-const BATCH_PAUSE_MS = 2000; // Pause between batches
-const BATCH_SIZE = 3; // Process 3 combinations then pause
-const RATE_LIMIT_THRESHOLD = 3; // Circuit breaker after 3 consecutive rate limits
+const INTER_QUOTE_DELAY_MS = 1500; // 1.5 seconds between each quote
+const BATCH_PAUSE_MS = 5000; // 5 second pause between batches
+const BATCH_SIZE = 2; // Process only 2 combinations per batch
+const RATE_LIMIT_THRESHOLD = 2; // Circuit breaker after 2 total rate limits (not consecutive)
 
 interface ScanRequest {
   mode: ScanMode;
@@ -169,7 +169,6 @@ async function runSourceMatrixScan(
   const baseToken = POLYGON_TOKENS[tokenPair.base as keyof typeof POLYGON_TOKENS];
   const quoteToken = POLYGON_TOKENS[tokenPair.quote as keyof typeof POLYGON_TOKENS];
   
-  let consecutiveRateLimits = 0;
   let totalRateLimits = 0;
   let abortedDueToRateLimit = false;
   
@@ -197,9 +196,9 @@ async function runSourceMatrixScan(
   let processedCount = 0;
   
   for (const [sourceA, sourceB] of selected) {
-    // Circuit breaker check
-    if (consecutiveRateLimits >= RATE_LIMIT_THRESHOLD) {
-      console.warn(`[profit-discovery] Circuit breaker triggered after ${consecutiveRateLimits} consecutive rate limits. Aborting scan.`);
+    // Circuit breaker check - now based on TOTAL rate limits, not consecutive
+    if (totalRateLimits >= RATE_LIMIT_THRESHOLD) {
+      console.warn(`[profit-discovery] Circuit breaker triggered after ${totalRateLimits} total rate limits. Aborting scan.`);
       abortedDueToRateLimit = true;
       break;
     }
@@ -212,6 +211,7 @@ async function runSourceMatrixScan(
     
     try {
       // Leg 1: base -> quote (e.g., USDC -> WETH)
+      console.log(`[profit-discovery] Starting leg 1: ${sourceA}`);
       const leg1 = await quoteLeg(
         baseToken.address,
         quoteToken.address,
@@ -234,18 +234,18 @@ async function runSourceMatrixScan(
           status: "FAILED",
           reason: `Leg1 quote failed for ${sourceA}`,
         });
-        consecutiveRateLimits = 0; // Reset on non-rate-limit failure
         processedCount++;
+        // Wait before next attempt even on failure
+        await new Promise(r => setTimeout(r, INTER_QUOTE_DELAY_MS));
         continue;
       }
       
-      // Check if rate limited
+      // Check if rate limited (cumulative tracking)
       if (leg1.wasRateLimited) {
-        consecutiveRateLimits++;
         totalRateLimits++;
-        console.warn(`[profit-discovery] Rate limit detected (consecutive: ${consecutiveRateLimits})`);
-      } else {
-        consecutiveRateLimits = 0;
+        console.warn(`[profit-discovery] Rate limit detected (total: ${totalRateLimits})`);
+        // Extra delay after rate limit
+        await new Promise(r => setTimeout(r, 3000));
       }
 
       // Longer delay between quotes
@@ -276,16 +276,17 @@ async function runSourceMatrixScan(
           leg1Quote: { buyAmount: leg1.buyAmount, sources: leg1.sources },
         });
         processedCount++;
+        // Wait before next attempt even on failure
+        await new Promise(r => setTimeout(r, INTER_QUOTE_DELAY_MS));
         continue;
       }
       
-      // Check if rate limited
+      // Check if rate limited (cumulative tracking)
       if (leg2.wasRateLimited) {
-        consecutiveRateLimits++;
         totalRateLimits++;
-        console.warn(`[profit-discovery] Rate limit detected (consecutive: ${consecutiveRateLimits})`);
-      } else {
-        consecutiveRateLimits = 0;
+        console.warn(`[profit-discovery] Rate limit detected (total: ${totalRateLimits})`);
+        // Extra delay after rate limit
+        await new Promise(r => setTimeout(r, 3000));
       }
 
       // Calculate profits
@@ -356,7 +357,6 @@ async function runTriangularScan(
 ): Promise<{ results: ScanResult[]; rateLimitCount: number; abortedDueToRateLimit: boolean }> {
   const results: ScanResult[] = [];
   
-  let consecutiveRateLimits = 0;
   let totalRateLimits = 0;
   let abortedDueToRateLimit = false;
   
@@ -387,9 +387,9 @@ async function runTriangularScan(
   let processedCount = 0;
   
   for (const [sourceA, sourceB, sourceC] of selected) {
-    // Circuit breaker check
-    if (consecutiveRateLimits >= RATE_LIMIT_THRESHOLD) {
-      console.warn(`[profit-discovery] Circuit breaker triggered after ${consecutiveRateLimits} consecutive rate limits. Aborting scan.`);
+    // Circuit breaker check - based on TOTAL rate limits
+    if (totalRateLimits >= RATE_LIMIT_THRESHOLD) {
+      console.warn(`[profit-discovery] Circuit breaker triggered after ${totalRateLimits} total rate limits. Aborting scan.`);
       abortedDueToRateLimit = true;
       break;
     }
@@ -402,6 +402,7 @@ async function runTriangularScan(
     
     try {
       // Leg 1: USDC -> WETH
+      console.log(`[profit-discovery] Starting triangular leg 1: ${sourceA}`);
       const leg1 = await quoteLeg(
         tokens[0]!.address,
         tokens[1]!.address,
@@ -426,14 +427,14 @@ async function runTriangularScan(
           reason: `Leg1 quote failed for ${sourceA}`,
         });
         processedCount++;
+        await new Promise(r => setTimeout(r, INTER_QUOTE_DELAY_MS));
         continue;
       }
       
       if (leg1.wasRateLimited) {
-        consecutiveRateLimits++;
         totalRateLimits++;
-      } else {
-        consecutiveRateLimits = 0;
+        console.warn(`[profit-discovery] Rate limit detected (total: ${totalRateLimits})`);
+        await new Promise(r => setTimeout(r, 3000));
       }
 
       await new Promise(r => setTimeout(r, INTER_QUOTE_DELAY_MS));
@@ -464,14 +465,14 @@ async function runTriangularScan(
           leg1Quote: { buyAmount: leg1.buyAmount, sources: leg1.sources },
         });
         processedCount++;
+        await new Promise(r => setTimeout(r, INTER_QUOTE_DELAY_MS));
         continue;
       }
       
       if (leg2.wasRateLimited) {
-        consecutiveRateLimits++;
         totalRateLimits++;
-      } else {
-        consecutiveRateLimits = 0;
+        console.warn(`[profit-discovery] Rate limit detected (total: ${totalRateLimits})`);
+        await new Promise(r => setTimeout(r, 3000));
       }
 
       await new Promise(r => setTimeout(r, INTER_QUOTE_DELAY_MS));
@@ -503,14 +504,14 @@ async function runTriangularScan(
           leg2Quote: { buyAmount: leg2.buyAmount, sources: leg2.sources },
         });
         processedCount++;
+        await new Promise(r => setTimeout(r, INTER_QUOTE_DELAY_MS));
         continue;
       }
       
       if (leg3.wasRateLimited) {
-        consecutiveRateLimits++;
         totalRateLimits++;
-      } else {
-        consecutiveRateLimits = 0;
+        console.warn(`[profit-discovery] Rate limit detected (total: ${totalRateLimits})`);
+        await new Promise(r => setTimeout(r, 3000));
       }
 
       // Calculate profits (3 swaps = higher gas)
