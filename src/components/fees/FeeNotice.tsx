@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
-import { DollarSign, Sparkles } from 'lucide-react';
+import { DollarSign, Award } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 
 interface FeeCatalogItem {
   id: string;
@@ -12,17 +14,31 @@ interface FeeCatalogItem {
   enabled: boolean;
 }
 
+interface DiscountTier {
+  tier_name: string;
+  discount_percentage: number;
+  min_balance: number;
+}
+
 interface FeeNoticeProps {
   feeKey: string;
   className?: string;
   showMxuDiscount?: boolean;
 }
 
+const TIER_COLORS: Record<string, string> = {
+  Bronze: 'bg-amber-700/20 text-amber-600 border-amber-600/30',
+  Silver: 'bg-slate-400/20 text-slate-500 border-slate-400/30',
+  Gold: 'bg-yellow-500/20 text-yellow-600 border-yellow-500/30',
+  Platinum: 'bg-violet-500/20 text-violet-500 border-violet-500/30',
+};
+
 export function FeeNotice({ feeKey, className = '', showMxuDiscount = true }: FeeNoticeProps) {
   const { user } = useAuth();
   const [fee, setFee] = useState<FeeCatalogItem | null>(null);
   const [userTier, setUserTier] = useState<string>('RETAIL');
   const [mxuDiscount, setMxuDiscount] = useState<number>(0);
+  const [discountTierName, setDiscountTierName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -78,10 +94,11 @@ export function FeeNotice({ feeKey, className = '', showMxuDiscount = true }: Fe
               (t: any) =>
                 t.token_definition?.token_symbol === 'MXU' &&
                 mxuHolding.balance >= t.min_balance
-            );
+            ) as DiscountTier | undefined;
 
             if (mxuDiscountTier) {
               setMxuDiscount(mxuDiscountTier.discount_percentage);
+              setDiscountTierName(mxuDiscountTier.tier_name);
             }
           }
         }
@@ -101,6 +118,7 @@ export function FeeNotice({ feeKey, className = '', showMxuDiscount = true }: Fe
   const discountedAmount = mxuDiscount > 0 
     ? originalAmount * (1 - mxuDiscount / 100) 
     : originalAmount;
+  const savedAmount = originalAmount - discountedAmount;
 
   return (
     <div className={`rounded-lg border border-border bg-muted/30 p-4 ${className}`}>
@@ -112,7 +130,7 @@ export function FeeNotice({ feeKey, className = '', showMxuDiscount = true }: Fe
           <p className="text-sm font-medium text-foreground">Processing Fee</p>
           <p className="text-xs text-muted-foreground mt-0.5">{fee.description}</p>
           
-          <div className="mt-2 flex items-center gap-2">
+          <div className="mt-2 flex items-center gap-2 flex-wrap">
             {mxuDiscount > 0 ? (
               <>
                 <span className="text-lg font-semibold text-primary">
@@ -121,10 +139,18 @@ export function FeeNotice({ feeKey, className = '', showMxuDiscount = true }: Fe
                 <span className="text-sm text-muted-foreground line-through">
                   ${originalAmount.toFixed(2)}
                 </span>
-                <span className="inline-flex items-center gap-1 rounded-full bg-accent/20 px-2 py-0.5 text-xs font-medium text-accent-foreground">
-                  <Sparkles className="h-3 w-3" />
-                  {mxuDiscount}% MXU Discount
-                </span>
+                {discountTierName && (
+                  <Badge 
+                    variant="outline" 
+                    className={cn(
+                      'flex items-center gap-1 font-medium',
+                      TIER_COLORS[discountTierName] || 'bg-accent/20'
+                    )}
+                  >
+                    <Award className="h-3 w-3" />
+                    {discountTierName}
+                  </Badge>
+                )}
               </>
             ) : (
               <span className="text-lg font-semibold text-primary">
@@ -132,6 +158,14 @@ export function FeeNotice({ feeKey, className = '', showMxuDiscount = true }: Fe
               </span>
             )}
           </div>
+
+          {/* Savings callout */}
+          {mxuDiscount > 0 && savedAmount > 0 && (
+            <div className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-green-500/10 px-2.5 py-1 text-xs font-medium text-green-600 dark:text-green-400">
+              <DollarSign className="h-3 w-3" />
+              You saved ${savedAmount.toFixed(2)} using MXU
+            </div>
+          )}
         </div>
       </div>
     </div>
