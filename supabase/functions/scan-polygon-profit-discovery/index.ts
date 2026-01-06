@@ -112,13 +112,22 @@ async function recordScanEvent(
   }
 }
 
+// Quote result with error context
+interface QuoteLegResult {
+  buyAmount: string;
+  sources: string[];
+  wasRateLimited: boolean;
+  error?: string;
+  isNoLiquidity?: boolean;
+}
+
 // Quote a single leg with source constraints - returns detailed result
 async function quoteLeg(
   sellToken: string,
   buyToken: string,
   sellAmount: string,
   includedSources?: string[]
-): Promise<{ buyAmount: string; sources: string[]; wasRateLimited: boolean } | null> {
+): Promise<QuoteLegResult | null> {
   const result = await getZeroXQuoteWithDetails({
     network: "POLYGON",
     sellToken,
@@ -128,7 +137,14 @@ async function quoteLeg(
   });
 
   if (!result.quote) {
-    return null;
+    // Return error context instead of null
+    return {
+      buyAmount: "0",
+      sources: [],
+      wasRateLimited: result.wasRateLimited || false,
+      error: result.error || "Unknown error",
+      isNoLiquidity: result.errorCode === 404 || (result.error?.includes("liquidity") ?? false),
+    };
   }
 
   return {
@@ -136,6 +152,63 @@ async function quoteLeg(
     sources: result.quote.sources || [],
     wasRateLimited: result.wasRateLimited || false,
   };
+}
+
+// Create an arbitrage strategy from a profitable scan result
+async function createStrategyFromScan(
+  supabase: any,
+  result: ScanResult,
+  notionalUsdc: number
+): Promise<string | null> {
+  try {
+    // Only create for profitable results
+    if (result.status !== "PROFITABLE") return null;
+    
+    const strategyName = result.mode === "TRIANGULAR"
+      ? `Auto: ${result.tokenPath.join(" → ")} via ${result.sourceA}->${result.sourceB}->${result.sourceC}`
+      : `Auto: ${result.tokenPath[0]} ↔ ${result.tokenPath[1]} via ${result.sourceA}->${result.sourceB}`;
+    
+    // Get token addresses
+    const tokenInAddress = POLYGON_TOKENS[result.tokenPath[0] as keyof typeof POLYGON_TOKENS]?.address;
+    const tokenOutAddress = POLYGON_TOKENS[result.tokenPath[1] as keyof typeof POLYGON_TOKENS]?.address;
+    
+    if (!tokenInAddress || !tokenOutAddress) {
+      console.error("[profit-discovery] Invalid tokens for strategy creation");
+      return null;
+    }
+    
+    const { data, error } = await supabase
+      .from("arbitrage_strategies")
+      .insert({
+        name: strategyName.substring(0, 100), // Limit name length
+        chain_type: "EVM",
+        evm_network: "POLYGON",
+        token_in_mint: tokenInAddress,
+        token_out_mint: tokenOutAddress,
+        dex_a: result.sourceA || "0x",
+        dex_b: result.sourceB || "0x",
+        is_enabled: false, // Start disabled for review
+        is_auto_enabled: false,
+        min_profit_lamports: 0,
+        min_expected_profit_native: notionalUsdc * 0.001, // 0.1% minimum
+        min_profit_to_gas_ratio: 2.0,
+        max_trades_per_day: 10,
+        max_daily_loss_native: notionalUsdc * 0.05, // 5% of notional
+      })
+      .select("id")
+      .single();
+    
+    if (error) {
+      console.error("[profit-discovery] Failed to create strategy:", error);
+      return null;
+    }
+    
+    console.log(`[profit-discovery] Created strategy ${data.id} from profitable scan`);
+    return data.id;
+  } catch (err) {
+    console.error("[profit-discovery] Strategy creation error:", err);
+    return null;
+  }
 }
 
 // Calculate net profit with waterfall deductions
@@ -228,7 +301,13 @@ async function runSourceMatrixScan(
         [sourceA]
       );
 
-      if (!leg1) {
+      // Check if quote had an error
+      if (leg1?.error) {
+        const status = leg1.isNoLiquidity ? "NOT_PROFITABLE" : "FAILED";
+        const reason = leg1.isNoLiquidity 
+          ? `No liquidity on ${sourceA}` 
+          : `Leg1 error: ${leg1.error}`;
+        
         results.push({
           mode: "SOURCE_MATRIX",
           sourceA,
@@ -240,17 +319,24 @@ async function runSourceMatrixScan(
           profitBps: 0,
           gasEstimate: "0",
           slippageBuffer: "0",
-          status: "FAILED",
-          reason: `Leg1 quote failed for ${sourceA}`,
+          status,
+          reason,
         });
         processedCount++;
-        // Wait before next attempt even on failure
-        await new Promise(r => setTimeout(r, delayMs));
+        
+        // Track rate limits
+        if (leg1.wasRateLimited) {
+          totalRateLimits++;
+          console.warn(`[profit-discovery] Rate limit detected (total: ${totalRateLimits})`);
+          await new Promise(r => setTimeout(r, 3000));
+        } else {
+          await new Promise(r => setTimeout(r, delayMs));
+        }
         continue;
       }
       
       // Check if rate limited (cumulative tracking)
-      if (leg1.wasRateLimited) {
+      if (leg1?.wasRateLimited) {
         totalRateLimits++;
         console.warn(`[profit-discovery] Rate limit detected (total: ${totalRateLimits})`);
         // Extra delay after rate limit
@@ -264,11 +350,17 @@ async function runSourceMatrixScan(
       const leg2 = await quoteLeg(
         quoteToken.address,
         baseToken.address,
-        leg1.buyAmount,
+        leg1!.buyAmount,
         [sourceB]
       );
 
-      if (!leg2) {
+      // Check if quote had an error
+      if (leg2?.error) {
+        const status = leg2.isNoLiquidity ? "NOT_PROFITABLE" : "FAILED";
+        const reason = leg2.isNoLiquidity 
+          ? `No liquidity on ${sourceB}` 
+          : `Leg2 error: ${leg2.error}`;
+        
         results.push({
           mode: "SOURCE_MATRIX",
           sourceA,
@@ -280,18 +372,24 @@ async function runSourceMatrixScan(
           profitBps: 0,
           gasEstimate: "0",
           slippageBuffer: "0",
-          status: "FAILED",
-          reason: `Leg2 quote failed for ${sourceB}`,
-          leg1Quote: { buyAmount: leg1.buyAmount, sources: leg1.sources },
+          status,
+          reason,
+          leg1Quote: { buyAmount: leg1!.buyAmount, sources: leg1!.sources },
         });
         processedCount++;
-        // Wait before next attempt even on failure
-        await new Promise(r => setTimeout(r, delayMs));
+        
+        if (leg2.wasRateLimited) {
+          totalRateLimits++;
+          console.warn(`[profit-discovery] Rate limit detected (total: ${totalRateLimits})`);
+          await new Promise(r => setTimeout(r, 3000));
+        } else {
+          await new Promise(r => setTimeout(r, delayMs));
+        }
         continue;
       }
       
       // Check if rate limited (cumulative tracking)
-      if (leg2.wasRateLimited) {
+      if (leg2?.wasRateLimited) {
         totalRateLimits++;
         console.warn(`[profit-discovery] Rate limit detected (total: ${totalRateLimits})`);
         // Extra delay after rate limit
@@ -302,12 +400,12 @@ async function runSourceMatrixScan(
       const gasEstimateWei = 300000n * BigInt(GAS_PRICE_GWEI) * 10n ** 9n; // ~300k gas for 2 swaps
       const { grossProfit, netProfit, slippageBuffer, profitBps } = calculateNetProfit(
         notionalUsdc,
-        BigInt(leg2.buyAmount),
+        BigInt(leg2!.buyAmount),
         gasEstimateWei,
         SLIPPAGE_BPS
       );
 
-      const result: ScanResult = {
+      const scanResult: ScanResult = {
         mode: "SOURCE_MATRIX",
         sourceA,
         sourceB,
@@ -319,14 +417,20 @@ async function runSourceMatrixScan(
         gasEstimate: gasEstimateWei.toString(),
         slippageBuffer: slippageBuffer.toString(),
         status: netProfit > 0n ? "PROFITABLE" : "NOT_PROFITABLE",
-        leg1Quote: { buyAmount: leg1.buyAmount, sources: leg1.sources },
-        leg2Quote: { buyAmount: leg2.buyAmount, sources: leg2.sources },
+        leg1Quote: { buyAmount: leg1!.buyAmount, sources: leg1!.sources },
+        leg2Quote: { buyAmount: leg2!.buyAmount, sources: leg2!.sources },
       };
 
-      results.push(result);
+      results.push(scanResult);
 
       // Record to database
-      await recordScanEvent(supabase, result, "SOURCE_MATRIX");
+      await recordScanEvent(supabase, scanResult, "SOURCE_MATRIX");
+      
+      // Auto-create strategy for profitable results
+      if (scanResult.status === "PROFITABLE") {
+        const notionalHuman = Number(notionalUsdc) / 1_000_000;
+        await createStrategyFromScan(supabase, scanResult, notionalHuman);
+      }
 
       // Delay between combinations
       await new Promise(r => setTimeout(r, delayMs));
@@ -421,12 +525,13 @@ async function runTriangularScan(
         [sourceA]
       );
 
-      if (!leg1) {
+      if (leg1?.error) {
+        const status = leg1.isNoLiquidity ? "NOT_PROFITABLE" : "FAILED";
+        const reason = leg1.isNoLiquidity ? `No liquidity on ${sourceA}` : `Leg1 error: ${leg1.error}`;
+        
         results.push({
           mode: "TRIANGULAR",
-          sourceA,
-          sourceB,
-          sourceC,
+          sourceA, sourceB, sourceC,
           tokenPath: path,
           notionalIn: notionalUsdc.toString(),
           expectedGrossProfit: "0",
@@ -434,15 +539,20 @@ async function runTriangularScan(
           profitBps: 0,
           gasEstimate: "0",
           slippageBuffer: "0",
-          status: "FAILED",
-          reason: `Leg1 quote failed for ${sourceA}`,
+          status,
+          reason,
         });
         processedCount++;
-        await new Promise(r => setTimeout(r, delayMs));
+        if (leg1.wasRateLimited) {
+          totalRateLimits++;
+          await new Promise(r => setTimeout(r, 3000));
+        } else {
+          await new Promise(r => setTimeout(r, delayMs));
+        }
         continue;
       }
       
-      if (leg1.wasRateLimited) {
+      if (leg1?.wasRateLimited) {
         totalRateLimits++;
         console.warn(`[profit-discovery] Rate limit detected (total: ${totalRateLimits})`);
         await new Promise(r => setTimeout(r, 3000));
@@ -454,16 +564,17 @@ async function runTriangularScan(
       const leg2 = await quoteLeg(
         tokens[1]!.address,
         tokens[2]!.address,
-        leg1.buyAmount,
+        leg1!.buyAmount,
         [sourceB]
       );
 
-      if (!leg2) {
+      if (leg2?.error) {
+        const status = leg2.isNoLiquidity ? "NOT_PROFITABLE" : "FAILED";
+        const reason = leg2.isNoLiquidity ? `No liquidity on ${sourceB}` : `Leg2 error: ${leg2.error}`;
+        
         results.push({
           mode: "TRIANGULAR",
-          sourceA,
-          sourceB,
-          sourceC,
+          sourceA, sourceB, sourceC,
           tokenPath: path,
           notionalIn: notionalUsdc.toString(),
           expectedGrossProfit: "0",
@@ -471,16 +582,21 @@ async function runTriangularScan(
           profitBps: 0,
           gasEstimate: "0",
           slippageBuffer: "0",
-          status: "FAILED",
-          reason: `Leg2 quote failed for ${sourceB}`,
-          leg1Quote: { buyAmount: leg1.buyAmount, sources: leg1.sources },
+          status,
+          reason,
+          leg1Quote: { buyAmount: leg1!.buyAmount, sources: leg1!.sources },
         });
         processedCount++;
-        await new Promise(r => setTimeout(r, delayMs));
+        if (leg2.wasRateLimited) {
+          totalRateLimits++;
+          await new Promise(r => setTimeout(r, 3000));
+        } else {
+          await new Promise(r => setTimeout(r, delayMs));
+        }
         continue;
       }
       
-      if (leg2.wasRateLimited) {
+      if (leg2?.wasRateLimited) {
         totalRateLimits++;
         console.warn(`[profit-discovery] Rate limit detected (total: ${totalRateLimits})`);
         await new Promise(r => setTimeout(r, 3000));
@@ -492,16 +608,17 @@ async function runTriangularScan(
       const leg3 = await quoteLeg(
         tokens[2]!.address,
         tokens[3]!.address,
-        leg2.buyAmount,
+        leg2!.buyAmount,
         [sourceC]
       );
 
-      if (!leg3) {
+      if (leg3?.error) {
+        const status = leg3.isNoLiquidity ? "NOT_PROFITABLE" : "FAILED";
+        const reason = leg3.isNoLiquidity ? `No liquidity on ${sourceC}` : `Leg3 error: ${leg3.error}`;
+        
         results.push({
           mode: "TRIANGULAR",
-          sourceA,
-          sourceB,
-          sourceC,
+          sourceA, sourceB, sourceC,
           tokenPath: path,
           notionalIn: notionalUsdc.toString(),
           expectedGrossProfit: "0",
@@ -509,17 +626,22 @@ async function runTriangularScan(
           profitBps: 0,
           gasEstimate: "0",
           slippageBuffer: "0",
-          status: "FAILED",
-          reason: `Leg3 quote failed for ${sourceC}`,
-          leg1Quote: { buyAmount: leg1.buyAmount, sources: leg1.sources },
-          leg2Quote: { buyAmount: leg2.buyAmount, sources: leg2.sources },
+          status,
+          reason,
+          leg1Quote: { buyAmount: leg1!.buyAmount, sources: leg1!.sources },
+          leg2Quote: { buyAmount: leg2!.buyAmount, sources: leg2!.sources },
         });
         processedCount++;
-        await new Promise(r => setTimeout(r, delayMs));
+        if (leg3.wasRateLimited) {
+          totalRateLimits++;
+          await new Promise(r => setTimeout(r, 3000));
+        } else {
+          await new Promise(r => setTimeout(r, delayMs));
+        }
         continue;
       }
       
-      if (leg3.wasRateLimited) {
+      if (leg3?.wasRateLimited) {
         totalRateLimits++;
         console.warn(`[profit-discovery] Rate limit detected (total: ${totalRateLimits})`);
         await new Promise(r => setTimeout(r, 3000));
@@ -529,16 +651,14 @@ async function runTriangularScan(
       const gasEstimateWei = 450000n * BigInt(GAS_PRICE_GWEI) * 10n ** 9n;
       const { grossProfit, netProfit, slippageBuffer, profitBps } = calculateNetProfit(
         notionalUsdc,
-        BigInt(leg3.buyAmount),
+        BigInt(leg3!.buyAmount),
         gasEstimateWei,
         SLIPPAGE_BPS
       );
 
-      const result: ScanResult = {
+      const scanResult: ScanResult = {
         mode: "TRIANGULAR",
-        sourceA,
-        sourceB,
-        sourceC,
+        sourceA, sourceB, sourceC,
         tokenPath: path,
         notionalIn: notionalUsdc.toString(),
         expectedGrossProfit: grossProfit.toString(),
@@ -547,13 +667,20 @@ async function runTriangularScan(
         gasEstimate: gasEstimateWei.toString(),
         slippageBuffer: slippageBuffer.toString(),
         status: netProfit > 0n ? "PROFITABLE" : "NOT_PROFITABLE",
-        leg1Quote: { buyAmount: leg1.buyAmount, sources: leg1.sources },
-        leg2Quote: { buyAmount: leg2.buyAmount, sources: leg2.sources },
-        leg3Quote: { buyAmount: leg3.buyAmount, sources: leg3.sources },
+        leg1Quote: { buyAmount: leg1!.buyAmount, sources: leg1!.sources },
+        leg2Quote: { buyAmount: leg2!.buyAmount, sources: leg2!.sources },
+        leg3Quote: { buyAmount: leg3!.buyAmount, sources: leg3!.sources },
       };
 
-      results.push(result);
-      await recordScanEvent(supabase, result, "TRIANGULAR");
+      results.push(scanResult);
+      await recordScanEvent(supabase, scanResult, "TRIANGULAR");
+      
+      // Auto-create strategy for profitable results
+      if (scanResult.status === "PROFITABLE") {
+        const notionalHuman = Number(notionalUsdc) / 1_000_000;
+        await createStrategyFromScan(supabase, scanResult, notionalHuman);
+      }
+      
       await new Promise(r => setTimeout(r, delayMs));
 
     } catch (err: unknown) {
