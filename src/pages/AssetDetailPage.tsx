@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Edit, Archive, Upload, FileText, Shield, Plus, Coins, AlertCircle, Eye } from 'lucide-react';
+import { ArrowLeft, Edit, Archive, Upload, FileText, Shield, Plus, Coins, AlertCircle, Eye, Trash2 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -109,6 +109,29 @@ export default function AssetDetailPage() {
       navigate('/assets');
     } catch (error: any) {
       toast.error(error.message || 'Failed to archive asset');
+    }
+  };
+
+  const handleDeleteProof = async (file: ProofOfReserveFile) => {
+    try {
+      // Extract file path from URL and delete from storage
+      const urlParts = file.file_url.split('/proof-of-reserve/');
+      if (urlParts.length > 1) {
+        const filePath = decodeURIComponent(urlParts[1]);
+        await supabase.storage.from('proof-of-reserve').remove([filePath]);
+      }
+
+      // Delete from database
+      const { error } = await supabase
+        .from('proof_of_reserve_files')
+        .delete()
+        .eq('id', file.id);
+
+      if (error) throw error;
+      toast.success('Proof file deleted successfully');
+      fetchData();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to delete proof file');
     }
   };
 
@@ -304,15 +327,48 @@ export default function AssetDetailPage() {
                         </code>
                       </td>
                       <td className="table-cell text-right">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setSelectedProofFile(file)}
-                          className="text-primary hover:text-primary/80"
-                        >
-                          <Eye className="h-4 w-4 mr-1" />
-                          View
-                        </Button>
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setSelectedProofFile(file)}
+                            className="text-primary hover:text-primary/80"
+                          >
+                            <Eye className="h-4 w-4 mr-1" />
+                            View
+                          </Button>
+                          {canUploadProofs && (
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Delete Proof File</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    Are you sure you want to delete "{file.title || file.file_name}"? 
+                                    This action cannot be undone.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction 
+                                    onClick={() => handleDeleteProof(file)}
+                                    className="bg-destructive hover:bg-destructive/90"
+                                  >
+                                    Delete
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -437,6 +493,19 @@ export default function AssetDetailPage() {
           open={!!selectedProofFile}
           onOpenChange={(open) => !open && setSelectedProofFile(null)}
           onFileChange={(file) => setSelectedProofFile(file)}
+          canDelete={canUploadProofs}
+          onDelete={async (file) => {
+            await handleDeleteProof(file);
+            // Navigate to next file or close modal
+            const currentIdx = proofFiles.findIndex(f => f.id === file.id);
+            if (proofFiles.length <= 1) {
+              setSelectedProofFile(null);
+            } else if (currentIdx < proofFiles.length - 1) {
+              setSelectedProofFile(proofFiles[currentIdx + 1]);
+            } else {
+              setSelectedProofFile(proofFiles[currentIdx - 1]);
+            }
+          }}
         />
       )}
     </DashboardLayout>

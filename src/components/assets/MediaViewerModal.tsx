@@ -1,9 +1,20 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Download, ExternalLink, ZoomIn, ZoomOut, RotateCw, Maximize2, Minimize2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Download, ExternalLink, ZoomIn, ZoomOut, RotateCw, Maximize2, Minimize2, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { ProofOfReserveFile } from '@/types/database';
 import { format } from 'date-fns';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 interface MediaViewerModalProps {
   file: ProofOfReserveFile;
@@ -11,12 +22,25 @@ interface MediaViewerModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onFileChange?: (file: ProofOfReserveFile) => void;
+  canDelete?: boolean;
+  onDelete?: (file: ProofOfReserveFile) => Promise<void>;
 }
 
-export function MediaViewerModal({ file, files = [], open, onOpenChange, onFileChange }: MediaViewerModalProps) {
+export function MediaViewerModal({ file, files = [], open, onOpenChange, onFileChange, canDelete, onDelete }: MediaViewerModalProps) {
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDelete = async () => {
+    if (!onDelete) return;
+    setIsDeleting(true);
+    try {
+      await onDelete(file);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const currentIndex = files.findIndex(f => f.id === file.id);
   const hasPrev = files.length > 1 && currentIndex > 0;
@@ -212,6 +236,39 @@ export function MediaViewerModal({ file, files = [], open, onOpenChange, onFileC
                   <Download className="h-4 w-4" />
                 </a>
               </Button>
+              {canDelete && onDelete && (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                      disabled={isDeleting}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete Proof File</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Are you sure you want to delete "{file.title || file.file_name}"? 
+                        This action cannot be undone.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction 
+                        onClick={handleDelete}
+                        className="bg-destructive hover:bg-destructive/90"
+                        disabled={isDeleting}
+                      >
+                        {isDeleting ? 'Deleting...' : 'Delete'}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
             </div>
           </div>
         </DialogHeader>
