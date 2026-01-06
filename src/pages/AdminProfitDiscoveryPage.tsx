@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,9 +9,11 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Progress } from "@/components/ui/progress";
+import { Slider } from "@/components/ui/slider";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Search, Zap, ArrowRight, TrendingUp, TrendingDown, Loader2, RefreshCw, Target, Triangle, AlertTriangle } from "lucide-react";
+import { Search, Zap, ArrowRight, TrendingUp, TrendingDown, Loader2, RefreshCw, Target, Triangle, AlertTriangle, Gauge, Clock } from "lucide-react";
 
 // Liquidity sources supported by 0x on Polygon
 const POLYGON_SOURCES = [
@@ -26,6 +28,14 @@ const POLYGON_SOURCES = [
 ];
 
 type ScanMode = "SOURCE_MATRIX" | "TRIANGULAR";
+
+// Scan speed presets
+const SCAN_SPEED_PRESETS = [
+  { value: 0, label: "Conservative", delayMs: 2000, batchPauseMs: 6000, batchSize: 2, description: "Slowest, avoids rate limits" },
+  { value: 33, label: "Moderate", delayMs: 1200, batchPauseMs: 4000, batchSize: 3, description: "Balanced speed" },
+  { value: 66, label: "Fast", delayMs: 600, batchPauseMs: 2000, batchSize: 4, description: "Faster but may hit limits" },
+  { value: 100, label: "Aggressive", delayMs: 300, batchPauseMs: 1000, batchSize: 5, description: "Fastest, likely rate limited" },
+];
 
 interface ScanResult {
   mode: ScanMode;
@@ -49,6 +59,13 @@ interface ScanResult {
   leg3Quote?: { buyAmount: string; sources: string[] };
 }
 
+interface ScanProgress {
+  current: number;
+  total: number;
+  currentCombination?: string;
+  startTime: number;
+}
+
 export default function AdminProfitDiscoveryPage() {
   const { toast } = useToast();
   
@@ -59,9 +76,11 @@ export default function AdminProfitDiscoveryPage() {
   const [selectedSources, setSelectedSources] = useState<string[]>(["Uniswap_V3", "QuickSwap", "SushiSwap"]);
   const [notional, setNotional] = useState("1000");
   const [maxCombinations, setMaxCombinations] = useState("20");
+  const [scanSpeed, setScanSpeed] = useState(33); // Default to moderate
   
   // Results state
   const [isScanning, setIsScanning] = useState(false);
+  const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
   const [results, setResults] = useState<ScanResult[]>([]);
   const [scanStats, setScanStats] = useState<{
     totalScanned: number;
@@ -75,6 +94,9 @@ export default function AdminProfitDiscoveryPage() {
   
   // Detail modal
   const [selectedResult, setSelectedResult] = useState<ScanResult | null>(null);
+  
+  // Progress simulation interval ref
+  const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const toggleSource = (source: string) => {
     setSelectedSources(prev => 
@@ -83,6 +105,49 @@ export default function AdminProfitDiscoveryPage() {
         : [...prev, source]
     );
   };
+
+  // Get current speed preset
+  const getCurrentSpeedPreset = () => {
+    if (scanSpeed <= 16) return SCAN_SPEED_PRESETS[0];
+    if (scanSpeed <= 50) return SCAN_SPEED_PRESETS[1];
+    if (scanSpeed <= 83) return SCAN_SPEED_PRESETS[2];
+    return SCAN_SPEED_PRESETS[3];
+  };
+  
+  const currentPreset = getCurrentSpeedPreset();
+  
+  // Calculate estimated time based on combinations and speed
+  const calculateEstimatedTime = () => {
+    const numCombinations = Math.min(
+      parseInt(maxCombinations) || 20,
+      selectedSources.length * (selectedSources.length - 1)
+    );
+    const preset = getCurrentSpeedPreset();
+    const legsPerCombination = mode === "TRIANGULAR" ? 3 : 2;
+    const totalQuotes = numCombinations * legsPerCombination;
+    const batches = Math.ceil(totalQuotes / preset.batchSize);
+    const estimatedMs = (totalQuotes * preset.delayMs) + (batches * preset.batchPauseMs);
+    return Math.ceil(estimatedMs / 1000);
+  };
+  
+  // Calculate ETA based on progress
+  const calculateEta = () => {
+    if (!scanProgress || scanProgress.current === 0) return null;
+    const elapsed = Date.now() - scanProgress.startTime;
+    const avgTimePerItem = elapsed / scanProgress.current;
+    const remaining = scanProgress.total - scanProgress.current;
+    const etaMs = remaining * avgTimePerItem;
+    return Math.ceil(etaMs / 1000);
+  };
+  
+  // Cleanup interval on unmount
+  useEffect(() => {
+    return () => {
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+      }
+    };
+  }, []);
 
   const runScan = async () => {
     if (selectedSources.length < 2) {
@@ -97,6 +162,35 @@ export default function AdminProfitDiscoveryPage() {
     setIsScanning(true);
     setResults([]);
     setScanStats(null);
+    
+    // Calculate total combinations for progress
+    const numCombinations = Math.min(
+      parseInt(maxCombinations) || 20,
+      selectedSources.length * (selectedSources.length - 1)
+    );
+    
+    // Initialize progress
+    setScanProgress({
+      current: 0,
+      total: numCombinations,
+      startTime: Date.now(),
+    });
+    
+    // Start progress simulation (updates every second based on estimated speed)
+    const preset = getCurrentSpeedPreset();
+    const estimatedMsPerCombination = (preset.delayMs * 2) + (preset.batchPauseMs / preset.batchSize);
+    
+    progressIntervalRef.current = setInterval(() => {
+      setScanProgress(prev => {
+        if (!prev || prev.current >= prev.total) return prev;
+        const elapsed = Date.now() - prev.startTime;
+        const estimatedCurrent = Math.min(
+          Math.floor(elapsed / estimatedMsPerCombination),
+          prev.total - 1 // Keep at least 1 remaining until complete
+        );
+        return { ...prev, current: estimatedCurrent };
+      });
+    }, 500);
 
     try {
       const { data, error } = await supabase.functions.invoke("scan-polygon-profit-discovery", {
@@ -107,10 +201,19 @@ export default function AdminProfitDiscoveryPage() {
           includedSources: selectedSources,
           notionalOverride: parseFloat(notional),
           maxCombinations: parseInt(maxCombinations),
+          // Pass speed settings
+          scanSpeed: {
+            delayMs: preset.delayMs,
+            batchPauseMs: preset.batchPauseMs,
+            batchSize: preset.batchSize,
+          },
         },
       });
 
       if (error) throw error;
+
+      // Complete progress
+      setScanProgress(prev => prev ? { ...prev, current: prev.total } : null);
 
       if (data.success) {
         setResults(data.topResults || []);
@@ -139,7 +242,12 @@ export default function AdminProfitDiscoveryPage() {
         variant: "destructive",
       });
     } finally {
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+        progressIntervalRef.current = null;
+      }
       setIsScanning(false);
+      setScanProgress(null);
     }
   };
 
@@ -286,28 +394,92 @@ export default function AdminProfitDiscoveryPage() {
             </CardContent>
           </Card>
         </div>
+        
+        {/* Scan Speed Control */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Gauge className="h-5 w-5" />
+              Scan Speed
+            </CardTitle>
+            <CardDescription>
+              Balance between speed and rate limit avoidance
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-sm font-medium">{currentPreset.label}</span>
+                <span className="text-xs text-muted-foreground flex items-center gap-1">
+                  <Clock className="h-3 w-3" />
+                  Est. ~{calculateEstimatedTime()}s
+                </span>
+              </div>
+              <Slider
+                value={[scanSpeed]}
+                onValueChange={(v) => setScanSpeed(v[0])}
+                max={100}
+                step={1}
+                className="w-full"
+                disabled={isScanning}
+              />
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>Conservative</span>
+                <span>Aggressive</span>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground bg-muted p-2 rounded">
+              {currentPreset.description} • {currentPreset.delayMs}ms delay • Batch of {currentPreset.batchSize}
+            </p>
+          </CardContent>
+        </Card>
 
-        {/* Run Scan Button */}
-        <div className="flex justify-center">
-          <Button
-            size="lg"
-            onClick={runScan}
-            disabled={isScanning || selectedSources.length < 2}
-            className="w-full max-w-md"
-          >
-            {isScanning ? (
-              <>
-                <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                Scanning...
-              </>
-            ) : (
-              <>
-                <Search className="h-5 w-5 mr-2" />
-                Run {mode === "SOURCE_MATRIX" ? "Source Matrix" : "Triangular"} Scan
-              </>
+        {/* Run Scan Button & Progress */}
+        <Card>
+          <CardContent className="pt-6 space-y-4">
+            <Button
+              size="lg"
+              onClick={runScan}
+              disabled={isScanning || selectedSources.length < 2}
+              className="w-full"
+            >
+              {isScanning ? (
+                <>
+                  <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                  Scanning...
+                </>
+              ) : (
+                <>
+                  <Search className="h-5 w-5 mr-2" />
+                  Run {mode === "SOURCE_MATRIX" ? "Source Matrix" : "Triangular"} Scan
+                </>
+              )}
+            </Button>
+            
+            {/* Progress Bar */}
+            {scanProgress && (
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">
+                    Scanning combination {scanProgress.current + 1} of {scanProgress.total}
+                  </span>
+                  <span className="text-muted-foreground flex items-center gap-1">
+                    <Clock className="h-3 w-3" />
+                    {calculateEta() !== null ? `~${calculateEta()}s remaining` : "Calculating..."}
+                  </span>
+                </div>
+                <Progress 
+                  value={(scanProgress.current / scanProgress.total) * 100} 
+                  className="h-2"
+                />
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>{Math.round((scanProgress.current / scanProgress.total) * 100)}%</span>
+                  <span>Elapsed: {Math.round((Date.now() - scanProgress.startTime) / 1000)}s</span>
+                </div>
+              </div>
             )}
-          </Button>
-        </div>
+          </CardContent>
+        </Card>
 
         {/* Results Summary */}
         {scanStats && (
