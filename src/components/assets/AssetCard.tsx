@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MapPin, Calendar, Eye } from 'lucide-react';
+import { MapPin, Calendar, Eye, User } from 'lucide-react';
 import { Asset, ASSET_TYPE_LABELS, ASSET_TYPE_COLORS, OWNER_ENTITY_LABELS } from '@/types/database';
 import { format } from 'date-fns';
 import { AssetViewerModal } from './AssetViewerModal';
@@ -54,10 +54,16 @@ export function AssetCard({ asset }: AssetCardProps) {
           )}
         </div>
 
-        <div className="mt-4 pt-4 border-t border-border">
-          <span className="text-xs text-muted-foreground">
+        <div className="mt-4 pt-4 border-t border-border space-y-2">
+          <span className="text-xs text-muted-foreground block">
             {OWNER_ENTITY_LABELS[asset.owner_entity]}
           </span>
+          {asset.submitted_by_profile && (
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <User className="h-3 w-3" />
+              <span>Submitted by: {asset.submitted_by_profile.name || asset.submitted_by_profile.email || 'Unknown'}</span>
+            </div>
+          )}
         </div>
       </div>
 
