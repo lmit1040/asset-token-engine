@@ -4,10 +4,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { FeeNotice } from '@/components/fees/FeeNotice';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
-
 interface ProofUploadModalProps {
   assetId: string;
   assetName?: string;
@@ -159,6 +159,8 @@ export function ProofUploadModal({ assetId, assetName, onClose, onSuccess }: Pro
             rows={3}
           />
         </div>
+
+        <FeeNotice feeKey="ATTESTATION" className="mb-4" />
 
         {/* File Upload Area */}
         <div

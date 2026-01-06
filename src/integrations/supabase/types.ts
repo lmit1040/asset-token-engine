@@ -566,6 +566,44 @@ export type Database = {
         }
         Relationships: []
       }
+      fee_catalog: {
+        Row: {
+          amount_cents: number
+          created_at: string
+          description: string | null
+          enabled: boolean
+          fee_key: string
+          id: string
+          tier: string
+        }
+        Insert: {
+          amount_cents: number
+          created_at?: string
+          description?: string | null
+          enabled?: boolean
+          fee_key: string
+          id?: string
+          tier: string
+        }
+        Update: {
+          amount_cents?: number
+          created_at?: string
+          description?: string | null
+          enabled?: boolean
+          fee_key?: string
+          id?: string
+          tier?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fee_catalog_tier_fkey"
+            columns: ["tier"]
+            isOneToOne: false
+            referencedRelation: "pricing_tiers"
+            referencedColumns: ["tier_key"]
+          },
+        ]
+      }
       fee_discount_tiers: {
         Row: {
           created_at: string

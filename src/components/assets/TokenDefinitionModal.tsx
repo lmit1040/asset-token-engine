@@ -5,10 +5,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { FeeNotice } from '@/components/fees/FeeNotice';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Asset, TokenModel, TOKEN_MODEL_LABELS } from '@/types/database';
-
 interface TokenDefinitionModalProps {
   asset: Asset;
   onClose: () => void;
@@ -98,7 +98,7 @@ export function TokenDefinitionModal({ asset, onClose, onSuccess }: TokenDefinit
           </Button>
         </div>
 
-        <div className="bg-muted/30 rounded-lg p-4 mb-6">
+        <div className="bg-muted/30 rounded-lg p-4 mb-4">
           <p className="text-sm text-muted-foreground">Creating token for</p>
           <p className="font-semibold text-foreground">{asset.name}</p>
           <p className="text-sm text-primary">
@@ -106,6 +106,7 @@ export function TokenDefinitionModal({ asset, onClose, onSuccess }: TokenDefinit
           </p>
         </div>
 
+        <FeeNotice feeKey="TOKEN_DEPLOY" className="mb-6" />
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">

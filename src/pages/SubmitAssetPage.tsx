@@ -1,5 +1,6 @@
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { SubmissionForm } from '@/components/submissions/SubmissionForm';
+import { FeeNotice } from '@/components/fees/FeeNotice';
 import { useNavigate } from 'react-router-dom';
 import { FileUp } from 'lucide-react';
 
@@ -24,6 +25,8 @@ export default function SubmitAssetPage() {
               </p>
             </div>
           </div>
+
+          <FeeNotice feeKey="ASSET_SUBMISSION" className="mb-6" />
 
           <SubmissionForm onSuccess={() => navigate('/my-submissions')} />
         </div>
