@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { X, Shield, FileText, MapPin, Calendar, Coins, ExternalLink, Eye, Download, File, Image as ImageIcon, FileVideo, FileAudio } from 'lucide-react';
+import { X, Shield, FileText, MapPin, Calendar, Coins, ExternalLink, Eye, Download, File, Image as ImageIcon, FileVideo, FileAudio, User } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -35,7 +35,23 @@ export function AssetViewerModal({ assetId, open, onOpenChange, onNavigateToFull
         supabase.from('token_definitions').select('*').eq('asset_id', assetId).is('archived_at', null).order('created_at', { ascending: false }),
       ]);
 
-      if (assetRes.data) setAsset(assetRes.data as Asset);
+      if (assetRes.data) {
+        let assetWithProfile = { ...assetRes.data, submitted_by_profile: null as { name: string | null; email: string | null } | null };
+        
+        if (assetRes.data.submitted_by) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('name, email')
+            .eq('id', assetRes.data.submitted_by)
+            .maybeSingle();
+          
+          if (profile) {
+            assetWithProfile.submitted_by_profile = { name: profile.name, email: profile.email };
+          }
+        }
+        
+        setAsset(assetWithProfile as Asset);
+      }
       if (proofsRes.data) setProofFiles(proofsRes.data as ProofOfReserveFile[]);
       if (tokensRes.data) setTokenDefinitions(tokensRes.data as TokenDefinition[]);
     } catch (error) {
@@ -121,7 +137,7 @@ export function AssetViewerModal({ assetId, open, onOpenChange, onNavigateToFull
                 <TabsContent value="details" className="p-6 mt-0">
                   <div className="space-y-6">
                     {/* Quick Stats */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                       <div className="bg-muted/30 rounded-lg p-4 text-center">
                         <p className="text-2xl font-bold gold-text">
                           {Number(asset.quantity).toLocaleString()}
@@ -140,6 +156,16 @@ export function AssetViewerModal({ assetId, open, onOpenChange, onNavigateToFull
                         <Badge variant="outline" className="text-xs">
                           {OWNER_ENTITY_LABELS[asset.owner_entity]}
                         </Badge>
+                        <p className="text-xs text-muted-foreground mt-1">Owner Entity</p>
+                      </div>
+                      <div className="bg-muted/30 rounded-lg p-4 text-center">
+                        <div className="flex items-center justify-center gap-1 text-sm font-medium text-foreground">
+                          <User className="h-3.5 w-3.5" />
+                          <span className="truncate">
+                            {asset.submitted_by_profile?.name || asset.submitted_by_profile?.email || 'Unknown'}
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">Submitted By</p>
                       </div>
                     </div>
 

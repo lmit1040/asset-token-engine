@@ -41,6 +41,10 @@ export interface Asset {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  submitted_by_profile?: {
+    name: string | null;
+    email: string | null;
+  } | null;
 }
 
 export interface ProofOfReserveFile {

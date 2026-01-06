@@ -54,7 +54,27 @@ export default function AssetsPage() {
       .order('created_at', { ascending: false });
 
     if (data && !error) {
-      setAssets(data as Asset[]);
+      // Fetch profiles for submitted_by users
+      const submitterIds = [...new Set(data.map(a => a.submitted_by).filter(Boolean))];
+      const profilesMap: Record<string, { name: string | null; email: string | null }> = {};
+      
+      if (submitterIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, name, email')
+          .in('id', submitterIds);
+        
+        profiles?.forEach(p => {
+          profilesMap[p.id] = { name: p.name, email: p.email };
+        });
+      }
+      
+      const assetsWithProfiles = data.map(asset => ({
+        ...asset,
+        submitted_by_profile: asset.submitted_by ? profilesMap[asset.submitted_by] || null : null,
+      }));
+      
+      setAssets(assetsWithProfiles as Asset[]);
     }
     setIsLoading(false);
   }
@@ -71,7 +91,19 @@ export default function AssetsPage() {
       .order('created_at', { ascending: false });
 
     if (data && !error) {
-      setMyAssets(data as Asset[]);
+      // Fetch profile for current user
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('id, name, email')
+        .eq('id', user.id)
+        .maybeSingle();
+      
+      const assetsWithProfiles = data.map(asset => ({
+        ...asset,
+        submitted_by_profile: profile ? { name: profile.name, email: profile.email } : null,
+      }));
+      
+      setMyAssets(assetsWithProfiles as Asset[]);
     }
     setIsLoadingMyAssets(false);
   }
