@@ -26,14 +26,20 @@ const TRIANGULAR_PATHS = {
   "USDC_WETH_WMATIC": ["USDC_E", "WETH", "WMATIC", "USDC_E"],
 } as const;
 
-// Configuration - Aggressively tuned for 0x free tier rate limits (~10 req/sec but bursty)
-const MAX_COMBINATIONS_PER_SCAN = 5; // Very conservative to avoid rate limits
+// Default configuration - can be overridden by request
+const DEFAULT_MAX_COMBINATIONS = 5;
 const SLIPPAGE_BPS = 30; // 0.3%
 const GAS_PRICE_GWEI = 50; // Conservative estimate
-const INTER_QUOTE_DELAY_MS = 1500; // 1.5 seconds between each quote
-const BATCH_PAUSE_MS = 5000; // 5 second pause between batches
-const BATCH_SIZE = 2; // Process only 2 combinations per batch
-const RATE_LIMIT_THRESHOLD = 2; // Circuit breaker after 2 total rate limits (not consecutive)
+const DEFAULT_INTER_QUOTE_DELAY_MS = 1500;
+const DEFAULT_BATCH_PAUSE_MS = 5000;
+const DEFAULT_BATCH_SIZE = 2;
+const RATE_LIMIT_THRESHOLD = 2; // Circuit breaker after 2 total rate limits
+
+interface ScanSpeedConfig {
+  delayMs: number;
+  batchPauseMs: number;
+  batchSize: number;
+}
 
 interface ScanRequest {
   mode: ScanMode;
@@ -42,6 +48,7 @@ interface ScanRequest {
   includedSources?: string[];
   notionalOverride?: number; // USDC amount (human readable)
   maxCombinations?: number;
+  scanSpeed?: ScanSpeedConfig;
 }
 
 interface ScanResult {
@@ -163,8 +170,10 @@ async function runSourceMatrixScan(
   tokenPair: { base: string; quote: string },
   sources: string[],
   notionalUsdc: bigint,
-  maxCombinations: number
+  maxCombinations: number,
+  speedConfig: ScanSpeedConfig
 ): Promise<{ results: ScanResult[]; rateLimitCount: number; abortedDueToRateLimit: boolean }> {
+  const { delayMs, batchPauseMs, batchSize } = speedConfig;
   const results: ScanResult[] = [];
   const baseToken = POLYGON_TOKENS[tokenPair.base as keyof typeof POLYGON_TOKENS];
   const quoteToken = POLYGON_TOKENS[tokenPair.quote as keyof typeof POLYGON_TOKENS];
@@ -203,10 +212,10 @@ async function runSourceMatrixScan(
       break;
     }
     
-    // Batch pause - after every BATCH_SIZE combinations, take a longer break
-    if (processedCount > 0 && processedCount % BATCH_SIZE === 0) {
-      console.log(`[profit-discovery] Batch pause: ${BATCH_PAUSE_MS}ms after ${processedCount} combinations`);
-      await new Promise(r => setTimeout(r, BATCH_PAUSE_MS));
+    // Batch pause - after every batchSize combinations, take a longer break
+    if (processedCount > 0 && processedCount % batchSize === 0) {
+      console.log(`[profit-discovery] Batch pause: ${batchPauseMs}ms after ${processedCount} combinations`);
+      await new Promise(r => setTimeout(r, batchPauseMs));
     }
     
     try {
@@ -236,7 +245,7 @@ async function runSourceMatrixScan(
         });
         processedCount++;
         // Wait before next attempt even on failure
-        await new Promise(r => setTimeout(r, INTER_QUOTE_DELAY_MS));
+        await new Promise(r => setTimeout(r, delayMs));
         continue;
       }
       
@@ -249,7 +258,7 @@ async function runSourceMatrixScan(
       }
 
       // Longer delay between quotes
-      await new Promise(r => setTimeout(r, INTER_QUOTE_DELAY_MS));
+      await new Promise(r => setTimeout(r, delayMs));
 
       // Leg 2: quote -> base (e.g., WETH -> USDC)
       const leg2 = await quoteLeg(
@@ -277,7 +286,7 @@ async function runSourceMatrixScan(
         });
         processedCount++;
         // Wait before next attempt even on failure
-        await new Promise(r => setTimeout(r, INTER_QUOTE_DELAY_MS));
+        await new Promise(r => setTimeout(r, delayMs));
         continue;
       }
       
@@ -320,7 +329,7 @@ async function runSourceMatrixScan(
       await recordScanEvent(supabase, result, "SOURCE_MATRIX");
 
       // Delay between combinations
-      await new Promise(r => setTimeout(r, INTER_QUOTE_DELAY_MS));
+      await new Promise(r => setTimeout(r, delayMs));
 
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : "Unknown error";
@@ -353,8 +362,10 @@ async function runTriangularScan(
   path: string[],
   sources: string[],
   notionalUsdc: bigint,
-  maxCombinations: number
+  maxCombinations: number,
+  speedConfig: ScanSpeedConfig
 ): Promise<{ results: ScanResult[]; rateLimitCount: number; abortedDueToRateLimit: boolean }> {
+  const { delayMs, batchPauseMs, batchSize } = speedConfig;
   const results: ScanResult[] = [];
   
   let totalRateLimits = 0;
@@ -395,9 +406,9 @@ async function runTriangularScan(
     }
     
     // Batch pause
-    if (processedCount > 0 && processedCount % BATCH_SIZE === 0) {
-      console.log(`[profit-discovery] Batch pause: ${BATCH_PAUSE_MS}ms after ${processedCount} combinations`);
-      await new Promise(r => setTimeout(r, BATCH_PAUSE_MS));
+    if (processedCount > 0 && processedCount % batchSize === 0) {
+      console.log(`[profit-discovery] Batch pause: ${batchPauseMs}ms after ${processedCount} combinations`);
+      await new Promise(r => setTimeout(r, batchPauseMs));
     }
     
     try {
@@ -427,7 +438,7 @@ async function runTriangularScan(
           reason: `Leg1 quote failed for ${sourceA}`,
         });
         processedCount++;
-        await new Promise(r => setTimeout(r, INTER_QUOTE_DELAY_MS));
+        await new Promise(r => setTimeout(r, delayMs));
         continue;
       }
       
@@ -437,7 +448,7 @@ async function runTriangularScan(
         await new Promise(r => setTimeout(r, 3000));
       }
 
-      await new Promise(r => setTimeout(r, INTER_QUOTE_DELAY_MS));
+      await new Promise(r => setTimeout(r, delayMs));
 
       // Leg 2: WETH -> WMATIC
       const leg2 = await quoteLeg(
@@ -465,7 +476,7 @@ async function runTriangularScan(
           leg1Quote: { buyAmount: leg1.buyAmount, sources: leg1.sources },
         });
         processedCount++;
-        await new Promise(r => setTimeout(r, INTER_QUOTE_DELAY_MS));
+        await new Promise(r => setTimeout(r, delayMs));
         continue;
       }
       
@@ -475,7 +486,7 @@ async function runTriangularScan(
         await new Promise(r => setTimeout(r, 3000));
       }
 
-      await new Promise(r => setTimeout(r, INTER_QUOTE_DELAY_MS));
+      await new Promise(r => setTimeout(r, delayMs));
 
       // Leg 3: WMATIC -> USDC
       const leg3 = await quoteLeg(
@@ -504,7 +515,7 @@ async function runTriangularScan(
           leg2Quote: { buyAmount: leg2.buyAmount, sources: leg2.sources },
         });
         processedCount++;
-        await new Promise(r => setTimeout(r, INTER_QUOTE_DELAY_MS));
+        await new Promise(r => setTimeout(r, delayMs));
         continue;
       }
       
@@ -543,7 +554,7 @@ async function runTriangularScan(
 
       results.push(result);
       await recordScanEvent(supabase, result, "TRIANGULAR");
-      await new Promise(r => setTimeout(r, INTER_QUOTE_DELAY_MS));
+      await new Promise(r => setTimeout(r, delayMs));
 
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : "Unknown error";
@@ -591,7 +602,14 @@ serve(async (req) => {
     }));
 
     const mode = body.mode || "SOURCE_MATRIX";
-    const maxCombinations = Math.min(body.maxCombinations || MAX_COMBINATIONS_PER_SCAN, 50);
+    const maxCombinations = Math.min(body.maxCombinations || DEFAULT_MAX_COMBINATIONS, 50);
+    
+    // Get speed config from request or use defaults
+    const speedConfig: ScanSpeedConfig = body.scanSpeed || {
+      delayMs: DEFAULT_INTER_QUOTE_DELAY_MS,
+      batchPauseMs: DEFAULT_BATCH_PAUSE_MS,
+      batchSize: DEFAULT_BATCH_SIZE,
+    };
     
     // Use provided sources or defaults
     const sources = body.includedSources?.length 
@@ -602,7 +620,7 @@ serve(async (req) => {
     const notionalHuman = body.notionalOverride || 1000; // Default 1000 USDC
     const notionalUsdc = BigInt(Math.floor(notionalHuman * 1_000_000));
 
-    console.log(`[profit-discovery] Starting ${mode} scan with ${sources.length} sources, notional: ${notionalHuman} USDC`);
+    console.log(`[profit-discovery] Starting ${mode} scan with ${sources.length} sources, notional: ${notionalHuman} USDC, speed: ${speedConfig.delayMs}ms delay`);
 
     let results: ScanResult[] = [];
     let rateLimitCount = 0;
@@ -610,13 +628,13 @@ serve(async (req) => {
 
     if (mode === "SOURCE_MATRIX") {
       const tokenPair = TOKEN_PAIRS[body.tokenPair || "USDC_WETH"];
-      const scanResult = await runSourceMatrixScan(supabase, tokenPair, sources, notionalUsdc, maxCombinations);
+      const scanResult = await runSourceMatrixScan(supabase, tokenPair, sources, notionalUsdc, maxCombinations, speedConfig);
       results = scanResult.results;
       rateLimitCount = scanResult.rateLimitCount;
       abortedDueToRateLimit = scanResult.abortedDueToRateLimit;
     } else if (mode === "TRIANGULAR") {
       const path = [...TRIANGULAR_PATHS[body.triangularPath || "USDC_WETH_WMATIC"]];
-      const scanResult = await runTriangularScan(supabase, path, sources, notionalUsdc, maxCombinations);
+      const scanResult = await runTriangularScan(supabase, path, sources, notionalUsdc, maxCombinations, speedConfig);
       results = scanResult.results;
       rateLimitCount = scanResult.rateLimitCount;
       abortedDueToRateLimit = scanResult.abortedDueToRateLimit;
