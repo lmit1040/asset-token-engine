@@ -32,7 +32,7 @@ export function AssetViewerModal({ assetId, open, onOpenChange, onNavigateToFull
       const [assetRes, proofsRes, tokensRes] = await Promise.all([
         supabase.from('assets').select('*').eq('id', assetId).maybeSingle(),
         supabase.from('proof_of_reserve_files').select('*').eq('asset_id', assetId).order('uploaded_at', { ascending: false }),
-        supabase.from('token_definitions').select('*').eq('asset_id', assetId).order('created_at', { ascending: false }),
+        supabase.from('token_definitions').select('*').eq('asset_id', assetId).is('archived_at', null).order('created_at', { ascending: false }),
       ]);
 
       if (assetRes.data) setAsset(assetRes.data as Asset);

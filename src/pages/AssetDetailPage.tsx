@@ -74,7 +74,7 @@ export default function AssetDetailPage() {
       const [assetRes, proofsRes, tokensRes, proposalsRes] = await Promise.all([
         supabase.from('assets').select('*').eq('id', id).maybeSingle(),
         supabase.from('proof_of_reserve_files').select('*').eq('asset_id', id).order('uploaded_at', { ascending: false }),
-        supabase.from('token_definitions').select('*').eq('asset_id', id).order('created_at', { ascending: false }),
+        supabase.from('token_definitions').select('*').eq('asset_id', id).is('archived_at', null).order('created_at', { ascending: false }),
         supabase.from('token_definition_proposals').select('*').eq('asset_id', id).order('created_at', { ascending: false }),
       ]);
 
