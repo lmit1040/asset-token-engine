@@ -1,5 +1,5 @@
 import { NavLink as RouterNavLink, useLocation } from "react-router-dom";
-import { LayoutDashboard, Coins, User, Users, Activity, LogOut, Award, Vote, ArrowRightLeft, FileCheck, Wallet, Globe, FileUp, FolderOpen, ClipboardList, Archive, Zap, ShieldCheck, Bot, Newspaper, FileText, Package, Rocket, Sparkles, BarChart3, FileSignature, Layers, Radar, MonitorDot, Crosshair, TrendingUp, Gift, UserPlus, HelpCircle, BookOpen } from "lucide-react";
+import { LayoutDashboard, Coins, User, Users, Activity, LogOut, Award, Vote, ArrowRightLeft, FileCheck, Wallet, Globe, FileUp, FolderOpen, ClipboardList, Archive, Zap, ShieldCheck, Bot, Newspaper, FileText, Package, Rocket, Sparkles, BarChart3, FileSignature, Layers, Radar, MonitorDot, Crosshair, TrendingUp, Gift, UserPlus, HelpCircle, BookOpen, DollarSign } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -137,6 +137,10 @@ const adminNavigation = [{
   name: "Launch Checklist",
   href: "/admin/launch-checklist",
   icon: Rocket
+}, {
+  name: "Fee Management",
+  href: "/admin/fees",
+  icon: DollarSign
 }];
 
 export function Sidebar() {

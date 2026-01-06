@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
-import { DollarSign, Award } from 'lucide-react';
+import { DollarSign, Award, Info } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { FeeTypeBadge } from './FeeTypeBadge';
+import { FeeType, MXU_DISCOUNT_ELIGIBLE_TYPES } from '@/types/fees';
 
 interface FeeCatalogItem {
   id: string;
@@ -11,6 +13,8 @@ interface FeeCatalogItem {
   tier: string;
   description: string;
   amount_cents: number;
+  fee_type: FeeType;
+  applies_to: string;
   enabled: boolean;
 }
 
@@ -59,46 +63,64 @@ export function FeeNotice({ feeKey, className = '', showMxuDiscount = true }: Fe
         const tier = profile?.pricing_tier || 'RETAIL';
         setUserTier(tier);
 
-        // Get fee for user's tier
+        // Get fee for user's tier - try tier-specific key first, then base key
         const tierFeeKey = `${feeKey}_${tier}`;
-        const { data: feeData } = await supabase
+        let { data: feeData } = await supabase
           .from('fee_catalog')
           .select('*')
           .eq('fee_key', tierFeeKey)
           .eq('enabled', true)
           .single();
 
+        // If not found with tier suffix, try base key with tier column
+        if (!feeData) {
+          const { data: baseFeeData } = await supabase
+            .from('fee_catalog')
+            .select('*')
+            .eq('fee_key', feeKey)
+            .eq('tier', tier)
+            .eq('enabled', true)
+            .single();
+          feeData = baseFeeData;
+        }
+
         if (feeData) {
-          setFee(feeData);
+          setFee(feeData as FeeCatalogItem);
         }
 
         // Check for MXU discount if applicable
-        if (showMxuDiscount) {
-          const { data: holdings } = await supabase
-            .from('user_token_holdings')
-            .select('balance, token_definition:token_definitions(token_symbol)')
-            .eq('user_id', user.id);
+        if (showMxuDiscount && feeData) {
+          // Only apply MXU discount to eligible fee types
+          const feeType = (feeData as FeeCatalogItem).fee_type;
+          const isEligible = MXU_DISCOUNT_ELIGIBLE_TYPES.includes(feeType);
 
-          const mxuHolding = holdings?.find(
-            (h: any) => h.token_definition?.token_symbol === 'MXU'
-          );
+          if (isEligible) {
+            const { data: holdings } = await supabase
+              .from('user_token_holdings')
+              .select('balance, token_definition:token_definitions(token_symbol)')
+              .eq('user_id', user.id);
 
-          if (mxuHolding && mxuHolding.balance > 0) {
-            // Get discount tiers for MXU
-            const { data: discountTiers } = await supabase
-              .from('fee_discount_tiers')
-              .select('*, token_definition:token_definitions(token_symbol)')
-              .order('min_balance', { ascending: false });
+            const mxuHolding = holdings?.find(
+              (h: any) => h.token_definition?.token_symbol === 'MXU'
+            );
 
-            const mxuDiscountTier = discountTiers?.find(
-              (t: any) =>
-                t.token_definition?.token_symbol === 'MXU' &&
-                mxuHolding.balance >= t.min_balance
-            ) as DiscountTier | undefined;
+            if (mxuHolding && mxuHolding.balance > 0) {
+              // Get discount tiers for MXU
+              const { data: discountTiers } = await supabase
+                .from('fee_discount_tiers')
+                .select('*, token_definition:token_definitions(token_symbol)')
+                .order('min_balance', { ascending: false });
 
-            if (mxuDiscountTier) {
-              setMxuDiscount(mxuDiscountTier.discount_percentage);
-              setDiscountTierName(mxuDiscountTier.tier_name);
+              const mxuDiscountTier = discountTiers?.find(
+                (t: any) =>
+                  t.token_definition?.token_symbol === 'MXU' &&
+                  mxuHolding.balance >= t.min_balance
+              ) as DiscountTier | undefined;
+
+              if (mxuDiscountTier) {
+                setMxuDiscount(mxuDiscountTier.discount_percentage);
+                setDiscountTierName(mxuDiscountTier.tier_name);
+              }
             }
           }
         }
@@ -115,7 +137,8 @@ export function FeeNotice({ feeKey, className = '', showMxuDiscount = true }: Fe
   if (loading || !fee) return null;
 
   const originalAmount = fee.amount_cents / 100;
-  const discountedAmount = mxuDiscount > 0 
+  const isDiscountEligible = MXU_DISCOUNT_ELIGIBLE_TYPES.includes(fee.fee_type);
+  const discountedAmount = mxuDiscount > 0 && isDiscountEligible
     ? originalAmount * (1 - mxuDiscount / 100) 
     : originalAmount;
   const savedAmount = originalAmount - discountedAmount;
@@ -127,11 +150,14 @@ export function FeeNotice({ feeKey, className = '', showMxuDiscount = true }: Fe
           <DollarSign className="h-4 w-4 text-primary" />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-foreground">Processing Fee</p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-sm font-medium text-foreground">Processing Fee</p>
+            <FeeTypeBadge feeType={fee.fee_type} />
+          </div>
           <p className="text-xs text-muted-foreground mt-0.5">{fee.description}</p>
           
           <div className="mt-2 flex items-center gap-2 flex-wrap">
-            {mxuDiscount > 0 ? (
+            {mxuDiscount > 0 && isDiscountEligible ? (
               <>
                 <span className="text-lg font-semibold text-primary">
                   ${discountedAmount.toFixed(2)}
@@ -160,10 +186,18 @@ export function FeeNotice({ feeKey, className = '', showMxuDiscount = true }: Fe
           </div>
 
           {/* Savings callout */}
-          {mxuDiscount > 0 && savedAmount > 0 && (
+          {mxuDiscount > 0 && savedAmount > 0 && isDiscountEligible && (
             <div className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-green-500/10 px-2.5 py-1 text-xs font-medium text-green-600 dark:text-green-400">
               <DollarSign className="h-3 w-3" />
               You saved ${savedAmount.toFixed(2)} using MXU
+            </div>
+          )}
+
+          {/* No discount message for ineligible fee types */}
+          {!isDiscountEligible && showMxuDiscount && (
+            <div className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-xs text-muted-foreground">
+              <Info className="h-3 w-3" />
+              MXU discounts do not apply to recurring fees
             </div>
           )}
         </div>
