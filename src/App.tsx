@@ -52,6 +52,8 @@ import DocumentationPage from "./pages/DocumentationPage";
 import PricingPage from "./pages/PricingPage";
 import TrustDashboardPage from "./pages/TrustDashboardPage";
 import AdminEnterpriseConsolePage from "./pages/AdminEnterpriseConsolePage";
+import FeesPage from "./pages/FeesPage";
+import AdminFeesPage from "./pages/AdminFeesPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -110,8 +112,10 @@ const App = () => (
               <Route path="/faq" element={<FAQPage />} />
               <Route path="/help/documentation" element={<DocumentationPage />} />
               <Route path="/pricing" element={<PricingPage />} />
+              <Route path="/fees" element={<FeesPage />} />
               <Route path="/trust-dashboard" element={<TrustDashboardPage />} />
               <Route path="/admin/enterprise" element={<AdminEnterpriseConsolePage />} />
+              <Route path="/admin/fees" element={<AdminFeesPage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </WalletProvider>

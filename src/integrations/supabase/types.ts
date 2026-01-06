@@ -708,29 +708,38 @@ export type Database = {
       fee_catalog: {
         Row: {
           amount_cents: number
+          applies_to: string | null
           created_at: string
           description: string | null
           enabled: boolean
           fee_key: string
+          fee_type: string | null
           id: string
+          intro_price: boolean | null
           tier: string
         }
         Insert: {
           amount_cents: number
+          applies_to?: string | null
           created_at?: string
           description?: string | null
           enabled?: boolean
           fee_key: string
+          fee_type?: string | null
           id?: string
+          intro_price?: boolean | null
           tier: string
         }
         Update: {
           amount_cents?: number
+          applies_to?: string | null
           created_at?: string
           description?: string | null
           enabled?: boolean
           fee_key?: string
+          fee_type?: string | null
           id?: string
+          intro_price?: boolean | null
           tier?: string
         }
         Relationships: [
@@ -838,6 +847,39 @@ export type Database = {
           fee_payer_public_key?: string
           id?: string
           tx_signature?: string | null
+        }
+        Relationships: []
+      }
+      fee_versions: {
+        Row: {
+          changed_by: string | null
+          created_at: string
+          effective_date: string
+          fee_key: string
+          id: string
+          new_amount_cents: number
+          old_amount_cents: number
+          reason: string | null
+        }
+        Insert: {
+          changed_by?: string | null
+          created_at?: string
+          effective_date?: string
+          fee_key: string
+          id?: string
+          new_amount_cents: number
+          old_amount_cents: number
+          reason?: string | null
+        }
+        Update: {
+          changed_by?: string | null
+          created_at?: string
+          effective_date?: string
+          fee_key?: string
+          id?: string
+          new_amount_cents?: number
+          old_amount_cents?: number
+          reason?: string | null
         }
         Relationships: []
       }
