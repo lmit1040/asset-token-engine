@@ -497,6 +497,145 @@ export type Database = {
         }
         Relationships: []
       }
+      enterprise_accounts: {
+        Row: {
+          annual_fee_cents: number
+          api_access_enabled: boolean
+          billing_contact_email: string | null
+          billing_contact_name: string | null
+          contract_end_date: string | null
+          contract_reference: string
+          contract_start_date: string
+          created_at: string
+          created_by: string | null
+          custom_asset_classes: string[] | null
+          id: string
+          is_active: boolean
+          notes: string | null
+          organization_name: string
+          updated_at: string
+          white_label_enabled: boolean
+        }
+        Insert: {
+          annual_fee_cents: number
+          api_access_enabled?: boolean
+          billing_contact_email?: string | null
+          billing_contact_name?: string | null
+          contract_end_date?: string | null
+          contract_reference: string
+          contract_start_date: string
+          created_at?: string
+          created_by?: string | null
+          custom_asset_classes?: string[] | null
+          id?: string
+          is_active?: boolean
+          notes?: string | null
+          organization_name: string
+          updated_at?: string
+          white_label_enabled?: boolean
+        }
+        Update: {
+          annual_fee_cents?: number
+          api_access_enabled?: boolean
+          billing_contact_email?: string | null
+          billing_contact_name?: string | null
+          contract_end_date?: string | null
+          contract_reference?: string
+          contract_start_date?: string
+          created_at?: string
+          created_by?: string | null
+          custom_asset_classes?: string[] | null
+          id?: string
+          is_active?: boolean
+          notes?: string | null
+          organization_name?: string
+          updated_at?: string
+          white_label_enabled?: boolean
+        }
+        Relationships: []
+      }
+      enterprise_invoices: {
+        Row: {
+          amount_cents: number
+          created_at: string
+          description: string
+          due_date: string
+          enterprise_account_id: string
+          id: string
+          invoice_number: string
+          paid_at: string | null
+          payment_reference: string | null
+          status: string
+        }
+        Insert: {
+          amount_cents: number
+          created_at?: string
+          description: string
+          due_date: string
+          enterprise_account_id: string
+          id?: string
+          invoice_number: string
+          paid_at?: string | null
+          payment_reference?: string | null
+          status?: string
+        }
+        Update: {
+          amount_cents?: number
+          created_at?: string
+          description?: string
+          due_date?: string
+          enterprise_account_id?: string
+          id?: string
+          invoice_number?: string
+          paid_at?: string | null
+          payment_reference?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "enterprise_invoices_enterprise_account_id_fkey"
+            columns: ["enterprise_account_id"]
+            isOneToOne: false
+            referencedRelation: "enterprise_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      enterprise_users: {
+        Row: {
+          added_at: string
+          added_by: string | null
+          enterprise_account_id: string
+          id: string
+          role: string
+          user_id: string
+        }
+        Insert: {
+          added_at?: string
+          added_by?: string | null
+          enterprise_account_id: string
+          id?: string
+          role?: string
+          user_id: string
+        }
+        Update: {
+          added_at?: string
+          added_by?: string | null
+          enterprise_account_id?: string
+          id?: string
+          role?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "enterprise_users_enterprise_account_id_fkey"
+            columns: ["enterprise_account_id"]
+            isOneToOne: false
+            referencedRelation: "enterprise_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       evm_fee_payer_keys: {
         Row: {
           balance_native: number | null

@@ -1,8 +1,11 @@
-import { Check, Building2, Users, Briefcase } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Check, Building2, Users, Briefcase, FileCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 
 interface PricingTier {
   key: string;
@@ -72,15 +75,35 @@ const tiers: PricingTier[] = [
 ];
 
 export default function PricingPage() {
+  const { user } = useAuth();
+  const [userTier, setUserTier] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchUserTier = async () => {
+      if (!user) return;
+      const { data } = await supabase
+        .from('profiles')
+        .select('pricing_tier')
+        .eq('id', user.id)
+        .single();
+      setUserTier(data?.pricing_tier || 'RETAIL');
+    };
+    fetchUserTier();
+  }, [user]);
+
   const handleCtaClick = (tier: PricingTier) => {
     if (tier.isEnterprise) {
       window.location.href = "mailto:sales@metallumx.com?subject=Enterprise%20Inquiry";
     } else if (tier.key === "RETAIL") {
       window.location.href = "/auth";
+    } else if (tier.key === "TRUST") {
+      window.location.href = "/trust-dashboard";
     } else {
       window.location.href = "mailto:sales@metallumx.com?subject=Trust%20Tier%20Upgrade";
     }
   };
+
+  const isCurrentTier = (tierKey: string) => userTier === tierKey;
 
   return (
     <DashboardLayout title="Pricing">
@@ -96,11 +119,22 @@ export default function PricingPage() {
           {tiers.map((tier) => (
             <Card 
               key={tier.key} 
-              className={`relative flex flex-col ${tier.popular ? 'border-primary shadow-lg scale-105' : ''}`}
+              className={`relative flex flex-col ${tier.popular ? 'border-primary shadow-lg scale-105' : ''} ${isCurrentTier(tier.key) ? 'ring-2 ring-primary' : ''}`}
             >
-              {tier.popular && (
+              {tier.popular && !isCurrentTier(tier.key) && (
                 <Badge className="absolute -top-3 left-1/2 -translate-x-1/2">
                   Most Popular
+                </Badge>
+              )}
+              {isCurrentTier(tier.key) && (
+                <Badge className="absolute -top-3 left-1/2 -translate-x-1/2 bg-green-500">
+                  Your Plan
+                </Badge>
+              )}
+              {isCurrentTier("ENTERPRISE") && tier.key === "ENTERPRISE" && (
+                <Badge className="absolute -top-3 right-4 bg-gradient-to-r from-purple-500/80 to-blue-500/80">
+                  <FileCheck className="h-3 w-3 mr-1" />
+                  Under Contract
                 </Badge>
               )}
               <CardHeader className="text-center pb-4">
@@ -129,13 +163,23 @@ export default function PricingPage() {
                 </ul>
               </CardContent>
               <CardFooter>
-                <Button 
-                  className="w-full" 
-                  variant={tier.popular ? "default" : "outline"}
-                  onClick={() => handleCtaClick(tier)}
-                >
-                  {tier.cta}
-                </Button>
+                {isCurrentTier(tier.key) ? (
+                  <Button className="w-full" variant="outline" disabled>
+                    Current Plan
+                  </Button>
+                ) : isCurrentTier("ENTERPRISE") ? (
+                  <Button className="w-full" variant="outline" disabled>
+                    Contact Account Manager
+                  </Button>
+                ) : (
+                  <Button 
+                    className="w-full" 
+                    variant={tier.popular ? "default" : "outline"}
+                    onClick={() => handleCtaClick(tier)}
+                  >
+                    {tier.cta}
+                  </Button>
+                )}
               </CardFooter>
             </Card>
           ))}

@@ -51,6 +51,7 @@ import FAQPage from "./pages/FAQPage";
 import DocumentationPage from "./pages/DocumentationPage";
 import PricingPage from "./pages/PricingPage";
 import TrustDashboardPage from "./pages/TrustDashboardPage";
+import AdminEnterpriseConsolePage from "./pages/AdminEnterpriseConsolePage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -110,6 +111,7 @@ const App = () => (
               <Route path="/help/documentation" element={<DocumentationPage />} />
               <Route path="/pricing" element={<PricingPage />} />
               <Route path="/trust-dashboard" element={<TrustDashboardPage />} />
+              <Route path="/admin/enterprise" element={<AdminEnterpriseConsolePage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </WalletProvider>
