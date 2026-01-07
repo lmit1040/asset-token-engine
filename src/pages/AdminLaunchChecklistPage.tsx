@@ -34,6 +34,7 @@ import {
   DetectionStatus 
 } from '@/types/launchChecklist';
 import { toast } from 'sonner';
+import { StripeEnvironmentCard } from '@/components/payments/StripeEnvironmentCard';
 
 interface ChecklistItem {
   id: string;
@@ -404,6 +405,11 @@ export default function AdminLaunchChecklistPage() {
   const [autoDetectedItems, setAutoDetectedItems] = useState<Map<string, AutoDetectionResult>>(new Map());
   const [isDetecting, setIsDetecting] = useState(false);
   const [lastCheckedAt, setLastCheckedAt] = useState<string | null>(null);
+  
+  // Stripe environment state
+  const [stripeTestMode, setStripeTestMode] = useState(true);
+  const [stripeLastToggledAt, setStripeLastToggledAt] = useState<string | null>(null);
+  const [stripeUpdating, setStripeUpdating] = useState(false);
 
   useEffect(() => {
     if (!isLoading && !isAdmin) {
@@ -417,6 +423,54 @@ export default function AdminLaunchChecklistPage() {
       setCheckedItems(new Set(JSON.parse(saved)));
     }
   }, []);
+  
+  // Fetch Stripe environment status
+  useEffect(() => {
+    const fetchStripeStatus = async () => {
+      const { data } = await supabase
+        .from('system_settings')
+        .select('stripe_test_mode, stripe_test_mode_toggled_at')
+        .limit(1)
+        .maybeSingle();
+      
+      if (data) {
+        setStripeTestMode(data.stripe_test_mode ?? true);
+        setStripeLastToggledAt(data.stripe_test_mode_toggled_at);
+      }
+    };
+    
+    if (isAdmin) {
+      fetchStripeStatus();
+    }
+  }, [isAdmin]);
+  
+  const handleStripeToggle = async (testMode: boolean) => {
+    setStripeUpdating(true);
+    try {
+      const action = testMode ? undefined : 'enable_stripe_live';
+      const confirmationPhrase = testMode ? undefined : 'I CONFIRM LIVE PAYMENTS';
+      
+      const { data, error } = await supabase.functions.invoke('update-launch-settings', {
+        body: {
+          updates: { stripe_test_mode: testMode },
+          action,
+          confirmationPhrase,
+        },
+      });
+      
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      
+      setStripeTestMode(testMode);
+      setStripeLastToggledAt(new Date().toISOString());
+      toast.success(`Stripe switched to ${testMode ? 'sandbox' : 'live'} mode`);
+    } catch (err) {
+      console.error('Error updating Stripe mode:', err);
+      toast.error('Failed to update Stripe environment');
+    } finally {
+      setStripeUpdating(false);
+    }
+  };
 
   const runAutoDetection = useCallback(async () => {
     setIsDetecting(true);
@@ -711,6 +765,14 @@ export default function AdminLaunchChecklistPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Stripe Environment Card */}
+        <StripeEnvironmentCard
+          isTestMode={stripeTestMode}
+          onToggle={handleStripeToggle}
+          isUpdating={stripeUpdating}
+          lastToggledAt={stripeLastToggledAt}
+        />
 
         {/* Last checked timestamp */}
         {lastCheckedAt && (

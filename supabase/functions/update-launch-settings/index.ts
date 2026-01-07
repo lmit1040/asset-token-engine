@@ -13,6 +13,7 @@ interface LaunchSettingsUpdate {
   launch_stage?: string;
   auto_arbitrage_enabled?: boolean;
   auto_flash_loans_enabled?: boolean;
+  stripe_test_mode?: boolean;
 }
 
 type SettingKey = keyof LaunchSettingsUpdate;
@@ -25,6 +26,7 @@ const ALLOWED_KEYS: SettingKey[] = [
   'launch_stage',
   'auto_arbitrage_enabled',
   'auto_flash_loans_enabled',
+  'stripe_test_mode',
 ];
 
 Deno.serve(async (req) => {
@@ -88,12 +90,13 @@ Deno.serve(async (req) => {
     }
 
     // Critical actions require confirmation phrase
-    const criticalActions = ['enable_mainnet', 'unlock_execution', 'disable_safe_mode'];
+    const criticalActions = ['enable_mainnet', 'unlock_execution', 'disable_safe_mode', 'enable_stripe_live'];
     if (action && criticalActions.includes(action)) {
       const expectedPhrases: Record<string, string> = {
         'enable_mainnet': 'I CONFIRM MAINNET',
         'unlock_execution': 'UNLOCK EXECUTION',
         'disable_safe_mode': 'DISABLE SAFE MODE',
+        'enable_stripe_live': 'I CONFIRM LIVE PAYMENTS',
       };
 
       if (confirmationPhrase !== expectedPhrases[action]) {
@@ -105,6 +108,12 @@ Deno.serve(async (req) => {
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
+    }
+
+    // Add timestamp tracking for stripe test mode toggle
+    if ('stripe_test_mode' in sanitizedUpdates) {
+      sanitizedUpdates.stripe_test_mode_toggled_at = new Date().toISOString();
+      sanitizedUpdates.stripe_test_mode_toggled_by = user.id;
     }
 
     // Add timestamps for specific updates
