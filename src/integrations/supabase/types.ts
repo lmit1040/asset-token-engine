@@ -1720,6 +1720,9 @@ export type Database = {
           safe_mode_enabled: boolean
           safe_mode_reason: string | null
           safe_mode_triggered_at: string | null
+          stripe_test_mode: boolean
+          stripe_test_mode_toggled_at: string | null
+          stripe_test_mode_toggled_by: string | null
           updated_at: string
           updated_by: string | null
         }
@@ -1752,6 +1755,9 @@ export type Database = {
           safe_mode_enabled?: boolean
           safe_mode_reason?: string | null
           safe_mode_triggered_at?: string | null
+          stripe_test_mode?: boolean
+          stripe_test_mode_toggled_at?: string | null
+          stripe_test_mode_toggled_by?: string | null
           updated_at?: string
           updated_by?: string | null
         }
@@ -1784,6 +1790,9 @@ export type Database = {
           safe_mode_enabled?: boolean
           safe_mode_reason?: string | null
           safe_mode_triggered_at?: string | null
+          stripe_test_mode?: boolean
+          stripe_test_mode_toggled_at?: string | null
+          stripe_test_mode_toggled_by?: string | null
           updated_at?: string
           updated_by?: string | null
         }
@@ -2352,6 +2361,9 @@ export type Database = {
           safe_mode_enabled: boolean
           safe_mode_reason: string | null
           safe_mode_triggered_at: string | null
+          stripe_test_mode: boolean
+          stripe_test_mode_toggled_at: string | null
+          stripe_test_mode_toggled_by: string | null
           updated_at: string
           updated_by: string | null
         }
