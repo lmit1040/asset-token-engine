@@ -57,11 +57,9 @@ export function LessonList({
             variant="ghost"
             className={cn(
               'w-full justify-start gap-3 h-auto py-3 px-3',
-              isActive && 'bg-primary/10',
-              !isAuthenticated && 'opacity-50'
+              isActive && 'bg-primary/10'
             )}
-            onClick={() => isAuthenticated && onSelectLesson(lesson)}
-            disabled={!isAuthenticated}
+            onClick={() => onSelectLesson(lesson)}
           >
             <div className="flex h-6 w-6 shrink-0 items-center justify-center">
               {isCompleted ? (

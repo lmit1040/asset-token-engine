@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -19,9 +20,10 @@ interface LessonPlayerProps {
   lesson: TrainingLesson;
   onComplete?: () => void;
   isCompleted?: boolean;
+  isAuthenticated?: boolean;
 }
 
-export function LessonPlayer({ lesson, onComplete, isCompleted = false }: LessonPlayerProps) {
+export function LessonPlayer({ lesson, onComplete, isCompleted = false, isAuthenticated = true }: LessonPlayerProps) {
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(lesson.duration_seconds || 0);
@@ -30,18 +32,22 @@ export function LessonPlayer({ lesson, onComplete, isCompleted = false }: Lesson
   const { completeLesson, updateLessonProgress, startLesson } = useTrainingProgress();
 
   useEffect(() => {
-    startLesson(lesson.id);
-  }, [lesson.id, startLesson]);
+    if (isAuthenticated) {
+      startLesson(lesson.id);
+    }
+  }, [lesson.id, startLesson, isAuthenticated]);
 
-  // Track time spent every 30 seconds
+  // Track time spent every 30 seconds (only for authenticated users)
   useEffect(() => {
+    if (!isAuthenticated) return;
+    
     const interval = setInterval(() => {
       const timeSpent = Math.floor((Date.now() - startTime) / 1000);
       updateLessonProgress(lesson.id, timeSpent, currentTime);
     }, 30000);
 
     return () => clearInterval(interval);
-  }, [lesson.id, startTime, currentTime, updateLessonProgress]);
+  }, [lesson.id, startTime, currentTime, updateLessonProgress, isAuthenticated]);
 
   const handleComplete = useCallback(async () => {
     const timeSpent = Math.floor((Date.now() - startTime) / 1000);
@@ -183,12 +189,21 @@ export function LessonPlayer({ lesson, onComplete, isCompleted = false }: Lesson
       <CardContent className="space-y-4">
         {renderContent()}
         
-        {!isCompleted && lesson.content_type !== 'video' && lesson.content_type !== 'audio' && (
+        {isAuthenticated && !isCompleted && lesson.content_type !== 'video' && lesson.content_type !== 'audio' && (
           <div className="flex justify-end">
             <Button onClick={handleComplete}>
               <CheckCircle className="mr-2 h-4 w-4" />
               Mark as Complete
             </Button>
+          </div>
+        )}
+        
+        {!isAuthenticated && (
+          <div className="rounded-lg bg-muted/50 border border-border p-4 text-center">
+            <p className="text-sm text-muted-foreground">
+              <Link to="/auth" className="text-primary hover:underline font-medium">Sign in</Link>
+              {' '}to track your progress and earn rewards
+            </p>
           </div>
         )}
       </CardContent>
