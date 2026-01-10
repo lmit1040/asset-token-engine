@@ -5,8 +5,6 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { 
   CheckCircle, 
-  Play, 
-  Pause, 
   FileText, 
   Image as ImageIcon,
   Music,
@@ -15,6 +13,7 @@ import {
 } from 'lucide-react';
 import { TrainingLesson } from '@/types/training';
 import { useTrainingProgress } from '@/hooks/useTrainingProgress';
+import { VideoEmbed } from './VideoEmbed';
 
 interface LessonPlayerProps {
   lesson: TrainingLesson;
@@ -94,15 +93,12 @@ export function LessonPlayer({ lesson, onComplete, isCompleted = false, isAuthen
     switch (lesson.content_type) {
       case 'video':
         return (
-          <div className="relative aspect-video w-full overflow-hidden rounded-lg bg-black">
-            <video
-              ref={mediaRef as React.RefObject<HTMLVideoElement>}
-              src={lesson.content_url || ''}
-              className="h-full w-full"
-              onTimeUpdate={handleMediaTimeUpdate}
+          <div className="relative w-full overflow-hidden rounded-lg bg-black">
+            <VideoEmbed
+              url={lesson.content_url || ''}
+              title={lesson.title}
               onEnded={handleMediaEnded}
-              onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
-              controls
+              onTimeUpdate={(time) => setCurrentTime(time)}
             />
           </div>
         );
