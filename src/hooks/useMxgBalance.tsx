@@ -1,6 +1,17 @@
 import { useState, useEffect, useCallback, createContext, useContext, ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { toast } from 'sonner';
+import type { ActivityReward, RewardType } from '@/types/rewards';
+
+const rewardLabels: Record<RewardType, string> = {
+  asset_submission: 'Asset Submission',
+  profile_complete: 'Profile Completion',
+  governance_vote: 'Governance Vote',
+  referral_signup: 'Referral Signup',
+  referral_onboarding: 'Referral Onboarding',
+  staking: 'Staking Rewards',
+};
 
 interface MxgBalanceContextType {
   mxgBalance: number;
@@ -104,22 +115,44 @@ export function MxgBalanceProvider({ children }: { children: ReactNode }) {
       )
       .subscribe();
 
-    // Subscribe to activity_rewards changes
+    // Subscribe to activity_rewards inserts for notifications
     const rewardsChannel = supabase
       .channel('mxg-rewards-changes')
       .on(
         'postgres_changes',
         {
-          event: '*',
+          event: 'INSERT',
           schema: 'public',
           table: 'activity_rewards',
           filter: `user_id=eq.${user.id}`
         },
         (payload) => {
-          console.log('Rewards changed:', payload);
-          // Refetch to get updated rewards
+          const newReward = payload.new as ActivityReward;
+          
+          // Show toast notification for distributed rewards
+          if (newReward.status === 'distributed') {
+            const rewardType = newReward.reward_type as RewardType;
+            toast.success(
+              `You earned ${newReward.mxg_amount} MXG for ${rewardLabels[rewardType] || newReward.reward_type}!`,
+              {
+                duration: 5000,
+                icon: '🎉',
+              }
+            );
+          }
+          
           fetchMxgData();
         }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'activity_rewards',
+          filter: `user_id=eq.${user.id}`
+        },
+        () => fetchMxgData()
       )
       .subscribe();
 
