@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, NavLink as RouterNavLink, useLocation } from 'react-router-dom';
-import { Menu, LogOut, ShieldCheck, LayoutDashboard, Coins, User, Users, Activity, Award, Vote, ArrowRightLeft, FileCheck, Wallet, Globe, FileUp, FolderOpen, ClipboardList, Archive, Zap, Newspaper, FileText, Package, Rocket, Sparkles, BarChart3, FileSignature, Layers, Radar, MonitorDot, Crosshair, TrendingUp, Gift, UserPlus, HelpCircle, BookOpen, DollarSign, GraduationCap, Bot } from 'lucide-react';
+import { Menu, LogOut, ShieldCheck, LayoutDashboard, Coins, User, Users, Activity, Award, Vote, ArrowRightLeft, FileCheck, Wallet, Globe, FileUp, FolderOpen, ClipboardList, Archive, Zap, Newspaper, FileText, Package, Rocket, Sparkles, BarChart3, FileSignature, Layers, Target, Monitor, Search, TrendingUp, Gift, UserPlus, HelpCircle, BookOpen, DollarSign, GraduationCap, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -32,12 +32,12 @@ const adminNavigation = [
   { name: "Fee Payers (SOL)", href: "/admin/fee-payers", icon: Wallet },
   { name: "Fee Payers (EVM)", href: "/admin/evm-fee-payers", icon: Globe },
   { name: "Arbitrage", href: "/admin/arbitrage/strategies", icon: Zap },
-  { name: "Auto Arbitrage", href: "/admin/arbitrage/automation", icon: Bot },
+  { name: "Auto Arbitrage", href: "/admin/arbitrage/automation", icon: Settings },
   { name: "Flash Loan Providers", href: "/admin/arbitrage/flash-loans", icon: Sparkles },
   { name: "Flash Loan Analytics", href: "/admin/arbitrage/flash-loan-analytics", icon: BarChart3 },
-  { name: "New Pool Detection", href: "/admin/arbitrage/new-pools", icon: Radar },
-  { name: "OPS Events", href: "/admin/arbitrage/ops-events", icon: MonitorDot },
-  { name: "Profit Discovery", href: "/admin/arbitrage/profit-discovery", icon: Crosshair },
+  { name: "New Pool Detection", href: "/admin/arbitrage/new-pools", icon: Target },
+  { name: "OPS Events", href: "/admin/arbitrage/ops-events", icon: Monitor },
+  { name: "Profit Discovery", href: "/admin/arbitrage/profit-discovery", icon: Search },
   { name: "News", href: "/admin/news", icon: Newspaper },
   { name: "Archived", href: "/admin/archived", icon: Archive },
   { name: "Activity", href: "/admin/activity", icon: Activity },
