@@ -36,6 +36,10 @@ const navigation = [{
   href: "/earn-mxg",
   icon: TrendingUp
 }, {
+  name: "Training",
+  href: "/training",
+  icon: BookOpen
+}, {
   name: "Governance",
   href: "/governance",
   icon: Vote

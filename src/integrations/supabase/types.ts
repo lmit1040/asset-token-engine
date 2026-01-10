@@ -1934,6 +1934,104 @@ export type Database = {
           },
         ]
       }
+      training_courses: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          description: string | null
+          difficulty_level: string | null
+          estimated_duration_minutes: number | null
+          id: string
+          is_public: boolean
+          is_published: boolean
+          mxg_reward_amount: number
+          thumbnail_url: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          difficulty_level?: string | null
+          estimated_duration_minutes?: number | null
+          id?: string
+          is_public?: boolean
+          is_published?: boolean
+          mxg_reward_amount?: number
+          thumbnail_url?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          difficulty_level?: string | null
+          estimated_duration_minutes?: number | null
+          id?: string
+          is_public?: boolean
+          is_published?: boolean
+          mxg_reward_amount?: number
+          thumbnail_url?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      training_lessons: {
+        Row: {
+          content_text: string | null
+          content_type: string
+          content_url: string | null
+          course_id: string
+          created_at: string
+          description: string | null
+          duration_seconds: number | null
+          id: string
+          sort_order: number
+          thumbnail_url: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          content_text?: string | null
+          content_type: string
+          content_url?: string | null
+          course_id: string
+          created_at?: string
+          description?: string | null
+          duration_seconds?: number | null
+          id?: string
+          sort_order?: number
+          thumbnail_url?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          content_text?: string | null
+          content_type?: string
+          content_url?: string | null
+          course_id?: string
+          created_at?: string
+          description?: string | null
+          duration_seconds?: number | null
+          id?: string
+          sort_order?: number
+          thumbnail_url?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "training_lessons_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "training_courses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       transfer_requests: {
         Row: {
           amount: number
@@ -2137,6 +2235,82 @@ export type Database = {
             columns: ["created_asset_id"]
             isOneToOne: false
             referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_course_progress: {
+        Row: {
+          completed_at: string | null
+          course_id: string
+          id: string
+          reward_claimed: boolean
+          reward_claimed_at: string | null
+          started_at: string
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          course_id: string
+          id?: string
+          reward_claimed?: boolean
+          reward_claimed_at?: string | null
+          started_at?: string
+          user_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          course_id?: string
+          id?: string
+          reward_claimed?: boolean
+          reward_claimed_at?: string | null
+          started_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_course_progress_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "training_courses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_lesson_progress: {
+        Row: {
+          completed_at: string | null
+          id: string
+          last_position_seconds: number | null
+          lesson_id: string
+          started_at: string
+          time_spent_seconds: number
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          id?: string
+          last_position_seconds?: number | null
+          lesson_id: string
+          started_at?: string
+          time_spent_seconds?: number
+          user_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          id?: string
+          last_position_seconds?: number | null
+          lesson_id?: string
+          started_at?: string
+          time_spent_seconds?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_lesson_progress_lesson_id_fkey"
+            columns: ["lesson_id"]
+            isOneToOne: false
+            referencedRelation: "training_lessons"
             referencedColumns: ["id"]
           },
         ]
