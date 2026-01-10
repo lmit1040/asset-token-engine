@@ -21,7 +21,7 @@ import type {
 
 export default function MxgEarningPage() {
   const { user } = useAuth();
-  const { mxgBalance, refetch: refetchMxgBalance } = useMxgBalance();
+  const { mxgBalance, totalEarned, pendingRewards, refetch: refetchMxgBalance } = useMxgBalance();
   const [isLoading, setIsLoading] = useState(true);
   const [stakingPool, setStakingPool] = useState<StakingPool | null>(null);
   const [userStake, setUserStake] = useState<UserStake | null>(null);
@@ -100,20 +100,11 @@ export default function MxgEarningPage() {
     fetchData();
   }, [fetchData]);
 
-  const totalEarned = activityRewards
-    .filter(r => r.status === 'claimed')
-    .reduce((sum, r) => sum + r.mxg_amount, 0) + 
-    (userStake?.rewards_earned || 0);
-
-  const pendingRewards = activityRewards
-    .filter(r => r.status === 'pending')
-    .reduce((sum, r) => sum + r.mxg_amount, 0);
-
   const stakingRewards = userStake?.rewards_earned || 0;
 
   const referralRewards = activityRewards
     .filter(r => r.reward_type === 'referral_signup' || r.reward_type === 'referral_onboarding')
-    .filter(r => r.status === 'claimed')
+    .filter(r => r.status === 'claimed' || r.status === 'distributed')
     .reduce((sum, r) => sum + r.mxg_amount, 0);
 
   const signupRewardConfig = rewardConfigs.find(c => c.reward_type === 'referral_signup');
