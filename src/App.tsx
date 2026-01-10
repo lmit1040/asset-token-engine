@@ -56,6 +56,7 @@ import FeesPage from "./pages/FeesPage";
 import AdminFeesPage from "./pages/AdminFeesPage";
 import TrainingPage from "./pages/TrainingPage";
 import CourseDetailPage from "./pages/CourseDetailPage";
+import AdminTrainingPage from "./pages/AdminTrainingPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -120,6 +121,7 @@ const App = () => (
               <Route path="/trust-dashboard" element={<TrustDashboardPage />} />
               <Route path="/admin/enterprise" element={<AdminEnterpriseConsolePage />} />
               <Route path="/admin/fees" element={<AdminFeesPage />} />
+              <Route path="/admin/training" element={<AdminTrainingPage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </WalletProvider>
