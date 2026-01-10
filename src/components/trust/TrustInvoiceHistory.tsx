@@ -5,7 +5,9 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
-import { FileText, Download, ExternalLink } from 'lucide-react';
+import { FileText, Download, ExternalLink, CreditCard, Loader2 } from 'lucide-react';
+import { startStripeCheckout } from '@/lib/payments';
+import { toast } from 'sonner';
 
 interface Invoice {
   id: string;
@@ -26,6 +28,32 @@ interface TrustInvoiceHistoryProps {
 export function TrustInvoiceHistory({ trustAccountIds }: TrustInvoiceHistoryProps) {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
+  const [payingInvoiceId, setPayingInvoiceId] = useState<string | null>(null);
+
+  const handlePayInvoice = async (invoice: Invoice) => {
+    try {
+      setPayingInvoiceId(invoice.id);
+      
+      // Get the fee for trust invoice payment
+      const { data: fee } = await supabase
+        .from('fee_catalog')
+        .select('id')
+        .eq('fee_key', 'TRUST_ANNUAL_FEE')
+        .eq('tier', 'TRUST')
+        .maybeSingle();
+
+      await startStripeCheckout({
+        fee_id: fee?.id || invoice.id,
+        purpose: 'TRUST_INVOICE',
+        related_table: 'trust_invoices',
+        related_id: invoice.id,
+      });
+    } catch (error: any) {
+      console.error('Payment error:', error);
+      toast.error(error.message || 'Failed to start payment');
+      setPayingInvoiceId(null);
+    }
+  };
 
   useEffect(() => {
     const fetchInvoices = async () => {
@@ -124,6 +152,23 @@ export function TrustInvoiceHistory({ trustAccountIds }: TrustInvoiceHistoryProp
                 <TableCell>{getStatusBadge(invoice.status)}</TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-2">
+                    {(invoice.status === 'pending' || invoice.status === 'overdue') && (
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={() => handlePayInvoice(invoice)}
+                        disabled={payingInvoiceId === invoice.id}
+                      >
+                        {payingInvoiceId === invoice.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <>
+                            <CreditCard className="h-4 w-4 mr-1" />
+                            Pay Now
+                          </>
+                        )}
+                      </Button>
+                    )}
                     <Button variant="ghost" size="icon" title="Download">
                       <Download className="h-4 w-4" />
                     </Button>
