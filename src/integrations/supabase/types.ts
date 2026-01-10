@@ -1341,6 +1341,57 @@ export type Database = {
           },
         ]
       }
+      payments: {
+        Row: {
+          amount_cents: number
+          created_at: string
+          currency: string
+          id: string
+          metadata: Json | null
+          purpose: string
+          related_id: string | null
+          related_table: string | null
+          status: string
+          stripe_checkout_session_id: string | null
+          stripe_customer_id: string | null
+          stripe_payment_intent_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          amount_cents: number
+          created_at?: string
+          currency?: string
+          id?: string
+          metadata?: Json | null
+          purpose: string
+          related_id?: string | null
+          related_table?: string | null
+          status?: string
+          stripe_checkout_session_id?: string | null
+          stripe_customer_id?: string | null
+          stripe_payment_intent_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          amount_cents?: number
+          created_at?: string
+          currency?: string
+          id?: string
+          metadata?: Json | null
+          purpose?: string
+          related_id?: string | null
+          related_table?: string | null
+          status?: string
+          stripe_checkout_session_id?: string | null
+          stripe_customer_id?: string | null
+          stripe_payment_intent_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       pricing_tiers: {
         Row: {
           annual_fee_cents: number | null
@@ -2184,6 +2235,7 @@ export type Database = {
           estimated_quantity: number | null
           id: string
           location_description: string | null
+          payment_status: string | null
           status: Database["public"]["Enums"]["submission_status"]
           submitted_by_role: string
           title: string
@@ -2203,6 +2255,7 @@ export type Database = {
           estimated_quantity?: number | null
           id?: string
           location_description?: string | null
+          payment_status?: string | null
           status?: Database["public"]["Enums"]["submission_status"]
           submitted_by_role: string
           title: string
@@ -2222,6 +2275,7 @@ export type Database = {
           estimated_quantity?: number | null
           id?: string
           location_description?: string | null
+          payment_status?: string | null
           status?: Database["public"]["Enums"]["submission_status"]
           submitted_by_role?: string
           title?: string
