@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { useMxgBalance } from '@/hooks/useMxgBalance';
 import { Loader2, Vote, TrendingUp, Users, Gift } from 'lucide-react';
 import { format } from 'date-fns';
 import type { 
@@ -20,8 +21,8 @@ import type {
 
 export default function MxgEarningPage() {
   const { user } = useAuth();
+  const { mxgBalance, refetch: refetchMxgBalance } = useMxgBalance();
   const [isLoading, setIsLoading] = useState(true);
-  const [mxgBalance, setMxgBalance] = useState(0);
   const [stakingPool, setStakingPool] = useState<StakingPool | null>(null);
   const [userStake, setUserStake] = useState<UserStake | null>(null);
   const [activityRewards, setActivityRewards] = useState<ActivityReward[]>([]);
@@ -32,7 +33,7 @@ export default function MxgEarningPage() {
     if (!user) return;
     
     try {
-      // Fetch MXG balance
+      // Fetch MXG token for staking pool lookup
       const { data: mxgToken } = await supabase
         .from('token_definitions')
         .select('id')
@@ -40,15 +41,6 @@ export default function MxgEarningPage() {
         .single();
 
       if (mxgToken) {
-        const { data: holding } = await supabase
-          .from('user_token_holdings')
-          .select('balance')
-          .eq('user_id', user.id)
-          .eq('token_definition_id', mxgToken.id)
-          .single();
-
-        setMxgBalance(holding?.balance || 0);
-
         // Fetch staking pool for MXG
         const { data: pools } = await supabase
           .from('staking_pools')
@@ -176,7 +168,7 @@ export default function MxgEarningPage() {
                 pool={stakingPool}
                 userStake={userStake}
                 mxgBalance={mxgBalance}
-                onStakeChange={fetchData}
+                onStakeChange={() => { fetchData(); refetchMxgBalance(); }}
               />
               <Card className="glass-card">
                 <CardHeader>
@@ -207,7 +199,7 @@ export default function MxgEarningPage() {
                   c.reward_type !== 'referral_signup' && 
                   c.reward_type !== 'referral_onboarding'
                 )}
-                onClaimSuccess={fetchData}
+                onClaimSuccess={() => { fetchData(); refetchMxgBalance(); }}
               />
               <Card className="glass-card">
                 <CardHeader>

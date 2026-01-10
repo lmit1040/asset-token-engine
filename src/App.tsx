@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
 import { WalletProvider } from "@/hooks/useWallet";
+import { MxgBalanceProvider } from "@/hooks/useMxgBalance";
 import { ErrorBoundary } from "@/components/system/ErrorBoundary";
 import Index from "./pages/Index";
 import AuthPage from "./pages/AuthPage";
@@ -70,8 +71,9 @@ const App = () => (
         <Sonner />
         <BrowserRouter>
           <AuthProvider>
-            <WalletProvider>
-              <Routes>
+            <MxgBalanceProvider>
+              <WalletProvider>
+                <Routes>
                 <Route path="/" element={<Index />} />
                 <Route path="/reserves" element={<ProofOfReservePage />} />
                 <Route path="/auth" element={<AuthPage />} />
@@ -125,8 +127,9 @@ const App = () => (
                 <Route path="/admin/fees" element={<AdminFeesPage />} />
                 <Route path="/admin/training" element={<AdminTrainingPage />} />
                 <Route path="*" element={<NotFound />} />
-              </Routes>
-            </WalletProvider>
+                </Routes>
+              </WalletProvider>
+            </MxgBalanceProvider>
           </AuthProvider>
         </BrowserRouter>
       </ErrorBoundary>

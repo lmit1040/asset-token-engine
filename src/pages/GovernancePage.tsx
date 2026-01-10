@@ -10,12 +10,13 @@ import { CreateProposalModal } from '@/components/governance/CreateProposalModal
 import { GovernanceProposal, ProposalStatus, MIN_MXG_TO_CREATE_PROPOSAL } from '@/types/governance';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { useMxgBalance } from '@/hooks/useMxgBalance';
 
 export default function GovernancePage() {
   const { user } = useAuth();
+  const { mxgBalance } = useMxgBalance();
   const [proposals, setProposals] = useState<GovernanceProposal[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [mxgBalance, setMxgBalance] = useState(0);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('active');
 
@@ -31,24 +32,6 @@ export default function GovernancePage() {
 
       if (proposalsError) throw proposalsError;
       setProposals((proposalsData || []) as GovernanceProposal[]);
-
-      // Fetch MXG balance - find MXG token and user's holding
-      const { data: mxgToken } = await supabase
-        .from('token_definitions')
-        .select('id')
-        .eq('token_symbol', 'MXG')
-        .maybeSingle();
-
-      if (mxgToken) {
-        const { data: holding } = await supabase
-          .from('user_token_holdings')
-          .select('balance')
-          .eq('user_id', user.id)
-          .eq('token_definition_id', mxgToken.id)
-          .maybeSingle();
-
-        setMxgBalance(holding?.balance || 0);
-      }
     } catch (error) {
       console.error('Error fetching governance data:', error);
     } finally {
