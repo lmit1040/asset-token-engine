@@ -28,7 +28,7 @@ import { TrainingCourse, TrainingLesson, UserLessonProgress, UserCourseProgress 
 
 export default function CourseDetailPage() {
   const { courseId } = useParams<{ courseId: string }>();
-  const { user } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
   const { startCourse, checkCourseCompletion } = useTrainingProgress();
   
   const [course, setCourse] = useState<TrainingCourse | null>(null);
@@ -40,6 +40,19 @@ export default function CourseDetailPage() {
 
   const isAuthenticated = !!user;
   const isPublicCourse = course?.is_public ?? false;
+
+  // Show a simple loading state while auth is still loading
+  // This prevents premature redirect to auth page
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="h-12 w-12 rounded-full border-4 border-primary border-t-transparent animate-spin" />
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   const fetchCourse = useCallback(async () => {
     if (!courseId) return;
@@ -324,8 +337,9 @@ export default function CourseDetailPage() {
   );
 
   // Render with appropriate layout
+  // During loading, if user is not authenticated, show public layout to avoid redirect
   if (loading) {
-    if (usePublicLayout) {
+    if (!isAuthenticated) {
       return (
         <PublicCourseLayout title="Loading...">
           {LoadingContent}
