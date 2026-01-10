@@ -10,7 +10,7 @@ import MetallumXLogo from '@/assets/MetallumXLogo.png';
 import type { TrainingCourse } from '@/types/training';
 
 const Index = () => {
-  const { user, isLoading } = useAuth();
+  const { user } = useAuth();
 
   const { data: publicCourses = [] } = useQuery({
     queryKey: ['public-courses'],
@@ -28,19 +28,7 @@ const Index = () => {
     },
   });
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-gold animate-pulse">
-            <Vault className="h-8 w-8 text-primary-foreground" />
-          </div>
-          <p className="text-muted-foreground">Loading MetallumX Vault...</p>
-        </div>
-      </div>
-    );
-  }
-
+  // Redirect authenticated users without blocking render
   if (user) {
     return <Navigate to="/dashboard" replace />;
   }
