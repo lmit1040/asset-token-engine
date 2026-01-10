@@ -193,7 +193,7 @@ const Index = () => {
                       </CardDescription>
                     </CardHeader>
                     <CardContent>
-                      <Link to="/auth">
+                      <Link to={`/training/${course.id}`}>
                         <Button variant="outline" className="w-full gap-2">
                           <GraduationCap className="h-4 w-4" />
                           Start Learning
@@ -204,7 +204,7 @@ const Index = () => {
                 ))}
               </div>
               <div className="text-center mt-8">
-                <Link to="/auth">
+                <Link to="/training">
                   <Button variant="ghost" className="gap-2">
                     View All Courses
                     <ArrowRight className="h-4 w-4" />

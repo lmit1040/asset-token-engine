@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import { PublicCourseLayout } from '@/components/layout/PublicCourseLayout';
 import { LessonPlayer } from '@/components/training/LessonPlayer';
 import { LessonList } from '@/components/training/LessonList';
 import { CourseCompletionCard } from '@/components/training/CourseCompletionCard';
@@ -9,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { 
   ArrowLeft, 
   BookOpen, 
@@ -16,7 +18,8 @@ import {
   Trophy, 
   Users,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  LogIn
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -34,6 +37,9 @@ export default function CourseDetailPage() {
   const [courseProgress, setCourseProgress] = useState<UserCourseProgress | null>(null);
   const [currentLesson, setCurrentLesson] = useState<TrainingLesson | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const isAuthenticated = !!user;
+  const isPublicCourse = course?.is_public ?? false;
 
   const fetchCourse = useCallback(async () => {
     if (!courseId) return;
@@ -163,33 +169,215 @@ export default function CourseDetailPage() {
   const progressPercent = lessons.length ? (completedCount / lessons.length) * 100 : 0;
   const isCompleted = !!courseProgress?.completed_at;
 
+  // Determine which layout to use
+  const usePublicLayout = isPublicCourse && !isAuthenticated;
+
+  // Loading state
+  const LoadingContent = (
+    <div className="space-y-6">
+      <Skeleton className="h-8 w-48" />
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <Skeleton className="h-96" />
+        </div>
+        <Skeleton className="h-96" />
+      </div>
+    </div>
+  );
+
+  // Not found state
+  const NotFoundContent = (
+    <div className="py-12 text-center">
+      <BookOpen className="mx-auto h-12 w-12 text-muted-foreground" />
+      <h3 className="mt-4 text-lg font-semibold">Course not found</h3>
+      <Button asChild className="mt-4">
+        <Link to={isAuthenticated ? "/training" : "/"}>
+          {isAuthenticated ? "Back to Training" : "Back to Home"}
+        </Link>
+      </Button>
+    </div>
+  );
+
+  // Main content
+  const MainContent = course && (
+    <div className="space-y-6">
+      {/* Back button and progress */}
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <Button variant="ghost" asChild>
+          <Link to={isAuthenticated ? "/training" : "/"}>
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            {isAuthenticated ? "Back to Training" : "Back to Home"}
+          </Link>
+        </Button>
+        
+        {isAuthenticated && (
+          <div className="flex items-center gap-4">
+            <div className="text-sm text-muted-foreground">
+              {completedCount} / {lessons.length} lessons
+            </div>
+            <Progress value={progressPercent} className="w-32" />
+            {course.mxg_reward_amount > 0 && (
+              <Badge variant="secondary">
+                <Trophy className="mr-1 h-3 w-3" />
+                {course.mxg_reward_amount} MXG
+              </Badge>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Sign-in prompt for public course viewers */}
+      {usePublicLayout && course.mxg_reward_amount > 0 && (
+        <Alert className="border-primary/30 bg-primary/5">
+          <LogIn className="h-4 w-4" />
+          <AlertDescription className="flex items-center justify-between flex-wrap gap-4">
+            <span>
+              Sign in to track your progress and earn <strong>{course.mxg_reward_amount} MXG</strong> upon completion
+            </span>
+            <Button size="sm" asChild>
+              <Link to="/auth">Create Account</Link>
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Completion Card */}
+      {isAuthenticated && (
+        <CourseCompletionCard
+          course={course}
+          isCompleted={isCompleted}
+          rewardClaimed={courseProgress?.reward_claimed || false}
+          onRewardClaimed={handleRewardClaimed}
+        />
+      )}
+
+      {/* Main Content */}
+      <div className="grid gap-6 lg:grid-cols-3">
+        {/* Lesson Player */}
+        <div className="space-y-4 lg:col-span-2">
+          {currentLesson ? (
+            <>
+              <LessonPlayer
+                lesson={currentLesson}
+                onComplete={handleLessonComplete}
+                isCompleted={!!lessonProgress[currentLesson.id]?.completed_at}
+                isAuthenticated={isAuthenticated}
+              />
+              
+              {/* Navigation buttons */}
+              <div className="flex justify-between">
+                <Button
+                  variant="outline"
+                  onClick={goToPreviousLesson}
+                  disabled={lessons.findIndex(l => l.id === currentLesson.id) === 0}
+                >
+                  <ChevronLeft className="mr-2 h-4 w-4" />
+                  Previous
+                </Button>
+                <Button
+                  onClick={goToNextLesson}
+                  disabled={lessons.findIndex(l => l.id === currentLesson.id) === lessons.length - 1}
+                >
+                  Next
+                  <ChevronRight className="ml-2 h-4 w-4" />
+                </Button>
+              </div>
+            </>
+          ) : (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <BookOpen className="mx-auto h-12 w-12 text-muted-foreground" />
+                <p className="mt-4 text-muted-foreground">No lessons in this course yet</p>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+
+        {/* Lesson List Sidebar */}
+        <div>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Course Content</CardTitle>
+              <div className="flex flex-wrap gap-2 text-sm text-muted-foreground">
+                {course.estimated_duration_minutes && (
+                  <span className="flex items-center gap-1">
+                    <Clock className="h-3 w-3" />
+                    {course.estimated_duration_minutes} min
+                  </span>
+                )}
+                <span>{lessons.length} lessons</span>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              <LessonList
+                lessons={lessons}
+                progress={lessonProgress}
+                currentLessonId={currentLesson?.id}
+                onSelectLesson={setCurrentLesson}
+                isAuthenticated={isAuthenticated}
+              />
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+
+  // Render with appropriate layout
   if (loading) {
+    if (usePublicLayout) {
+      return (
+        <PublicCourseLayout title="Loading...">
+          {LoadingContent}
+        </PublicCourseLayout>
+      );
+    }
     return (
       <DashboardLayout title="Loading..." subtitle="">
-        <div className="space-y-6">
-          <Skeleton className="h-8 w-48" />
-          <div className="grid gap-6 lg:grid-cols-3">
-            <div className="lg:col-span-2">
-              <Skeleton className="h-96" />
-            </div>
-            <Skeleton className="h-96" />
-          </div>
-        </div>
+        {LoadingContent}
       </DashboardLayout>
     );
   }
 
   if (!course) {
+    if (usePublicLayout) {
+      return (
+        <PublicCourseLayout title="Course Not Found">
+          {NotFoundContent}
+        </PublicCourseLayout>
+      );
+    }
     return (
       <DashboardLayout title="Course Not Found" subtitle="">
+        {NotFoundContent}
+      </DashboardLayout>
+    );
+  }
+
+  // Non-public course requires authentication
+  if (!isPublicCourse && !isAuthenticated) {
+    return (
+      <PublicCourseLayout title="Sign In Required">
         <div className="py-12 text-center">
           <BookOpen className="mx-auto h-12 w-12 text-muted-foreground" />
-          <h3 className="mt-4 text-lg font-semibold">Course not found</h3>
+          <h3 className="mt-4 text-lg font-semibold">This course requires sign-in</h3>
+          <p className="mt-2 text-muted-foreground">Please sign in to access this course content.</p>
           <Button asChild className="mt-4">
-            <Link to="/training">Back to Training</Link>
+            <Link to="/auth">Sign In</Link>
           </Button>
         </div>
-      </DashboardLayout>
+      </PublicCourseLayout>
+    );
+  }
+
+  if (usePublicLayout) {
+    return (
+      <PublicCourseLayout 
+        title={course.title} 
+        subtitle={course.description || undefined}
+      >
+        {MainContent}
+      </PublicCourseLayout>
     );
   }
 
@@ -198,111 +386,7 @@ export default function CourseDetailPage() {
       title={course.title} 
       subtitle={course.description || ''}
     >
-      <div className="space-y-6">
-        {/* Back button and progress */}
-        <div className="flex items-center justify-between">
-          <Button variant="ghost" asChild>
-            <Link to="/training">
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to Training
-            </Link>
-          </Button>
-          
-          {user && (
-            <div className="flex items-center gap-4">
-              <div className="text-sm text-muted-foreground">
-                {completedCount} / {lessons.length} lessons
-              </div>
-              <Progress value={progressPercent} className="w-32" />
-              {course.mxg_reward_amount > 0 && (
-                <Badge variant="secondary">
-                  <Trophy className="mr-1 h-3 w-3" />
-                  {course.mxg_reward_amount} MXG
-                </Badge>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Completion Card */}
-        {user && (
-          <CourseCompletionCard
-            course={course}
-            isCompleted={isCompleted}
-            rewardClaimed={courseProgress?.reward_claimed || false}
-            onRewardClaimed={handleRewardClaimed}
-          />
-        )}
-
-        {/* Main Content */}
-        <div className="grid gap-6 lg:grid-cols-3">
-          {/* Lesson Player */}
-          <div className="space-y-4 lg:col-span-2">
-            {currentLesson ? (
-              <>
-                <LessonPlayer
-                  lesson={currentLesson}
-                  onComplete={handleLessonComplete}
-                  isCompleted={!!lessonProgress[currentLesson.id]?.completed_at}
-                />
-                
-                {/* Navigation buttons */}
-                <div className="flex justify-between">
-                  <Button
-                    variant="outline"
-                    onClick={goToPreviousLesson}
-                    disabled={lessons.findIndex(l => l.id === currentLesson.id) === 0}
-                  >
-                    <ChevronLeft className="mr-2 h-4 w-4" />
-                    Previous
-                  </Button>
-                  <Button
-                    onClick={goToNextLesson}
-                    disabled={lessons.findIndex(l => l.id === currentLesson.id) === lessons.length - 1}
-                  >
-                    Next
-                    <ChevronRight className="ml-2 h-4 w-4" />
-                  </Button>
-                </div>
-              </>
-            ) : (
-              <Card>
-                <CardContent className="py-12 text-center">
-                  <BookOpen className="mx-auto h-12 w-12 text-muted-foreground" />
-                  <p className="mt-4 text-muted-foreground">No lessons in this course yet</p>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-
-          {/* Lesson List Sidebar */}
-          <div>
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Course Content</CardTitle>
-                <div className="flex flex-wrap gap-2 text-sm text-muted-foreground">
-                  {course.estimated_duration_minutes && (
-                    <span className="flex items-center gap-1">
-                      <Clock className="h-3 w-3" />
-                      {course.estimated_duration_minutes} min
-                    </span>
-                  )}
-                  <span>{lessons.length} lessons</span>
-                </div>
-              </CardHeader>
-              <CardContent className="p-0">
-                <LessonList
-                  lessons={lessons}
-                  progress={lessonProgress}
-                  currentLessonId={currentLesson?.id}
-                  onSelectLesson={setCurrentLesson}
-                  isAuthenticated={!!user}
-                />
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-      </div>
+      {MainContent}
     </DashboardLayout>
   );
 }
