@@ -54,6 +54,8 @@ import TrustDashboardPage from "./pages/TrustDashboardPage";
 import AdminEnterpriseConsolePage from "./pages/AdminEnterpriseConsolePage";
 import FeesPage from "./pages/FeesPage";
 import AdminFeesPage from "./pages/AdminFeesPage";
+import TrainingPage from "./pages/TrainingPage";
+import CourseDetailPage from "./pages/CourseDetailPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -81,6 +83,8 @@ const App = () => (
               <Route path="/my-submissions" element={<MySubmissionsPage />} />
               <Route path="/mxu-benefits" element={<MxuBenefitsPage />} />
               <Route path="/earn-mxg" element={<MxgEarningPage />} />
+              <Route path="/training" element={<TrainingPage />} />
+              <Route path="/training/:courseId" element={<CourseDetailPage />} />
               <Route path="/governance" element={<GovernancePage />} />
               <Route path="/governance/:id" element={<ProposalDetailPage />} />
               <Route path="/profile" element={<ProfilePage />} />
