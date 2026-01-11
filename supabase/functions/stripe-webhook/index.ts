@@ -4,55 +4,86 @@ import { getStripeClient } from "../_shared/stripe-client.ts";
 
 Deno.serve(async (req) => {
   try {
-    const { stripe } = await getStripeClient();
+    if (req.method !== "POST") {
+      return new Response("Method not allowed", { status: 405 });
+    }
 
     const sig = req.headers.get("stripe-signature");
     const webhookSecret = Deno.env.get("STRIPE_WEBHOOK_SECRET");
-    if (!sig || !webhookSecret) return new Response("Missing webhook secret/signature", { status: 400 });
-
-    const rawBody = await req.text();
-
-    let event;
-    try {
-      event = stripe.webhooks.constructEvent(rawBody, sig, webhookSecret);
-    } catch (_err) {
-      return new Response("Webhook signature verification failed", { status: 400 });
+    if (!sig || !webhookSecret) {
+      return new Response("Missing webhook secret/signature", { status: 400 });
     }
 
-    // Use service role key for DB writes (webhooks are server-to-server)
+    const rawBody = await req.text();
+    const { stripe } = await getStripeClient();
+
+    let event: any;
+    try {
+      event = stripe.webhooks.constructEvent(rawBody, sig, webhookSecret);
+    } catch (err: any) {
+      console.error("[stripe-webhook] Signature verification failed:", err?.message ?? err);
+      return new Response("Invalid signature", { status: 400 });
+    }
+
+    // Only act on completed/successful checkout
+    if (
+      event.type !== "checkout.session.completed" &&
+      event.type !== "checkout.session.async_payment_succeeded"
+    ) {
+      return new Response("ignored", { status: 200 });
+    }
+
+    const session = event.data.object as any;
+    const sessionId = session.id as string | undefined;
+    if (!sessionId) return new Response("Missing session id", { status: 400 });
+
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const admin = createClient(supabaseUrl, serviceRole);
 
-    if (event.type === "checkout.session.completed") {
-      const session = event.data.object as any;
+    // 1) Mark payment as paid
+    const { data: payment, error: payErr } = await admin
+      .from("payments")
+      .update({
+        status: "paid",
+        stripe_payment_intent_id: session.payment_intent ?? null,
+        stripe_customer_id: session.customer ?? null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("stripe_checkout_session_id", sessionId)
+      .select("*")
+      .single();
 
-      const sessionId = session.id as string;
-      const paymentIntent = session.payment_intent as string | null;
+    if (payErr || !payment) {
+      console.error("[stripe-webhook] Payment record update error:", payErr);
+      return new Response("Payment record not found", { status: 404 });
+    }
 
-      // 1) Mark payment as paid
-      const { data: updated, error: upErr } = await admin
-        .from("payments")
-        .update({
-          status: "paid",
-          stripe_payment_intent_id: paymentIntent ?? null,
-          stripe_customer_id: session.customer ?? null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("stripe_checkout_session_id", sessionId)
-        .select("*")
-        .single();
+    // 2) Unlock / Gate logic
+    const purpose = (session.metadata?.purpose || payment.purpose || "") as string;
+    const relatedTable = (session.metadata?.related_table || payment.related_table || "") as string;
+    const relatedId = (session.metadata?.related_id || payment.related_id || "") as string;
 
-      if (upErr || !updated) return new Response("Payment record not found", { status: 404 });
+    try {
+      // Asset submission payment -> mark submission paid
+      // Your schema uses user_asset_submissions.payment_status
+      if (purpose === "ASSET_SUBMISSION" && relatedId) {
+        await admin
+          .from("user_asset_submissions")
+          .update({ payment_status: "paid" })
+          .eq("id", relatedId);
+      }
 
-      // 2) Unlock logic (ALL)
-      // You decide what "paid" enables. Here are the patterns:
-      const purpose = session.metadata?.purpose || updated.purpose;
-      const relatedTable = session.metadata?.related_table || updated.related_table;
-      const relatedId = session.metadata?.related_id || updated.related_id;
+      // Token deploy payment -> allow deployment workflow
+      // token_definitions.deployment_status enum: NOT_DEPLOYED | PENDING | DEPLOYED
+      if (purpose === "TOKEN_DEPLOY" && relatedId) {
+        await admin
+          .from("token_definitions")
+          .update({ deployment_status: "PENDING" })
+          .eq("id", relatedId);
+      }
 
-      // Example unlocks (adjust to your schema):
-      // - If purpose is TRUST_INVOICE -> update trust_invoices
+      // Trust invoice payment -> mark invoice paid
       if (purpose === "TRUST_INVOICE" && relatedId) {
         await admin
           .from("trust_invoices")
@@ -60,23 +91,26 @@ Deno.serve(async (req) => {
           .eq("id", relatedId);
       }
 
-      // - If purpose is TOKEN_IMPORT or TOKEN_DEPLOY -> update token_definitions flags
-      if ((purpose === "TOKEN_IMPORT" || purpose === "TOKEN_DEPLOY") && relatedId) {
+      // Trust onboarding fee -> activate trust account
+      if (purpose === "ASSET_ONBOARDING" && relatedTable === "trust_accounts" && relatedId) {
         await admin
-          .from("token_definitions")
-          .update({ /* e.g. paid_gate_passed: true */ })
+          .from("trust_accounts")
+          .update({ is_active: true, updated_at: new Date().toISOString() })
           .eq("id", relatedId);
       }
 
-      // - If purpose is ASSET_SUBMISSION -> update assets/workflow state (if you have a state column)
-      // await admin.from("assets").update({ status: "ready_for_review" }).eq("id", relatedId);
+      // Token import fee (optional gate): if you want, you can mark a flag in metadata or notes
+      // if (purpose === "TOKEN_IMPORT" && relatedId) { ... }
 
-      return new Response("ok", { status: 200 });
+    } catch (unlockErr: any) {
+      console.error("[stripe-webhook] Unlock logic error:", unlockErr?.message ?? unlockErr);
+      // Still return 200 so Stripe doesn't retry forever.
     }
 
-    return new Response("ignored", { status: 200 });
+    return new Response("ok", { status: 200 });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "unknown";
+    console.error("[stripe-webhook] Error:", e);
     return new Response(`Error: ${message}`, { status: 500 });
   }
 });
