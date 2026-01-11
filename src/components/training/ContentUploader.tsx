@@ -1,9 +1,11 @@
 import { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { Input } from '@/components/ui/input';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Upload, X, FileVideo, FileAudio, FileText, Image as ImageIcon, Loader2 } from 'lucide-react';
+import { Upload, X, FileVideo, FileAudio, FileText, Image as ImageIcon, Loader2, Link2, Cloud } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface ContentUploaderProps {
@@ -12,6 +14,7 @@ interface ContentUploaderProps {
   onUploadComplete: (url: string, metadata?: { duration?: number }) => void;
   currentUrl?: string | null;
   className?: string;
+  allowExternalUrl?: boolean;
 }
 
 const BUCKET_NAME = 'training-content';
@@ -24,16 +27,38 @@ const getFileIcon = (mimeType: string) => {
   return FileText;
 };
 
+const isAwsUrl = (url: string): boolean => {
+  return url.includes('.s3.') || url.includes('s3.amazonaws.com') || url.includes('amazonaws.com');
+};
+
+const isCloudStorageUrl = (url: string): boolean => {
+  return isAwsUrl(url) || 
+    url.includes('dropbox.com') || 
+    url.includes('drive.google.com') || 
+    url.includes('box.com');
+};
+
+const getCloudProvider = (url: string): string | null => {
+  if (isAwsUrl(url)) return 'AWS S3';
+  if (url.includes('dropbox.com')) return 'Dropbox';
+  if (url.includes('drive.google.com')) return 'Google Drive';
+  if (url.includes('box.com')) return 'Box';
+  return null;
+};
+
 export function ContentUploader({ 
   accept, 
   folder, 
   onUploadComplete, 
   currentUrl,
-  className 
+  className,
+  allowExternalUrl = true
 }: ContentUploaderProps) {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [preview, setPreview] = useState<string | null>(currentUrl || null);
+  const [externalUrl, setExternalUrl] = useState('');
+  const [activeTab, setActiveTab] = useState<string>('upload');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -135,8 +160,36 @@ export function ContentUploader({
     });
   };
 
+  const handleExternalUrl = () => {
+    if (!externalUrl.trim()) {
+      toast.error('Please enter a URL');
+      return;
+    }
+
+    // Validate URL format
+    try {
+      new URL(externalUrl);
+    } catch {
+      toast.error('Invalid URL format');
+      return;
+    }
+
+    const provider = getCloudProvider(externalUrl);
+    
+    setPreview(externalUrl);
+    onUploadComplete(externalUrl);
+    
+    if (provider) {
+      toast.success(`${provider} content linked successfully`);
+    } else {
+      toast.success('External URL added');
+    }
+    setExternalUrl('');
+  };
+
   const handleRemove = () => {
     setPreview(null);
+    setExternalUrl('');
     onUploadComplete('');
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -145,6 +198,7 @@ export function ContentUploader({
 
   const isImage = accept.includes('image');
   const isVideo = accept.includes('video');
+  const cloudProvider = preview ? getCloudProvider(preview) : null;
 
   return (
     <div className={cn('space-y-2', className)}>
@@ -156,6 +210,7 @@ export function ContentUploader({
         className="hidden"
       />
 
+      {/* Preview Section */}
       {preview && isImage && (
         <div className="relative inline-block">
           <img 
@@ -163,6 +218,11 @@ export function ContentUploader({
             alt="Preview" 
             className="h-24 w-auto rounded border object-cover"
           />
+          {cloudProvider && (
+            <span className="absolute bottom-1 left-1 rounded bg-primary/90 px-1.5 py-0.5 text-[10px] font-medium text-primary-foreground">
+              {cloudProvider}
+            </span>
+          )}
           <Button
             type="button"
             variant="destructive"
@@ -182,6 +242,11 @@ export function ContentUploader({
             className="h-24 w-auto rounded border"
             controls={false}
           />
+          {cloudProvider && (
+            <span className="absolute bottom-1 left-1 rounded bg-primary/90 px-1.5 py-0.5 text-[10px] font-medium text-primary-foreground">
+              {cloudProvider}
+            </span>
+          )}
           <Button
             type="button"
             variant="destructive"
@@ -196,13 +261,26 @@ export function ContentUploader({
 
       {preview && !isImage && !isVideo && (
         <div className="flex items-center gap-2 rounded border p-2">
-          <FileText className="h-5 w-5 text-muted-foreground" />
-          <span className="text-sm truncate flex-1">File uploaded</span>
+          {cloudProvider ? (
+            <Cloud className="h-5 w-5 text-primary" />
+          ) : (
+            <FileText className="h-5 w-5 text-muted-foreground" />
+          )}
+          <div className="flex-1 min-w-0">
+            <span className="text-sm truncate block">
+              {cloudProvider ? `${cloudProvider} content linked` : 'File uploaded'}
+            </span>
+            {preview && (
+              <span className="text-xs text-muted-foreground truncate block">
+                {preview.split('/').pop()?.substring(0, 40)}...
+              </span>
+            )}
+          </div>
           <Button
             type="button"
             variant="ghost"
             size="icon"
-            className="h-6 w-6"
+            className="h-6 w-6 shrink-0"
             onClick={handleRemove}
           >
             <X className="h-3 w-3" />
@@ -210,26 +288,87 @@ export function ContentUploader({
         </div>
       )}
 
+      {/* Upload/URL Input Section */}
       {!preview && (
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={uploading}
-          className="w-full"
-        >
-          {uploading ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Uploading...
-            </>
+        <>
+          {allowExternalUrl ? (
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="upload" className="text-xs">
+                  <Upload className="mr-1 h-3 w-3" />
+                  Upload
+                </TabsTrigger>
+                <TabsTrigger value="url" className="text-xs">
+                  <Cloud className="mr-1 h-3 w-3" />
+                  Cloud URL
+                </TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="upload" className="mt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                  className="w-full"
+                >
+                  {uploading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Uploading...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="mr-2 h-4 w-4" />
+                      Upload File
+                    </>
+                  )}
+                </Button>
+              </TabsContent>
+              
+              <TabsContent value="url" className="mt-2 space-y-2">
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Paste AWS S3, Dropbox, Google Drive, or Box URL"
+                    value={externalUrl}
+                    onChange={(e) => setExternalUrl(e.target.value)}
+                    className="flex-1 text-sm"
+                  />
+                  <Button
+                    type="button"
+                    onClick={handleExternalUrl}
+                    size="sm"
+                  >
+                    <Link2 className="h-4 w-4" />
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Supports AWS S3, Dropbox, Google Drive, and Box URLs for streaming
+                </p>
+              </TabsContent>
+            </Tabs>
           ) : (
-            <>
-              <Upload className="mr-2 h-4 w-4" />
-              Upload File
-            </>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="w-full"
+            >
+              {uploading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Uploading...
+                </>
+              ) : (
+                <>
+                  <Upload className="mr-2 h-4 w-4" />
+                  Upload File
+                </>
+              )}
+            </Button>
           )}
-        </Button>
+        </>
       )}
 
       {uploading && (
