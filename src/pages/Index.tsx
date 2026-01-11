@@ -239,19 +239,6 @@ const Index = () => {
           </div>
         </section>
       </main>
-<button
-  onClick={runStripeTestCharge}
-  style={{
-    marginTop: "2rem",
-    padding: "12px 18px",
-    backgroundColor: "#635bff",
-    color: "#fff",
-    borderRadius: "6px",
-    fontWeight: "600"
-  }}
->
-  🔒 Stripe $1 Test Charge
-</button>
 
       {/* Footer */}
       <footer className="border-t border-border px-6 py-8">
