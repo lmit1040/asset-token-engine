@@ -1346,8 +1346,11 @@ export type Database = {
           amount_cents: number
           created_at: string
           currency: string
+          discount_percentage: number | null
+          discount_tier: string | null
           id: string
           metadata: Json | null
+          original_amount_cents: number | null
           purpose: string
           related_id: string | null
           related_table: string | null
@@ -1362,8 +1365,11 @@ export type Database = {
           amount_cents: number
           created_at?: string
           currency?: string
+          discount_percentage?: number | null
+          discount_tier?: string | null
           id?: string
           metadata?: Json | null
+          original_amount_cents?: number | null
           purpose: string
           related_id?: string | null
           related_table?: string | null
@@ -1378,8 +1384,11 @@ export type Database = {
           amount_cents?: number
           created_at?: string
           currency?: string
+          discount_percentage?: number | null
+          discount_tier?: string | null
           id?: string
           metadata?: Json | null
+          original_amount_cents?: number | null
           purpose?: string
           related_id?: string | null
           related_table?: string | null
