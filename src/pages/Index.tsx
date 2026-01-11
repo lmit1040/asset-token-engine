@@ -238,7 +238,7 @@ const Index = () => {
             </div>
           </div>
         </section>
-        <button
+        <Button
   onClick={runStripeTestCharge}
   style={{
     marginTop: "2rem",
@@ -250,7 +250,7 @@ const Index = () => {
   }}
 >
   🔒 Stripe $1 Test Charge
-</button>
+</Button>
       </main>
 
       {/* Footer */}
