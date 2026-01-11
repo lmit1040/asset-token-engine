@@ -6,6 +6,7 @@ import { FeeScheduleTable } from '@/components/fees/FeeScheduleTable';
 import { PricingTier, TIER_LABELS, MXU_DISCOUNT_ELIGIBLE_TYPES, FEE_TYPE_LABELS } from '@/types/fees';
 import { DollarSign, Award, HelpCircle, User, Building, Building2 } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { supabase } from "@/integrations/supabase/client";
 
 const TIER_ICONS: Record<PricingTier, React.ReactNode> = {
   RETAIL: <User className="h-4 w-4" />,
@@ -18,6 +19,26 @@ const TIER_DESCRIPTIONS: Record<PricingTier, string> = {
   TRUST: 'Comprehensive solutions for trusts, LLCs, and family offices with volume-based pricing.',
   ENTERPRISE: 'Custom enterprise solutions with dedicated support and tailored pricing.',
 };
+async function runStripeTestCharge() {
+  const { data, error } = await supabase.functions.invoke(
+    "create-checkout-session",
+    {
+      body: {
+        fee_id: "8f881d7d-4f1d-468b-a28b-953b6e40f7f3",
+        purpose: "TEST_PAYMENT",
+        quantity: 1
+      }
+    }
+  );
+
+  if (error) {
+    console.error("Stripe test error:", error);
+    alert("Stripe error — check console");
+    return;
+  }
+
+  window.location.href = data.checkout_url;
+}
 
 export default function FeesPage() {
   const [selectedTier, setSelectedTier] = useState<PricingTier>('RETAIL');
