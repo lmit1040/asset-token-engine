@@ -1123,6 +1123,44 @@ export type Database = {
           },
         ]
       }
+      nda_access_audit_log: {
+        Row: {
+          accessed_at: string
+          action_type: string
+          id: string
+          ip_address: string | null
+          nda_signature_id: string | null
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          accessed_at?: string
+          action_type: string
+          id?: string
+          ip_address?: string | null
+          nda_signature_id?: string | null
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          accessed_at?: string
+          action_type?: string
+          id?: string
+          ip_address?: string | null
+          nda_signature_id?: string | null
+          user_agent?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "nda_access_audit_log_nda_signature_id_fkey"
+            columns: ["nda_signature_id"]
+            isOneToOne: false
+            referencedRelation: "nda_signatures"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       nda_signatures: {
         Row: {
           blockchain_recorded_at: string | null
