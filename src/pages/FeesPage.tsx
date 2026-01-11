@@ -207,7 +207,7 @@ export default function FeesPage() {
     fontWeight: "600"
   }}
 >
-  🔒 Stripe $1 Test Charge
+   Stripe $1 Test Charge
 </Button>
     </DashboardLayout>
   );
