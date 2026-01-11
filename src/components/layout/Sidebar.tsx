@@ -1,5 +1,5 @@
 import { NavLink as RouterNavLink, useLocation } from "react-router-dom";
-import { LayoutDashboard, Coins, User, Users, Activity, LogOut, Award, Vote, ArrowRightLeft, FileCheck, Wallet, Globe, FileUp, FolderOpen, ClipboardList, Archive, Zap, ShieldCheck, Bot, Newspaper, FileText, Package, Rocket, Sparkles, BarChart3, FileSignature, Layers, Radar, MonitorDot, Crosshair, TrendingUp, Gift, UserPlus, HelpCircle, BookOpen, DollarSign, GraduationCap } from "lucide-react";
+import { LayoutDashboard, Coins, User, Users, Activity, LogOut, Award, Vote, ArrowRightLeft, FileCheck, Wallet, Globe, FileUp, FolderOpen, ClipboardList, Archive, Zap, ShieldCheck, Bot, Newspaper, FileText, Package, Rocket, Sparkles, BarChart3, FileSignature, Layers, Radar, MonitorDot, Crosshair, TrendingUp, Gift, UserPlus, HelpCircle, BookOpen, DollarSign, GraduationCap, Building, Building2, CreditCard, Receipt } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -32,6 +32,10 @@ const navigation = [{
   href: "/mxu-benefits",
   icon: Award
 }, {
+  name: "Trust Accounts",
+  href: "/trust-dashboard",
+  icon: Building
+}, {
   name: "Earn MXG",
   href: "/earn-mxg",
   icon: TrendingUp
@@ -43,6 +47,14 @@ const navigation = [{
   name: "Governance",
   href: "/governance",
   icon: Vote
+}, {
+  name: "Pricing",
+  href: "/pricing",
+  icon: CreditCard
+}, {
+  name: "Fee Schedule",
+  href: "/fees",
+  icon: Receipt
 }, {
   name: "Profile",
   href: "/profile",
@@ -149,6 +161,10 @@ const adminNavigation = [{
   name: "Fee Management",
   href: "/admin/fees",
   icon: DollarSign
+}, {
+  name: "Enterprise Console",
+  href: "/admin/enterprise",
+  icon: Building2
 }];
 
 export function Sidebar() {

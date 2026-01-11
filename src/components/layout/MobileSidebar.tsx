@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, NavLink as RouterNavLink, useLocation } from 'react-router-dom';
-import { Menu, LogOut, ShieldCheck, LayoutDashboard, Coins, User, Users, Activity, Award, Vote, ArrowRightLeft, FileCheck, Wallet, Globe, FileUp, FolderOpen, ClipboardList, Archive, Zap, Newspaper, FileText, Package, Rocket, Sparkles, BarChart3, FileSignature, Layers, Target, Monitor, Search, TrendingUp, Gift, UserPlus, HelpCircle, BookOpen, DollarSign, GraduationCap, Settings } from 'lucide-react';
+import { Menu, LogOut, ShieldCheck, LayoutDashboard, Coins, User, Users, Activity, Award, Vote, ArrowRightLeft, FileCheck, Wallet, Globe, FileUp, FolderOpen, ClipboardList, Archive, Zap, Newspaper, FileText, Package, Rocket, Sparkles, BarChart3, FileSignature, Layers, Target, Monitor, Search, TrendingUp, Gift, UserPlus, HelpCircle, BookOpen, DollarSign, GraduationCap, Settings, Building, Building2, CreditCard, Receipt } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -15,9 +15,12 @@ const navigation = [
   { name: "Submit Asset", href: "/submit-asset", icon: FileUp },
   { name: "My Submissions", href: "/my-submissions", icon: FolderOpen },
   { name: "MXU Benefits", href: "/mxu-benefits", icon: Award },
+  { name: "Trust Accounts", href: "/trust-dashboard", icon: Building },
   { name: "Earn MXG", href: "/earn-mxg", icon: TrendingUp },
   { name: "Training", href: "/training", icon: BookOpen },
   { name: "Governance", href: "/governance", icon: Vote },
+  { name: "Pricing", href: "/pricing", icon: CreditCard },
+  { name: "Fee Schedule", href: "/fees", icon: Receipt },
   { name: "Profile", href: "/profile", icon: User },
   { name: "FAQ & Help", href: "/faq", icon: HelpCircle },
   { name: "Documentation", href: "/help/documentation", icon: BookOpen },
@@ -47,6 +50,7 @@ const adminNavigation = [
   { name: "Training Content", href: "/admin/training", icon: GraduationCap },
   { name: "Launch Checklist", href: "/admin/launch-checklist", icon: Rocket },
   { name: "Fee Management", href: "/admin/fees", icon: DollarSign },
+  { name: "Enterprise Console", href: "/admin/enterprise", icon: Building2 },
 ];
 
 export function MobileSidebar() {
