@@ -38,7 +38,12 @@ async function runStripeTestCharge() {
     return;
   }
 
-  window.location.href = data.checkout_url;
+  if (data?.checkout_url) {
+    window.location.href = data.checkout_url;
+  } else {
+    console.error("No checkout URL returned:", data);
+    alert("Failed to create checkout session");
+  }
 }
 
 export default function FeesPage() {

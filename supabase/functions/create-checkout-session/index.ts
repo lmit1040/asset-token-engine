@@ -71,47 +71,50 @@ Deno.serve(async (req) => {
     // 1) Look up the fee server-side
     const { data: fee, error: feeErr } = await admin
       .from("fee_catalog")
-      .select("id, fee_key, amount_cents, currency, mxu_discount_eligible, description")
+      .select("id, fee_key, amount_cents, description")
       .eq("id", body.fee_id)
+      .eq("enabled", true)
       .single();
 
     if (feeErr || !fee) {
-      return new Response(JSON.stringify({ error: "Invalid fee_id" }), {
+      console.error("[checkout] fee lookup error:", feeErr, "fee_id:", body.fee_id);
+      return new Response(JSON.stringify({ error: "Invalid fee" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const currency = (fee.currency || "usd").toLowerCase();
+    const currency = "usd";
 
     const originalAmountCents = (fee.amount_cents ?? 0) * qty;
 
-    // 2) Calculate MXU discount (if eligible)
+    // 2) Calculate MXU discount (check fee_discount_tiers)
     let discountPercent = 0;
     let discountTierId: string | null = null;
 
-    if (fee.mxu_discount_eligible) {
-      const { data: holding } = await admin
-        .from("user_token_holdings")
-        .select("quantity")
-        .eq("user_id", user.id)
-        .eq("symbol", "MXU")
-        .limit(1)
-        .maybeSingle();
+    // Check if user has MXU holdings for potential discount
+    const { data: holding } = await admin
+      .from("user_token_holdings")
+      .select("quantity")
+      .eq("user_id", user.id)
+      .eq("symbol", "MXU")
+      .limit(1)
+      .maybeSingle();
 
-      const mxuAmount = holding?.quantity ?? 0;
+    const mxuAmount = holding?.quantity ?? 0;
 
-      // fee_discount_tiers: pick best tier where min_mxu_amount <= mxuAmount
+    if (mxuAmount > 0) {
+      // fee_discount_tiers: pick best tier where min_balance <= mxuAmount
       const { data: tier } = await admin
         .from("fee_discount_tiers")
-        .select("id, discount_percent")
-        .lte("min_mxu_amount", mxuAmount)
-        .order("min_mxu_amount", { ascending: false })
+        .select("id, discount_percentage, min_balance")
+        .lte("min_balance", mxuAmount)
+        .order("min_balance", { ascending: false })
         .limit(1)
         .maybeSingle();
 
       if (tier) {
-        discountPercent = tier.discount_percent ?? 0;
+        discountPercent = tier.discount_percentage ?? 0;
         discountTierId = tier.id ?? null;
       }
     }
