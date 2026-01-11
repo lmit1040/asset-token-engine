@@ -7,6 +7,7 @@ import { PricingTier, TIER_LABELS, MXU_DISCOUNT_ELIGIBLE_TYPES, FEE_TYPE_LABELS 
 import { DollarSign, Award, HelpCircle, User, Building, Building2 } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { supabase } from "@/integrations/supabase/client";
+import { Button } from '@/components/ui/button';
 
 const TIER_ICONS: Record<PricingTier, React.ReactNode> = {
   RETAIL: <User className="h-4 w-4" />,
@@ -140,6 +141,14 @@ export default function FeesPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Stripe Test Button */}
+        <Button 
+          onClick={runStripeTestCharge}
+          className="w-fit bg-[#635bff] hover:bg-[#5348e0] text-white"
+        >
+          Stripe $1 Test Charge
+        </Button>
 
         {/* FAQ */}
         <Card>
