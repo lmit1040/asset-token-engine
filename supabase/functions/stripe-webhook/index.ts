@@ -1,11 +1,10 @@
 // supabase/functions/stripe-webhook/index.ts
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getStripeClient } from "../_shared/stripe-client.ts";
 
 Deno.serve(async (req) => {
   try {
-    const stripe = await getStripeClient();
+    const { stripe } = await getStripeClient();
 
     const sig = req.headers.get("stripe-signature");
     const webhookSecret = Deno.env.get("STRIPE_WEBHOOK_SECRET");
@@ -76,7 +75,8 @@ Deno.serve(async (req) => {
     }
 
     return new Response("ignored", { status: 200 });
-  } catch (e) {
-    return new Response(`Error: ${e?.message ?? "unknown"}`, { status: 500 });
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : "unknown";
+    return new Response(`Error: ${message}`, { status: 500 });
   }
 });
