@@ -196,6 +196,19 @@ export default function FeesPage() {
           </CardContent>
         </Card>
       </div>
+       <Button
+  onClick={runStripeTestCharge}
+  style={{
+    marginTop: "2rem",
+    padding: "12px 18px",
+    backgroundColor: "#635bff",
+    color: "#fff",
+    borderRadius: "6px",
+    fontWeight: "600"
+  }}
+>
+  🔒 Stripe $1 Test Charge
+</Button>
     </DashboardLayout>
   );
 }
