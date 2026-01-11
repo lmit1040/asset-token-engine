@@ -38,15 +38,15 @@ Deno.serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseAnon = Deno.env.get("SUPABASE_ANON_KEY")!;
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+    const authHeader = req.headers.get("Authorization") ?? "";
 
     // Authenticated client (user context)
+    // NOTE: We intentionally avoid using a service role key here so this function
+    // works out-of-the-box in Lovable Cloud and respects RLS policies.
     const supabase = createClient(supabaseUrl, supabaseAnon, {
-      global: { headers: { Authorization: req.headers.get("Authorization")! } },
+      global: { headers: { Authorization: authHeader } },
     });
-
-    // Service role client (for lookups not allowed by RLS)
-    const admin = createClient(supabaseUrl, supabaseServiceKey);
 
     const { data: authData, error: authErr } = await supabase.auth.getUser();
     if (authErr || !authData?.user) {
@@ -68,8 +68,8 @@ Deno.serve(async (req) => {
 
     const qty = Math.max(1, Number.isFinite(body.quantity) ? Math.floor(body.quantity!) : 1);
 
-    // 1) Look up the fee server-side
-    const { data: fee, error: feeErr } = await admin
+    // 1) Look up the fee (RLS-protected; readable by authenticated users)
+    const { data: fee, error: feeErr } = await supabase
       .from("fee_catalog")
       .select("id, fee_key, amount_cents, description")
       .eq("id", body.fee_id)
@@ -78,10 +78,16 @@ Deno.serve(async (req) => {
 
     if (feeErr || !fee) {
       console.error("[checkout] fee lookup error:", feeErr, "fee_id:", body.fee_id);
-      return new Response(JSON.stringify({ error: "Invalid fee" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({
+          error: "Invalid fee",
+          details: feeErr?.message ?? null,
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
     const currency = "usd";
@@ -93,7 +99,7 @@ Deno.serve(async (req) => {
     let discountTierId: string | null = null;
 
     // Check if user has MXU holdings for potential discount
-    const { data: holding } = await admin
+    const { data: holding } = await supabase
       .from("user_token_holdings")
       .select("quantity")
       .eq("user_id", user.id)
@@ -105,7 +111,7 @@ Deno.serve(async (req) => {
 
     if (mxuAmount > 0) {
       // fee_discount_tiers: pick best tier where min_balance <= mxuAmount
-      const { data: tier } = await admin
+      const { data: tier } = await supabase
         .from("fee_discount_tiers")
         .select("id, discount_percentage, min_balance")
         .lte("min_balance", mxuAmount)
@@ -155,8 +161,8 @@ Deno.serve(async (req) => {
       },
     });
 
-    // 4) Insert payment record (MATCHES your payments table)
-    const { error: payErr } = await admin.from("payments").insert({
+    // 4) Insert payment record (RLS allows users to insert their own payments)
+    const { error: payErr } = await supabase.from("payments").insert({
       user_id: user.id,
       purpose,
       related_table: body.related_table ?? null,
